@@ -65,6 +65,10 @@ ID は `next_id('o'|'p'|'a')` で採る。詳細画面向けの読み取りは `
 Access(メールのワンタイムPIN・許可は本人1件)を通った人だけが NocoDB のログイン画面に到達する。
 前提として `sanei-clover.com` の権威DNSが Cloudflare にあること(2026-09-19 に移設済み。移設手順は llm-wiki J-011、残作業は `backlog/JOBS.md` J-014)。
 
+**API トークンの権限(受け入れたリスク・2026-09-19)**: `.env` のトークン `sanei-clover.com` は、ゾーン `sanei-clover.com` の全権限とアカウントの全権限
+(トークン発行を含む)を持つ。`.env.example` に書いた最小権限(DNS:Edit + Tunnel + Access)まで絞らないと決めた。理由は絞り込みの手間に対して利用者が
+本人 1 人であること。前提は、トークンを `.env` の外に出さない・漏えいが疑われたら即座に Cloudflare で失効させること。
+
 **2026-09-19 構築済み。**Zero Trust のチームは `sanei-clover.cloudflareaccess.com`(API の `POST /access/organizations` で作成。ダッシュボードの「Enable Access」と同じ)、
 Tunnel 名は `perfect-crm-contacts`、Access アプリは「連絡先台帳(NocoDB)」(許可は本人のメール 1 件・One-time PIN)。再構築は下の手順をそのまま流せば同じ状態に戻る(スクリプトは再実行しても重複を作らない)。
 

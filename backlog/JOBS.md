@@ -6,11 +6,6 @@
 
 上から順にやる。ループはこの節の**先頭1件だけ**を取る。
 
-- [ ] **J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)
-  - 由来: 2026-09-19 に sanei-clover.com の権威 DNS をお名前.com から Cloudflare へ移した際の点検。先頭に置く理由: `autodiscover` が今壊れており、J-008 の Tunnel 公開もこのトークンが前提
-  - 人の作業: Cloudflare で Custom トークンを発行(権限は `.env.example` の Cloudflare 節)し、リポジトリ直下 `.env` の `CLOUDFLARE_API_TOKEN` に入れる。`sc-products/.env` の既存トークンはアカウント所有(`cfat…`)で DNS 権限が無く、saneiclover.com も含めて DNS を読めない(実測)
-  - [2026-09-19] トークンにゾーン `sanei-clover.com` のポリシーが足され、DNS の読み書きが通った(TXT 作成・削除で実測)。Access は API で組織を作って有効化し、`works.sanei-clover.com` の Tunnel + Access を構築済み(docs/contacts.md)。autodiscover・apex・www のプロキシ OFF と `_dmarc`(`p=none`、rua は運用のメールボックスが決まったら)は同日に実施し、権威 NS で確認済み。**残り**: ゾーン側 92 権限・アカウント側 279 権限を DNS Write / Tunnel / Access の 2 ポリシーに絞る(人の作業)
-  - トークン後の作業: ①`autodiscover` CNAME をプロキシ OFF(今はプロキシ経由で 521。Outlook の自動設定が失敗する)②apex A と `www` CNAME(GitHub Pages 宛て)をプロキシ OFF(`dns-cloudflare` skill の規約。プロキシ ON のままだと GitHub 側の証明書更新が止まる。現在の期限 2026-10-26)③`_dmarc` TXT を追加(旧ゾーンにも無かった)。MX・SPF・DKIM・検証 TXT は移行で欠けていない
 - [ ] **J-001** 採用候補のライブラリが非推奨でないことを一次資料で確認する(2026-09-19)
   - 由来: Q-009、共通ルール「非推奨ツールを使わない」
   - 対象: Better Auth(organization / apiKey / MCP プラグイン、追加 scope 取得 = Q-023)、Hono と `@hono/mcp`、`@modelcontextprotocol/sdk`(Streamable HTTP)、Drizzle + drizzle-kit、TanStack Router/Query/Table、pg-boss。Q-022(gmail.send の区分)・Q-024(claude.ai コネクタの認証)もここで見る。結果は docs/design/03 §9 に書き、候補を確定に変える
@@ -47,3 +42,5 @@
 ## 完了
 
 新しいものを上に。消さない(履歴はここに残る)。
+
+- [x] ~~**J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)~~ → 完了(2026-09-19): トークン設置、autodiscover・apex・www のプロキシ OFF、_dmarc 追加、works.sanei-clover.com の Tunnel + Access 構築。権限を絞らない判断と前提は docs/contacts.md
