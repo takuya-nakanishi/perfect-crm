@@ -1,19 +1,23 @@
 # contacts/ — 現行の連絡先台帳(正本=PostgreSQL、画面=NocoDB)
 
 **perfect-crm 本体ができるまでの実運用の器**であり、本体の初期データの移行元。本体とは別の Compose スタック(`name: contacts`)で動く。
-2026-09-19 に単独リポジトリ `contacts-crm` からここへ移設(履歴は持ち込まず、Drive `連絡先台帳-移行元-2026-09/` の bundle に退避)。
+2026-09-19 に単独リポジトリ `contacts-crm` から `contacts/` へ移設(履歴は持ち込まず、Drive `連絡先台帳-移行元-2026-09/` の bundle に退避)。
+エージェントが台帳へ書くときの規約はリポジトリ直下の `CLAUDE.md`「`contacts/` の台帳へ書くとき」。
 
 Surface(WSL2)の Docker 上で動く PostgreSQL 16 が**唯一の正本**。画面ツールも Claude Code も Codex もここへ読み書きする。
 設計の由来と判断基準は llm-wiki `vault/wiki/knowledge/personal-data-governance.md`、取扱規律は同ページと
 Google スプレッドシート「THE計画／連絡先台帳」の「規律」タブ(2026-09-18制定)。
 
+**コマンドはすべて `contacts/` で実行する**(`docker-compose.yml` がそこにある。以下のパスは `contacts/` 起点)。
+
 ## 構成
 
 - `docker-compose.yml` — `contacts-db`(postgres:16-alpine)。ホストの `127.0.0.1:5433` にのみ公開
 - `db/001-schema.sql` — テーブル(organizations / people / activities / change_log)、enum、監査トリガー、採番関数 `next_id()`、ビュー `people_overview`
-- `seed/` — 初期投入 CSV の置き場(**個人情報のため Git 管理外**。原本は Drive。`seed/README.md`)
 - `db/002-roles.sql` — ロール(権限の高さで3段)
-- `.env` — 各パスワード(git 管理外)。実体はリポジトリ直下の `.env` で、ここにあるのはそこへのシンボリックリンク。項目はリポジトリ直下の `.env.example`
+- `seed/` — 初期投入 CSV の置き場(**個人情報のため Git 管理外**。下記「初期投入データ」)
+- `.env` — 各パスワード(git 管理外)。実体はリポジトリ直下の `.env` で、`contacts/.env` はそこへのシンボリックリンク。項目はリポジトリ直下の `.env.example`
+- `../docs/dns/` — sanei-clover.com の DNS 棚卸し(Cloudflare 移設時の突き合わせ用)
 
 ## ロール(権限の高さで分ける。使う人ごとには分けない)
 
@@ -58,10 +62,10 @@ ID は `next_id('o'|'p'|'a')` で採る。詳細画面向けの読み取りは `
 
 公開ホスト名は `works.sanei-clover.com`。Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。
 Access(メールのワンタイムPIN・許可は本人1件)を通った人だけが NocoDB のログイン画面に到達する。
-前提として `sanei-clover.com` の権威DNSが Cloudflare にあること(移設手順は llm-wiki J-011)。
+前提として `sanei-clover.com` の権威DNSが Cloudflare にあること(2026-09-19 に移設済み。移設手順は llm-wiki J-011、残作業は `backlog/JOBS.md` J-014)。
 
-1. `.env` に `CLOUDFLARE_API_TOKEN`(Zone DNS:Edit=sanei-clover.com / Account Tunnel:Edit / Access:Edit)
-2. 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py docs/dns-sanei-clover.com-2026-09-19.zone [--apply|--verify]`
+1. リポジトリ直下の `.env` に `CLOUDFLARE_API_TOKEN`(権限は `.env.example` の Cloudflare 節)
+2. 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone [--apply|--verify]`
 3. `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール>` → Tunnel・経路・CNAME・Access・`.env` の `CLOUDFLARE_TUNNEL_TOKEN`
 4. `.env` に `CONTACTS_UI_PUBLIC_URL=https://works.sanei-clover.com` → `docker compose --profile public up -d --force-recreate ui`
 5. 以後の起動は常に `docker compose --profile public up -d`(profile を付けないと tunnel は起動しない)
@@ -80,3 +84,9 @@ Access(メールのワンタイムPIN・許可は本人1件)を通った人だ�
 - organizations: grid / カンバン「組織 状態別」(status)/ カンバン「組織 種別」(kind)
 - people: grid / カンバン「人物 状態別」(status)
 - 人物の詳細を開くと、所属組織(リンク)と活動(逆リンク)が同じ画面に出る(外部キーを双方向のリンク列として自動認識)
+
+## 初期投入データ(`seed/`、Git 管理外)
+
+`organizations.csv` / `people.csv`(2026-09-18 のスプレッドシート台帳から。組織60・人物25)は**個人情報を含むため Git に入れない**
+(`contacts/.gitignore` で `seed/*.csv` を除外。ディレクトリは `.gitkeep` で残す)。原本は Google Drive `マイドライブ/連絡先台帳-移行元-2026-09/`。
+再投入するときはそこから `seed/` へ置いて `docker cp seed contacts-db:/tmp/seed` → `\copy`。
