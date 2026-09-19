@@ -44,6 +44,14 @@ apps/server ──Google API(drive.file / gmail.send)──▶ Google
 
 主なクエリ(v1): `searchRecords` `getRecord` `getContext` `listRecords`(型・フィルタ・並び・ページ)`getTimeline` `myTasks`(today / overdue / upcoming)`getPipeline` `findDuplicates` `listDealStages` `listCustomFieldDefinitions`
 
+## 3.5 DB への接続は本サービスだけ
+
+**PostgreSQL に触れるのは `apps/server` のプロセスだけ**(01 D-13)。外部のシステム・エージェント・BI ツールは MCP か HTTP API を通す。
+
+- DB の接続情報は `app` コンテナだけが持つ。`postgres` はホストにポートを公開しない(04 §1)
+- 同一ホストでの運用作業は例外: マイグレーション(別ロール)、`pg_dump` のバックアップ、移行スクリプト(`packages/core` のコマンドを呼ぶので監査ログは残る)
+- これで、監査ログ・重複ガード・RLS を迂回してデータが書き換わる経路が無くなる(D-04 の守りが実際に効く)
+
 ## 4. HTTP API(UI 向け)
 
 - Hono RPC。UI は `hc<AppType>` で型付きに呼ぶ。認証は Better Auth のセッション Cookie
@@ -53,7 +61,11 @@ apps/server ──Google API(drive.file / gmail.send)──▶ Google
 
 - `POST /mcp`(Streamable HTTP)。`@modelcontextprotocol/sdk` を `@hono/mcp` で載せる
 - **認証(v1)**: 利用者ごとの API トークン(Better Auth apiKey)。`Authorization: Bearer …`。トークンは組織に属し、操作は `actor = { userId, agent: クライアント名, via: 'mcp' }` で記録される。Claude Code は `claude mcp add --transport http … --header "Authorization: Bearer …"`、Codex も同様
-- **認証(v2)**: OAuth 2.1 + 動的クライアント登録。claude.ai / Claude Desktop のカスタムコネクタは静的ヘッダを渡せない見込みのため(Q-024)
+- **認証(v2)**: OAuth 2.1(Better Auth の `mcp()` プラグイン)。claude.ai / Claude Desktop のカスタムコネクタは**静的ヘッダ・API キーの欄を持たず OAuth のみ**なので、同僚がそこから使い始める時点で要る(Q-024)
+  - **DCR(動的クライアント登録)は実装しない。**MCP 仕様が非推奨にしている(§10)。Better Auth も既定で無効
+  - 代わりに **Client ID Metadata Documents**(クライアントが HTTPS URL を client_id に使う)と**事前登録**(claude.ai の Advanced settings に Client ID / Secret を入れてもらう)の 2 つで足りる
+  - サーバが実装必須のもの: RFC 9728 Protected Resource Metadata(`/.well-known/oauth-protected-resource`)、RFC 8707 の `resource` パラメータとトークンの audience 検証、RFC 8414 か OIDC Discovery のどちらか
+  - 追加 scope は **step-up flow**: 足りなければ `403` + `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"` を返す。1 回の挑戦で必要な scope をまとめて出す
 - 書き込みツールは `evidence`(根拠: 元メール ID、会話の要約)を任意で受け、`audit_log.evidence` に残す
 - Cloudflare Access の後ろに置く場合、`/mcp` は Access を bypass しアプリの認証に任せる(04 §3)
 - 長時間接続: サーバから定期 ping(Cloudflare 経由の無通信切断への備え)
@@ -117,15 +129,47 @@ v2 で足すツール: `create_file(record_id, kind, title?, template?)`(ドキ�
 2. `users.messages.send`(RFC 2822 を base64url)
 3. 返ってきた `id` / `threadId` を `activities.external_ref` に、`kind: email, direction: outbound` で記録
 
-## 8. 将来の内蔵 AI
+## 8. Web 会議の自動連携(v4・Q-030)
+
+会議から活動を自動で起こす。CRM は LLM を呼ばない(01 D-02)ので、文字起こしの要約はエージェント側か連携先の機能を使い、CRM は結果を `log_activity` で受ける。連携先の候補と方式は Q-030。`activities.external_ref` に会議 ID・録画・文字起こしの参照を持つ。
+
+## 9. 将来の内蔵 AI
 
 `packages/core` を呼ぶ 4 つ目の入口。自然文 → コマンド列の生成、差分提案 UI、要約の書き戻し。v4。
 
-## 9. 要確認(採用前に一次資料で)
+## 10. 一次資料での確認結果(2026-09-19・J-001)
 
-J-001 で確認し、結果をここに書く。
+### 採用候補の非推奨確認
 
-- Better Auth: organization / apiKey / MCP(OAuth プロバイダ)プラグイン、追加 scope の段階取得(Q-023)
-- `@hono/mcp` と `@modelcontextprotocol/sdk` の Streamable HTTP
-- claude.ai / Claude Desktop のコネクタ認証(Q-024)
-- `gmail.send` の scope 区分(Q-022)
+npm レジストリの `latest` を直接引いて `deprecated` フラグを見た(共通ルール「根拠は①ツール自身の出力」)。**全部が非推奨ではない。**
+
+| パッケージ | 版 | 判定 |
+|---|---|---|
+| better-auth | 1.7.5 | ok |
+| hono | 4.13.8 | ok |
+| @hono/mcp | 0.3.2 | ok |
+| @modelcontextprotocol/sdk | 1.30.0 | ok |
+| drizzle-orm / drizzle-kit | 0.45.2 / 0.31.10 | ok |
+| @tanstack/react-router / react-query / react-table | 1.170.38 / 5.103.1 / 9.2.4 | ok |
+| pg-boss | 12.33.2 | ok |
+| vite / react / tailwindcss | 8.3.0 / 19.3.0 / 4.3.3 | ok |
+| postgres / pg | 3.4.9 / 8.23.0 | ok |
+
+これで 01 D-09 の候補を**確定**に変える。
+
+### 機能の確認
+
+| 問い | 結果 | 出典 |
+|---|---|---|
+| Q-022 `gmail.send` の区分 | **Sensitive**(Restricted ではない)。Restricted は `gmail.readonly` `gmail.modify` `gmail.compose` `mail.google.com/` など。読み取りをエージェント側に委ねる設計(D-05)により restricted を持たずに済む | Google Workspace「Gmail API scopes」 |
+| Q-023 Better Auth | 満たす。organization(組織・メンバー・ロール・招待・アクティブ組織)、apiKey(`verifyApiKey` で自前エンドポイントから検証、組織に紐づく、メタデータ・期限・レート制限)、mcp(OAuth 2.1 プロバイダ、RFC 9728 実装、`requireMcpAuth`) | Better Auth 公式ドキュメント |
+| Q-024 claude.ai のコネクタ | **OAuth のみ。**静的 bearer・カスタムヘッダ・API キーの欄は無い。ただし Advanced settings で **OAuth Client ID / Secret を手で設定できる**ので、事前登録クライアントで足り、DCR は要らない | Claude Help Center「Get started with custom connectors using remote MCP」 |
+
+### 非推奨だったもの(設計を変えた)
+
+- **DCR(RFC 7591 動的クライアント登録)**は MCP 仕様で**非推奨**。「Dynamic Client Registration is deprecated and retained for backwards compatibility with authorization servers that do not support Client ID Metadata Documents」。代替は **OAuth Client ID Metadata Documents**(draft-ietf-oauth-client-id-metadata-document-00)で、仕様上は SHOULD。Better Auth も「MCP deprecates Dynamic Client Registration (DCR), so Better Auth never enables DCR implicitly」と書き、既定で無効。**当初の設計(v2 で DCR)を §5 のとおり改めた**
+- Better Auth の `organizationCreation` フックは非推奨。`organizationHooks` を使う
+
+### 積み残し
+
+`gmail.send` が Sensitive であることは確認したが、**Sensitive scope の審査に CASA(年次セキュリティ評価)が伴わないこと自体**は未確認。製品化(v3)の直前に Google の審査要件を読み直す → J-014。

@@ -29,6 +29,10 @@ erDiagram
   contacts ||--o{ contact_identities : has
   deal_stages ||--o{ deals : stage
   projects ||--o{ tasks : contains
+  projects ||--o{ sections : has
+  sections ||--o{ tasks : groups
+  records ||--o{ record_labels : tagged
+  labels ||--o{ record_labels : on
   records ||--o{ external_files : has
   records ||--o{ audit_log : logs
   organizations ||--o{ custom_field_definitions : defines
@@ -73,14 +77,17 @@ erDiagram
 
 | テーブル | 要点 |
 |---|---|
-| `projects` | `name`、`company_id`(任意)、`deal_id`(任意)、`status`(planned / active / on_hold / done / cancelled)、`starts_on`、`ends_on`、`owner_user_id`、`description`、`custom` |
-| `tasks` | `title`、`description`、`status`(todo / doing / done / cancelled)、`priority`(1〜4)、`starts_on`、`due_on`、`due_at`(任意)、`assignee_user_id`、`project_id`(任意)、`parent_task_id`(任意)、`recurrence`(RRULE 文字列、任意)、`completed_at`、`position`、`custom` |
+| `projects` | `name`、`company_id`(任意)、`deal_id`(任意。**案件とは別エンティティ**で、1 案件から複数のプロジェクトを起こせる)、`status`(planned / active / on_hold / done / cancelled)、`starts_on`、`ends_on`、`owner_user_id`、`description`、`custom` |
+| `tasks` | `title`、`description`、`status`(todo / doing / done / cancelled)、`priority`(1〜4)、`starts_on`、`due_on`、`due_at`(任意)、`assignee_user_id`、`project_id`(任意)、`section_id`(任意)、`parent_task_id`(任意)、`recurrence`(RRULE 文字列、任意)、`completed_at`、`position`、`custom`。**`project_id` が NULL のタスクがインボックス**(Todoist の代わりとして素早く放り込む先) |
+| `sections` | `project_id`、`name`、`position`。プロジェクト内の区分。カンバンの列にもなる。`project_id` が NULL のセクションはインボックス内の区分 |
+| `labels` | `name`、`color`、`position`。組織で共有。タスク以外にも付けられるよう `record_labels` で持つ |
+| `record_labels` | `record_id`、`label_id`。`(organization_id, record_id, label_id)` 一意 |
 
 ### 横断
 
 | テーブル | 要点 |
 |---|---|
-| `activities` | `kind`(note / call / meeting / email / line / whatsapp / system)、`direction`(inbound / outbound / none)、`occurred_at`、`subject`、`body`(Markdown)、`source`(ui / mcp / import / system)、`external_ref jsonb`(Gmail の messageId / threadId 等)、`actor_user_id`、`actor_agent`、`custom`。関連先は `record_links` |
+| `activities` | `kind`(note / call / meeting / email / line / whatsapp / system)。**レコードに関連する活動だけ**(01 D-12)。`meeting` は対面と Web 会議の両方、`direction`(inbound / outbound / none)、`occurred_at`、`subject`、`body`(Markdown)、`source`(ui / mcp / import / system)、`external_ref jsonb`(Gmail の messageId / threadId 等)、`actor_user_id`、`actor_agent`、`custom`。関連先は `record_links` |
 | `record_links` | `from_record_id`、`to_record_id`、`role text NOT NULL DEFAULT 'related'`(決裁者・窓口・`custom:<key>` 等)。`UNIQUE (organization_id, from_record_id, to_record_id, role)`。role を NULL にしない理由: PostgreSQL の UNIQUE は NULL 同士を区別するので重複を防げない。両方向から引く |
 | `external_files` | `record_id`、`provider`(google_drive)、`kind`(doc / sheet / slide / file)、`origin`(created / linked)、`external_id`(Drive の file id。URL 貼り付けだけの場合は null)、`mime_type`、`url`、`title`、`created_by_user_id`。1 レコードに複数 |
 | `google_drive_folders` | `user_id`、`key`(root / 各エンティティ / record)、`record_id`(key が record のとき)、`folder_id`。名前で探さないための台帳。マイドライブなので利用者ごとに持つ |
@@ -107,5 +114,5 @@ erDiagram
 
 ## 6. 未決
 
-- Todoist 置き換えに要るタスク機能(Q-018)。`recurrence`・`parent_task_id` は列だけ先に持つ
+- Web 会議の自動連携(Q-030)。`external_ref` に会議 ID・録画・文字起こしの参照を足す見込み
 - 移行元の項目対応(Q-019・Q-020)

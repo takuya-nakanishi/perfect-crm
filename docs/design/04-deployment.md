@@ -5,7 +5,7 @@
 | サービス | イメージ | 役割 |
 |---|---|---|
 | `app` | 自前(Node LTS)。API・MCP・静的 UI を 1 プロセスで | 無状態 |
-| `postgres` | `postgres:18` | 状態のすべて。`pg_trgm` は同梱(`CREATE EXTENSION`) |
+| `postgres` | `postgres:18` | 状態のすべて。`pg_trgm` は同梱(`CREATE EXTENSION`)。**ホストにポートを公開しない**(Compose の内部ネットワークのみ。01 D-13)。開発時だけ `127.0.0.1` バインドで開ける |
 | `cloudflared` | `cloudflare/cloudflared` | Tunnel。受信ポートを開けない |
 | `minio`(任意) | S3 互換 | 添付が要るようになったら。クラウドでは R2 / S3 に差し替え |
 
@@ -21,7 +21,8 @@
 
 - Cloudflare Tunnel: `crm.<ドメイン>` → `app:3000`。DNS は Cloudflare(共通ルール)。固定 IP・ポート開放が不要なので、NAT の内側のノートPCでも成り立つ
 - Cloudflare Access: 自社インスタンスの UI に置く。アプリ自身の認証が本命なので、二重ログインの摩擦が気になれば外す
-- Access を bypass するパス: `/mcp`(エージェントは Access のログイン画面を通れない)、`/webhooks/*`(v2)
+- Access を bypass するパス: `/mcp`(エージェントは Access のログイン画面を通れない)、`/.well-known/oauth-protected-resource`(MCP クライアントが認証前に読む)、`/webhooks/*`(v2)
+- **Tunnel で DB のポートは通さない。**公開するのは HTTP の app だけ(01 D-13)
 - SaaS では Access を使わない(顧客が通れない)。アプリ認証のみ
 
 ## 4. バックアップと復元
