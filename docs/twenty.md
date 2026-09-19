@@ -1,6 +1,6 @@
 # Twenty のセルフホスト(試用・2026-09-20 構築)
 
-オープンソース CRM の [Twenty](https://twenty.com) を Surface(WSL2)の Docker で動かし、`https://works.sanei-clover.com` で開けるようにしてある。
+オープンソース CRM の [Twenty](https://twenty.com) を Surface(WSL2)の Docker で動かし、`https://works.sanei-clover.com` で開けるようにしてある(Cloudflare Tunnel 経由。Access は置いていない)。
 **試用**の位置づけ。自前で作る perfect-crm 本体(`docs/design/`)を続けるか Twenty に寄せるかは未決(`backlog/QUESTIONS.md` Q-032)。
 
 ## 構成
@@ -28,27 +28,35 @@ mkdir -p /tmp/docker-nocreds && echo '{}' > /tmp/docker-nocreds/config.json
 DOCKER_CONFIG=/tmp/docker-nocreds docker pull twentycrm/twenty:<タグ>
 ```
 
-## 外からの経路(Cloudflare Tunnel + Access)
+## 外からの経路(Cloudflare Tunnel。Access は置かない)
 
-Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。Access(メールのワンタイム PIN)を通った人だけが Twenty のログイン画面に到達する。
-作成済みのもの: Tunnel `perfect-crm-works`、CNAME `works.sanei-clover.com`(プロキシ ON。Tunnel 宛ては必須)、Access アプリ「Twenty CRM」(セッション 24h)、
-許可ポリシー「本人のみ」(`ntaku0815@gmail.com` / `tnakanishi@sanei-clover.com`)。Zero Trust のチームは `sanei-clover.cloudflareaccess.com`。
+Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。作成済みのもの: Tunnel `perfect-crm-works`、CNAME `works.sanei-clover.com`(プロキシ ON。Tunnel 宛ては必須)。
 
-作り直すとき(再実行しても重複を作らない):
+**Cloudflare Access は 2026-09-20 に外した(本人の判断)。**`works.sanei-clover.com` はインターネットから誰でも届き、守りは Twenty 自身の認証だけになる
+(画面はメール + パスワード、`/mcp`・`/rest`・`/graphql` は API キーか OAuth)。外した理由: エージェントが PIN の画面を通れず MCP が繋がらない、PIN の往復が日常の利用に重い。
+前提として守ること:
+
+- Twenty のパスワードは使い回さない長いものにする(総当たりを Access が止めてくれない)
+- マルチワークスペースは無効のまま(`isMultiWorkspaceEnabled: false`。他人は新しいワークスペースを作れず、既存のワークスペースには招待が無いと入れない)。
+  使わないなら Settings → Members の公開招待リンクを無効にする
+- `TWENTY_TAG` を放置しない。認証まわりの修正が出たら上げる(外に出ている以上、古い版の穴がそのまま入口になる)
+- API キーは用途ごとに作り、漏れたら Settings → API & Webhooks で失効させる
+
+作り直すとき(再実行しても重複を作らない。第 2 引数の `-` は「Access を作らない」):
 
 ```
-python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <メール,メール> http://server:3000 'Twenty CRM' /mcp
+python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com - http://server:3000
 docker compose --profile public up -d
 ```
 
-- One-time PIN は**ポリシーで許可されていないアドレスにはコードを送らない**(「送信した」画面は出るが届かない)。許可を増やすときは Access アプリのポリシーに足す
-- PIN は 1 回だけ要求し、メールのリンクを別のブラウザ(Gmail アプリ内ブラウザ等)で開かず、コードを同じタブに手入力する。連続要求や別ブラウザで開くと「That account does not have access」や白画面になる
-- **Access の内側にあるので、外部からの API・Webhook・Google / Microsoft の OAuth コールバックは届かない。**使うときは該当パスを Bypass に足す(今は `/mcp` だけ)
+Access を戻すときは第 2 引数に許可メール(カンマ区切り)、第 5 引数に素通しにするパス(`/mcp`)を渡す。Zero Trust のチーム `sanei-clover.cloudflareaccess.com` と
+One-time PIN の IdP は残してある。そのときの注意: One-time PIN は許可されていないアドレスにはコードを送らない / PIN は 1 回だけ要求し、コードを同じタブに手入力する。
+
 - API トークンの権限は最小より広い(受け入れたリスク・2026-09-19)。ゾーン `sanei-clover.com` の全権限とアカウントの全権限を持つ。前提は `.env` の外に出さない・漏えいが疑われたら即失効
 
 ## 初回のセットアップ(画面で行う)
 
-1. `https://works.sanei-clover.com` → Access の PIN → 「Continue with Email」で最初のユーザーとワークスペースを作る(**最初に作った人が管理者**)
+1. `https://works.sanei-clover.com` → 「Continue with Email」で最初のユーザーとワークスペースを作る(**最初に作った人が管理者**)
 2. 2 人目以降はワークスペースからの招待で入れる(マルチワークスペースは無効のまま)
 
 ## エージェントからの MCP 接続(Claude Code / Codex)
@@ -56,10 +64,8 @@ docker compose --profile public up -d
 Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。公式ドキュメントに接続手順の頁は無いので、v2.41.0 の実装を読んで確認した:
 認証は `Authorization: Bearer <API キー>` か OAuth(`/.well-known/oauth-protected-resource`、動的クライアント登録あり)。ここでは API キーを使う。
 
-**接続先は `https://works.sanei-clover.com/mcp`**(同じ Surface からなら `http://localhost:3000/mcp` でも同じ)。
-エージェントは Access の PIN 画面を通れないので、**`/mcp` だけを対象にした Bypass の Access アプリ**「Twenty CRM /mcp (bypass)」を置いてある(2026-09-20)。
-このパスはインターネットから誰でも届くが、Twenty 自身が API キー無しのリクエストを 401 で返す。他のパス(`/`・`/graphql`・`/rest/*`)は Access の内側のまま。
-Bypass を忘れると、クライアントには Access のログイン画面が返り `Unexpected content type: text/html` で失敗する。
+**接続先は `https://works.sanei-clover.com/mcp`**(同じ Surface からなら `http://localhost:3000/mcp` でも同じ)。API キー無しのリクエストは Twenty が 401 で返す。
+クライアントが `Unexpected content type: text/html` で失敗するときは、前段に Access が戻っていて `/mcp` が素通しになっていない。
 
 1. API キーを作る(人の作業): Twenty の Settings → API & Webhooks → + Create key。**表示は一度きり**。`.env` の `TWENTY_API_KEY` に控える。
    権限を絞るなら Settings → Members → Roles → Assignment タブでキーにロールを割り当てる

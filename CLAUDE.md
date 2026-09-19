@@ -18,7 +18,7 @@ docs で「未決」「要確認」と書かれた箇所は `backlog/QUESTIONS.m
 設計のみ。コードはまだ無い。次の一手は `backlog/JOBS.md` の先頭。
 
 **Twenty(オープンソース CRM)を試用中**(2026-09-20〜)。直下の `docker-compose.yml` で動き、`https://works.sanei-clover.com`
-(Cloudflare Tunnel + Access)で開く。手順は `docs/twenty.md`。本体を作り続けるか Twenty に寄せるかは未決(Q-032)なので、
+(Cloudflare Tunnel。Access は置かず、Twenty 自身の認証で守る)で開く。手順は `docs/twenty.md`。本体を作り続けるか Twenty に寄せるかは未決(Q-032)なので、
 `docs/design/` と下の不変条件は本体を作る場合の正として残す。以前ここで動かしていた連絡先台帳 `contacts/` は撤去済み
 (退避先は `docs/twenty.md`「撤去したもの」。個人情報なので Git に入れない)。
 
