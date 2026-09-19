@@ -1,4 +1,2 @@
 .env
-contacts/seed/*.csv
-contacts/*.unused
 __pycache__/

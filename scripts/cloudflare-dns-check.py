@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """棚卸しゾーンファイル(dig 出力)と Cloudflare 側のレコードを突き合わせる。NS 切替前に全件一致を確認するためのもの。
 
-  python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone            # 差分表示のみ
-  python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone --apply    # 欠けを追加(プロキシ OFF)
-  python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone --verify   # Cloudflare の NS へ dig して一致確認
+  python3 scripts/cloudflare-dns-check.py docs/dns/sanei-clover.com-2026-09-19.zone            # 差分表示のみ
+  python3 scripts/cloudflare-dns-check.py docs/dns/sanei-clover.com-2026-09-19.zone --apply    # 欠けを追加(プロキシ OFF)
+  python3 scripts/cloudflare-dns-check.py docs/dns/sanei-clover.com-2026-09-19.zone --verify   # Cloudflare の NS へ dig して一致確認
 
 移設時は何も変えないのが規約(dns-cloudflare skill): 追加はするが、Cloudflare 側にしか無いレコードは消さず警告に留める。
 """

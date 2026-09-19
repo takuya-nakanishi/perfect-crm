@@ -13,27 +13,18 @@ MCP 経由で行い、人は画面で閲覧し台帳を直す(画面からの入
 04 配置 → 05 移行)。問いと作業は `backlog/`(書式は `questions-jobs` skill)。
 docs で「未決」「要確認」と書かれた箇所は `backlog/QUESTIONS.md` に対応する問いがある。
 
-## 現状(2026-09-19)
+## 現状(2026-09-20)
 
 設計のみ。コードはまだ無い。次の一手は `backlog/JOBS.md` の先頭。
 
-**`contacts/` は例外で、今日から稼働している現行の連絡先台帳**(PostgreSQL 正本。画面ツールは今は無い。本体ができるまでの
-実運用の器であり、本体の初期データの移行元)。本体の設計とは独立した Compose スタックで、運用手順は `docs/contacts.md`。
+**Twenty(オープンソース CRM)を試用中**(2026-09-20〜)。直下の `docker-compose.yml` で動き、`https://works.sanei-clover.com`
+(Cloudflare Tunnel + Access)で開く。手順は `docs/twenty.md`。本体を作り続けるか Twenty に寄せるかは未決(Q-032)なので、
+`docs/design/` と下の不変条件は本体を作る場合の正として残す。以前ここで動かしていた連絡先台帳 `contacts/` は撤去済み
+(退避先は `docs/twenty.md`「撤去したもの」。個人情報なので Git に入れない)。
 
-### `contacts/` の台帳へ書くとき(Claude Code / Codex 共通・省略不可)
-
-コマンドは `contacts/` で実行する(`docker-compose.yml` がそこにある)。`.env` はリポジトリ直下に 1 つだけなので、
-compose は必ず `docker compose --env-file ../.env …` と打つ(付け忘れると `CONTACTS_DB_PASSWORD` 未設定で止まる)。
-
-1. 接続はロール **`contacts_agent`**(`.env` の `CONTACTS_AGENT_DB_PASSWORD`)。所有者 `contacts` は使わない
-2. 書き込みトランザクションの先頭で **`SET LOCAL app.actor = 'Claude'`**(Codex は `'Codex'`)を宣言する。
-   宣言が無い・他の値を名乗ると DB 側が書き込みを拒否する(`current_actor()`)
-3. ID は `next_id('o'|'p'|'a')` で採る。値の制約(enum・一意・参照)は DB が強制するので、失敗したら値を直す。制約を緩めない
-4. スキーマ変更(`contacts/db/*.sql`)は人間の承認を得てから。所有者ロールで流し、同じコミットで `docs/contacts.md` を直す
-
-禁止: `.env` の値を出力・コミット・外部送出しない / **`contacts/seed/*.csv`(個人情報)を Git に入れない**(このリポジトリは公開)/
-`change_log` を書き換えない(書けないが、迂回も試みない)/ 台帳の内容を llm-wiki の entities へ転記しない
-(連絡先は台帳に、知見は wiki に。境界は llm-wiki `vault/wiki/knowledge/personal-data-governance.md`)。
+- `.env` は直下に 1 つ。値を出力・コミット・外部送出しない
+- Twenty のイメージは `TWENTY_TAG` でリリースタグに固定する。上げる前に `pg_dump` を取る
+- `docker compose down -v` は Twenty のデータを消す。指示なしに打たない
 
 ## 守る不変条件(コードを書くとき)
 

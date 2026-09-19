@@ -6,6 +6,8 @@
 
 上から順にやる。ループはこの節の**先頭1件だけ**を取る。
 
+**[2026-09-20] Q-032(本体を作り続けるか Twenty に寄せるか)が決まるまで、この節は着手しない。**
+
 - [ ] **J-001** 採用候補のライブラリが非推奨でないことを一次資料で確認する(2026-09-19)
   - 由来: Q-009、共通ルール「非推奨ツールを使わない」
   - 対象: Better Auth(organization / apiKey / MCP プラグイン、追加 scope 取得 = Q-023)、Hono と `@hono/mcp`、`@modelcontextprotocol/sdk`(Streamable HTTP)、Drizzle + drizzle-kit、TanStack Router/Query/Table、pg-boss。Q-022(gmail.send の区分)・Q-024(claude.ai コネクタの認証)もここで見る。結果は docs/design/03 §9 に書き、候補を確定に変える
@@ -43,4 +45,4 @@
 
 新しいものを上に。消さない(履歴はここに残る)。
 
-- [x] ~~**J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)~~ → 完了(2026-09-19): トークン設置、autodiscover・apex・www のプロキシ OFF、_dmarc 追加、works.sanei-clover.com の Tunnel + Access 構築。権限を絞らない判断と前提は docs/contacts.md
+- [x] ~~**J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)~~ → 完了(2026-09-19): トークン設置、autodiscover・apex・www のプロキシ OFF、_dmarc 追加、works.sanei-clover.com の Tunnel + Access 構築。権限を絞らない判断と前提は docs/twenty.md(contacts と NocoDB は 2026-09-20 に撤去)

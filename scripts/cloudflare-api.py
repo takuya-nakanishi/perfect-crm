@@ -3,7 +3,7 @@
 他スクリプトから import して使う(単体実行はトークン検証)。"""
 import json, pathlib, sys, urllib.request, urllib.parse
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]   # リポジトリ直下(.env はそこに 1 つ)
+ROOT = pathlib.Path(__file__).resolve().parents[1]   # リポジトリ直下(.env はそこに 1 つ)
 ENV = dict(l.split('=', 1) for l in (ROOT / '.env').read_text().splitlines() if '=' in l and not l.startswith('#'))
 API = 'https://api.cloudflare.com/client/v4'
 TOKEN = ENV.get('CLOUDFLARE_API_TOKEN', '').strip()
