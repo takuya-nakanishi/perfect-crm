@@ -64,6 +64,9 @@ ID は `next_id('o'|'p'|'a')` で採る。詳細画面向けの読み取りは `
 Access(メールのワンタイムPIN・許可は本人1件)を通った人だけが NocoDB のログイン画面に到達する。
 前提として `sanei-clover.com` の権威DNSが Cloudflare にあること(2026-09-19 に移設済み。移設手順は llm-wiki J-011、残作業は `backlog/JOBS.md` J-014)。
 
+**2026-09-19 構築済み。**Zero Trust のチームは `sanei-clover.cloudflareaccess.com`(API の `POST /access/organizations` で作成。ダッシュボードの「Enable Access」と同じ)、
+Tunnel 名は `perfect-crm-contacts`、Access アプリは「連絡先台帳(NocoDB)」(許可は本人のメール 1 件・One-time PIN)。再構築は下の手順をそのまま流せば同じ状態に戻る(スクリプトは再実行しても重複を作らない)。
+
 1. リポジトリ直下の `.env` に `CLOUDFLARE_API_TOKEN`(権限は `.env.example` の Cloudflare 節)
 2. 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone [--apply|--verify]`
 3. `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール>` → Tunnel・経路・CNAME・Access・`.env` の `CLOUDFLARE_TUNNEL_TOKEN`
