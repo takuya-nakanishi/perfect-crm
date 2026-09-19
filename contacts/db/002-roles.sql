@@ -1,11 +1,9 @@
 -- 権限の高さで分けたロール(誰が使うかではなく、何ができるかで分ける)
 --   contacts        : 所有者。スキーマ変更・ロール管理。人間が psql で使う(initdb が作る)
 --   contacts_agent  : AI(Claude Code / Codex 共用)。台帳3表の読み書きのみ。操作者は毎トランザクション申告
---   contacts_ui     : 画面(NocoDB)。台帳3表の読み書きのみ。操作者は '画面' 固定
+--   contacts_ui     : 画面ツール(今は置いていない。次の画面が使う)。台帳3表の読み書きのみ。操作者は '画面' 固定
 -- 実行: docker exec -i contacts-db psql -U contacts -d contacts \
 --         -v agent_pw="'<CONTACTS_AGENT_DB_PASSWORD>'" -v ui_pw="'<CONTACTS_UI_DB_PASSWORD>'" -f - < db/002-roles.sql
-CREATE DATABASE nocodb_meta OWNER contacts;
-
 CREATE ROLE contacts_agent LOGIN PASSWORD :agent_pw;
 CREATE ROLE contacts_ui    LOGIN PASSWORD :ui_pw;
 

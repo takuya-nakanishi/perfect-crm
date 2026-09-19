@@ -150,6 +150,6 @@ SELECT p.*, o.name AS organization_name, o.kind AS organization_kind, o.status A
        (SELECT max(occurred_on) FROM activities a WHERE a.person_id = p.id) AS last_activity_on
   FROM people p LEFT JOIN organizations o ON o.id = p.organization_id;
 
--- 画面(NocoDB)用ロール。パスワードは .env の CONTACTS_UI_DB_PASSWORD。
+-- 画面ツール用ロール。パスワードは .env の CONTACTS_UI_DB_PASSWORD。
 -- app.actor をロール既定値で '画面' に固定し、画面経由の書き込みを監査ログで識別する。
 -- (初期化時は compose が実行しないので、手順は README を参照)

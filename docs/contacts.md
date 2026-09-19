@@ -1,10 +1,10 @@
-# contacts/ — 現行の連絡先台帳(正本=PostgreSQL、画面=NocoDB)
+# contacts/ — 現行の連絡先台帳(正本=PostgreSQL)
 
 **perfect-crm 本体ができるまでの実運用の器**であり、本体の初期データの移行元。本体とは別の Compose スタック(`name: contacts`)で動く。
 2026-09-19 に単独リポジトリ `contacts-crm` から `contacts/` へ移設(履歴は持ち込まず、Drive `連絡先台帳-移行元-2026-09/` の bundle に退避)。
 エージェントが台帳へ書くときの規約はリポジトリ直下の `CLAUDE.md`「`contacts/` の台帳へ書くとき」。
 
-Surface(WSL2)の Docker 上で動く PostgreSQL 16 が**唯一の正本**。画面ツールも Claude Code も Codex もここへ読み書きする。
+Surface(WSL2)の Docker 上で動く PostgreSQL 16 が**唯一の正本**。Claude Code も Codex も(置くなら画面ツールも)ここへ読み書きする。
 設計の由来と判断基準は llm-wiki `vault/wiki/knowledge/personal-data-governance.md`、取扱規律は同ページと
 Google スプレッドシート「THE計画／連絡先台帳」の「規律」タブ(2026-09-18制定)。
 
@@ -26,7 +26,7 @@ Google スプレッドシート「THE計画／連絡先台帳」の「規律」�
 |---|---|---|---|
 | `contacts` | 所有者。スキーマ変更・ロール管理 | 未申告なら `本人` | 人間(`docker exec -i contacts-db psql -U contacts -d contacts`) |
 | `contacts_agent` | 台帳3表の読み書きのみ | `Claude` か `Codex` の**申告が必須**。他の値・未申告は書き込み自体が失敗 | Claude Code / Codex(共用) |
-| `contacts_ui` | 台帳3表の読み書きのみ | `画面` 固定 | NocoDB |
+| `contacts_ui` | 台帳3表の読み書きのみ | `画面` 固定 | 画面ツール(今は無い。次に置く画面が使う) |
 
 `change_log` は3ロールとも直接は書けない(所有者権限のトリガーが記録する)。DDL・トリガー無効化は所有者のみ。
 
@@ -42,58 +42,51 @@ COMMIT;
 SQL
 ```
 所有者 `contacts` は使わない(`.env` の `CONTACTS_DB_PASSWORD` はスキーマ変更の時だけ人間が使う)。
-ID は `next_id('o'|'p'|'a')` で採る。詳細画面向けの読み取りは `people_overview`。
+ID は `next_id('o'|'p'|'a')` で採る。人物+所属+活動をまとめて読むなら `people_overview`。
 
 ## 監査
 
 `change_log` に追加・更新(変わった列のみの差分)・削除がトリガーで自動記録される。どの経路で書いても残り、
 操作者は `本人 / Claude / Codex / 画面` のいずれか(`current_actor()` がロールごとに申告できる値を縛る)。
 
-## 画面(NocoDB Community)
+## 画面ツール(今は置いていない)
 
-- `contacts-ui`(`nocodb/nocodb`)。`http://localhost:8090`(WSL/Windows 双方の localhost から)
-- 管理者のメール・パスワードは `.env` の `CONTACTS_UI_ADMIN_EMAIL` / `CONTACTS_UI_ADMIN_PASSWORD`
-- NocoDB 自身のメタ情報は別DB `nocodb_meta` に置き、台帳 `contacts` には独自テーブルを作らせない
-- 台帳へは専用ロール `contacts_ui` で接続(`.env` の `CONTACTS_UI_DB_PASSWORD`)。このロールは
-  `app.actor='画面'` が既定なので、画面からの書き込みは監査ログに「画面」として残る。
-  `change_log` への直接書き込み権限は持たない(トリガーが所有者権限で記録する)
-- `NC_ALLOW_LOCAL_EXTERNAL_DBS=true` は台帳DBが Docker 内部ネットワークにあるために必要
+**NocoDB は 2026-09-20 に撤去した。**理由: 有料プランへ誘導する UI が目につき、日常的に開きたくなる画面ではなかった。
+撤去したもの: `contacts-ui` コンテナとボリューム、メタ情報の DB `nocodb_meta`、セットアップ用スクリプト、`.env` の NocoDB 用項目、
+公開経路 `works.sanei-clover.com`(Cloudflare Tunnel `perfect-crm-contacts`・CNAME・Access アプリ)。台帳 `contacts` には触れていない(組織 60・人物 25 のまま)。
 
-## スマホからの経路(Cloudflare Tunnel + Access・J-011)
+残したもの(次の画面でそのまま使える):
 
-公開ホスト名は `works.sanei-clover.com`。Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。
-Access(メールのワンタイムPIN・許可は本人1件)を通った人だけが NocoDB のログイン画面に到達する。
-前提として `sanei-clover.com` の権威DNSが Cloudflare にあること(2026-09-19 に移設済み。移設手順は llm-wiki J-011、残作業は `backlog/JOBS.md` J-014)。
+- ロール `contacts_ui`(操作者 `画面` 固定)と `.env` の `CONTACTS_UI_DB_PASSWORD`
+- Zero Trust のチーム `sanei-clover.cloudflareaccess.com` と One-time PIN の IdP(アカウント単位の設定)
+- `scripts/cloudflare-tunnel-setup.py` と compose の `tunnel` サービス(下記)
+
+次の画面を選ぶときの条件: 台帳に独自テーブルを作らせない(メタ情報は別 DB へ)、接続は `contacts_ui` ロールで、監査ログに `画面` として残ること。
+
+## 外からの経路(Cloudflare Tunnel + Access。画面を置いたときの手順)
+
+Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。Access(メールのワンタイム PIN)を通った人だけが画面に到達する。
+前提は `sanei-clover.com` の権威 DNS が Cloudflare にあること(2026-09-19 に移設済み)。
+
+1. リポジトリ直下の `.env` に `CLOUDFLARE_API_TOKEN`(権限は `.env.example` の Cloudflare 節。現行トークンの扱いは下記)
+2. `python3 scripts/cloudflare-tunnel-setup.py <公開ホスト名> <許可メール> <compose 内の宛先 例 http://ui:8080> [Access アプリ名]`
+   → Tunnel・経路・CNAME・One-time PIN・Access アプリ・許可ポリシー・直下 `.env` の `CLOUDFLARE_TUNNEL_TOKEN`。再実行しても重複を作らない
+3. `docker compose --env-file ../.env --profile public up -d`(profile を付けないと tunnel は起動しない)
+
+- Access が未有効のアカウントでは、先に `POST /accounts/{id}/access/organizations`(`name` と `auth_domain`)でチームを作る。ダッシュボードの「Enable Access」と同じ
+- 許可するメールを増やすときは Access アプリの許可ポリシーに足す。One-time PIN は**ポリシーで許可されていないアドレスにはコードを送らない**(「送信した」画面は出るが届かない)
+- PIN は 1 回だけ要求し、メールのリンクを別のブラウザ(Gmail アプリ内ブラウザ等)で開かず、コードを同じタブに手入力する。連続要求や別ブラウザで開くと「That account does not have access」や白画面になる
+- サービスを増やすときはパス(`/xxx`)でなくサブドメインで分ける。入口は Access の App Launcher
+- 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone [--apply|--verify]`
 
 **API トークンの権限(受け入れたリスク・2026-09-19)**: `.env` のトークン `sanei-clover.com` は、ゾーン `sanei-clover.com` の全権限とアカウントの全権限
 (トークン発行を含む)を持つ。`.env.example` に書いた最小権限(DNS:Edit + Tunnel + Access)まで絞らないと決めた。理由は絞り込みの手間に対して利用者が
 本人 1 人であること。前提は、トークンを `.env` の外に出さない・漏えいが疑われたら即座に Cloudflare で失効させること。
 
-**2026-09-19 構築済み。**Zero Trust のチームは `sanei-clover.cloudflareaccess.com`(API の `POST /access/organizations` で作成。ダッシュボードの「Enable Access」と同じ)、
-Tunnel 名は `perfect-crm-contacts`、Access アプリは「連絡先台帳(NocoDB)」(許可は本人のメール 1 件・One-time PIN)。再構築は下の手順をそのまま流せば同じ状態に戻る(スクリプトは再実行しても重複を作らない)。
-
-1. リポジトリ直下の `.env` に `CLOUDFLARE_API_TOKEN`(権限は `.env.example` の Cloudflare 節)
-2. 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone [--apply|--verify]`
-3. `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール>` → Tunnel・経路・CNAME・Access・直下 `.env` の `CLOUDFLARE_TUNNEL_TOKEN`
-4. 直下 `.env` に `CONTACTS_UI_PUBLIC_URL=https://works.sanei-clover.com` → `docker compose --env-file ../.env --profile public up -d --force-recreate ui`
-5. 以後の起動は常に `docker compose --env-file ../.env --profile public up -d`(profile を付けないと tunnel は起動しない)
-
-許可するメールを増やすときは Access アプリ「連絡先台帳(NocoDB)」の許可ポリシーに足す(One-time PIN は**ポリシーで許可されていないアドレスにはコードを送らない**。「送信した」画面は出るが届かない)。
-
-サービスを増やすときはパス(`/xxx`)でなくサブドメインで分ける(NocoDB にサブパス設定が無い)。入口は Access の App Launcher。
-
-### 初期化の順序(再構築時)
+## 初期化の順序(再構築時)
 
 1. `docker compose --env-file ../.env up -d db` → スキーマは `db/001-schema.sql` が自動適用
-2. `db/002-roles.sql` を手で流す(`nocodb_meta` の作成と `contacts_agent` / `contacts_ui` ロール。パスワードは `-v` で渡す)
-3. `docker compose --env-file ../.env up -d ui` → `python3 scripts/nocodb-setup.py`(管理者+ベース)→ `python3 scripts/nocodb-attach-source.py`(外部ソース+カンバン3種)
-4. **ソース追加のジョブが完了するまでコンテナを再起動しない**(途中で止めると列の取込が欠ける。欠けたら `meta-diff` を再実行)
-
-### 用意したビュー
-
-- organizations: grid / カンバン「組織 状態別」(status)/ カンバン「組織 種別」(kind)
-- people: grid / カンバン「人物 状態別」(status)
-- 人物の詳細を開くと、所属組織(リンク)と活動(逆リンク)が同じ画面に出る(外部キーを双方向のリンク列として自動認識)
+2. `db/002-roles.sql` を手で流す(`contacts_agent` / `contacts_ui` ロール。パスワードは `-v` で渡す)
 
 ## 初期投入データ(`seed/`、Git 管理外)
 

@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""works.<ゾーン> を Cloudflare Tunnel + Access で公開する準備を API で行う(再実行しても重複しない)。
+"""compose 内のサービスを Cloudflare Tunnel + Access で公開する準備を API で行う(再実行しても重複しない)。
 
-  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com ntaku0815@gmail.com
+  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール> http://ui:8080 [Access アプリ名]
 
-やること: Tunnel 作成 → 経路(hostname → http://ui:8080)→ CNAME(プロキシ ON)→ Access の One-time PIN →
-Access アプリ(セッション 24h・App Launcher に表示)→ 許可ポリシー(メール1件)→ .env に CLOUDFLARE_TUNNEL_TOKEN を追記。
-そのあと `docker compose --profile public up -d` で cloudflared が起動する。
+やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ Access の One-time PIN →
+Access アプリ(セッション 24h・App Launcher に表示)→ 許可ポリシー(メール1件)→ 直下の .env に CLOUDFLARE_TUNNEL_TOKEN を追記。
+そのあと `docker compose --env-file ../.env --profile public up -d` で cloudflared が起動する。
 """
 import sys, importlib.util, pathlib
 
 spec = importlib.util.spec_from_file_location('cf', pathlib.Path(__file__).with_name('cloudflare-api.py'))
 cf = importlib.util.module_from_spec(spec); spec.loader.exec_module(cf)
 
-host, email = sys.argv[1], sys.argv[2]
+if len(sys.argv) < 4:
+    sys.exit(__doc__)
+host, email, origin = sys.argv[1], sys.argv[2], sys.argv[3]
+app_name = sys.argv[4] if len(sys.argv) > 4 else '連絡先台帳'
 zone_name = '.'.join(host.split('.')[1:])
 z = cf.zone(zone_name); zid, aid = z['id'], z['account']['id']
 name = 'perfect-crm-contacts'
@@ -22,10 +25,10 @@ tunnels = [t for t in cf.api(f'/accounts/{aid}/cfd_tunnel', params={'name': name
 tun = tunnels[0] if tunnels else cf.api(f'/accounts/{aid}/cfd_tunnel', {'name': name, 'config_src': 'cloudflare'})
 print('Tunnel:', tun['id'], '(既存)' if tunnels else '(作成)')
 
-# 2. 経路: ホスト名 → compose 内の NocoDB。それ以外は 404
+# 2. 経路: ホスト名 → compose 内の宛先。それ以外は 404
 cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/configurations',
-       {'config': {'ingress': [{'hostname': host, 'service': 'http://ui:8080'}, {'service': 'http_status:404'}]}}, method='PUT')
-print('経路:', host, '-> http://ui:8080')
+       {'config': {'ingress': [{'hostname': host, 'service': origin}, {'service': 'http_status:404'}]}}, method='PUT')
+print('経路:', host, '->', origin)
 
 # 3. CNAME(プロキシ ON。Tunnel 宛てはプロキシ必須)
 target = f'{tun["id"]}.cfargotunnel.com'
@@ -48,7 +51,7 @@ if not any(i['type'] == 'onetimepin' for i in idps):
 # 5. Access アプリ + 許可ポリシー(メール1件)。他は既定で拒否
 apps = [a for a in cf.api(f'/accounts/{aid}/access/apps') if a.get('domain') == host]
 app = apps[0] if apps else cf.api(f'/accounts/{aid}/access/apps', {
-    'name': '連絡先台帳(NocoDB)', 'domain': host, 'type': 'self_hosted', 'session_duration': '24h',
+    'name': app_name, 'domain': host, 'type': 'self_hosted', 'session_duration': '24h',
     'app_launcher_visible': True, 'allowed_idps': [], 'auto_redirect_to_identity': False})
 print('Access アプリ:', app['id'], '(既存)' if apps else '(作成)')
 pols = cf.api(f'/accounts/{aid}/access/apps/{app["id"]}/policies')

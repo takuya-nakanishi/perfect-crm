@@ -17,7 +17,7 @@ docs で「未決」「要確認」と書かれた箇所は `backlog/QUESTIONS.m
 
 設計のみ。コードはまだ無い。次の一手は `backlog/JOBS.md` の先頭。
 
-**`contacts/` は例外で、今日から稼働している現行の連絡先台帳**(PostgreSQL 正本 + NocoDB 画面。本体ができるまでの
+**`contacts/` は例外で、今日から稼働している現行の連絡先台帳**(PostgreSQL 正本。画面ツールは今は無い。本体ができるまでの
 実運用の器であり、本体の初期データの移行元)。本体の設計とは独立した Compose スタックで、運用手順は `docs/contacts.md`。
 
 ### `contacts/` の台帳へ書くとき(Claude Code / Codex 共通・省略不可)
