@@ -9,6 +9,7 @@ Surface(WSL2)の Docker 上で動く PostgreSQL 16 が**唯一の正本**。画�
 Google スプレッドシート「THE計画／連絡先台帳」の「規律」タブ(2026-09-18制定)。
 
 **コマンドはすべて `contacts/` で実行する**(`docker-compose.yml` がそこにある。以下のパスは `contacts/` 起点)。
+`.env` はリポジトリ直下に 1 つだけなので、**compose は必ず `docker compose --env-file ../.env …`** と打つ(付け忘れると `CONTACTS_DB_PASSWORD` 未設定で止まる)。スクリプトは直下の `.env` を自分で読む。
 
 ## 構成
 
@@ -16,7 +17,7 @@ Google スプレッドシート「THE計画／連絡先台帳」の「規律」�
 - `db/001-schema.sql` — テーブル(organizations / people / activities / change_log)、enum、監査トリガー、採番関数 `next_id()`、ビュー `people_overview`
 - `db/002-roles.sql` — ロール(権限の高さで3段)
 - `seed/` — 初期投入 CSV の置き場(**個人情報のため Git 管理外**。下記「初期投入データ」)
-- `.env` — 各パスワード(git 管理外)。実体はリポジトリ直下の `.env` で、`contacts/.env` はそこへのシンボリックリンク。項目はリポジトリ直下の `.env.example`
+- `../.env` — 各パスワード(git 管理外。リポジトリ直下に 1 つ。`contacts/` には置かない)。項目はリポジトリ直下の `.env.example`
 - `../docs/dns/` — sanei-clover.com の DNS 棚卸し(Cloudflare 移設時の突き合わせ用)
 
 ## ロール(権限の高さで分ける。使う人ごとには分けない)
@@ -32,7 +33,7 @@ Google スプレッドシート「THE計画／連絡先台帳」の「規律」�
 ## AI からの読み書き(Claude Code / Codex 共通)
 
 ```
-PW=$(grep '^CONTACTS_AGENT_DB_PASSWORD=' .env | cut -d= -f2)
+PW=$(grep '^CONTACTS_AGENT_DB_PASSWORD=' ../.env | cut -d= -f2)
 docker exec -i -e PGPASSWORD="$PW" contacts-db psql -h 127.0.0.1 -U contacts_agent -d contacts <<'SQL'
 BEGIN;
 SET LOCAL app.actor = 'Claude';   -- Codex は 'Codex'
@@ -69,17 +70,19 @@ Tunnel 名は `perfect-crm-contacts`、Access アプリは「連絡先台帳(Noc
 
 1. リポジトリ直下の `.env` に `CLOUDFLARE_API_TOKEN`(権限は `.env.example` の Cloudflare 節)
 2. 移設の突き合わせ: `python3 scripts/cloudflare-dns-check.py ../docs/dns/sanei-clover.com-2026-09-19.zone [--apply|--verify]`
-3. `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール>` → Tunnel・経路・CNAME・Access・`.env` の `CLOUDFLARE_TUNNEL_TOKEN`
-4. `.env` に `CONTACTS_UI_PUBLIC_URL=https://works.sanei-clover.com` → `docker compose --profile public up -d --force-recreate ui`
-5. 以後の起動は常に `docker compose --profile public up -d`(profile を付けないと tunnel は起動しない)
+3. `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール>` → Tunnel・経路・CNAME・Access・直下 `.env` の `CLOUDFLARE_TUNNEL_TOKEN`
+4. 直下 `.env` に `CONTACTS_UI_PUBLIC_URL=https://works.sanei-clover.com` → `docker compose --env-file ../.env --profile public up -d --force-recreate ui`
+5. 以後の起動は常に `docker compose --env-file ../.env --profile public up -d`(profile を付けないと tunnel は起動しない)
+
+許可するメールを増やすときは Access アプリ「連絡先台帳(NocoDB)」の許可ポリシーに足す(One-time PIN は**ポリシーで許可されていないアドレスにはコードを送らない**。「送信した」画面は出るが届かない)。
 
 サービスを増やすときはパス(`/xxx`)でなくサブドメインで分ける(NocoDB にサブパス設定が無い)。入口は Access の App Launcher。
 
 ### 初期化の順序(再構築時)
 
-1. `docker compose up -d db` → スキーマは `db/001-schema.sql` が自動適用
+1. `docker compose --env-file ../.env up -d db` → スキーマは `db/001-schema.sql` が自動適用
 2. `db/002-roles.sql` を手で流す(`nocodb_meta` の作成と `contacts_agent` / `contacts_ui` ロール。パスワードは `-v` で渡す)
-3. `docker compose up -d ui` → `python3 scripts/nocodb-setup.py`(管理者+ベース)→ `python3 scripts/nocodb-attach-source.py`(外部ソース+カンバン3種)
+3. `docker compose --env-file ../.env up -d ui` → `python3 scripts/nocodb-setup.py`(管理者+ベース)→ `python3 scripts/nocodb-attach-source.py`(外部ソース+カンバン3種)
 4. **ソース追加のジョブが完了するまでコンテナを再起動しない**(途中で止めると列の取込が欠ける。欠けたら `meta-diff` を再実行)
 
 ### 用意したビュー

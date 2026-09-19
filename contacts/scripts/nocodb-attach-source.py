@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """既存ベースに台帳DB(contacts)を画面用ロール contacts_ui で外部ソースとして追加し、テーブル取込を待つ。送信先は 127.0.0.1 のみ。"""
 import json, time, urllib.request, pathlib
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]   # リポジトリ直下(.env はそこに 1 つ)
 env = dict(l.split('=',1) for l in (ROOT/'.env').read_text().splitlines() if '=' in l and not l.startswith('#'))
 S = json.load(open('/tmp/nc-session.json')); NC='http://127.0.0.1:8090'; T=S['token']; B=S['base_id']
 def api(path, body=None, method=None):

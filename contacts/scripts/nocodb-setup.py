@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """NocoDB(127.0.0.1:8090 固定)に管理者を作り、台帳DB(contacts)を外部データソースとして接続する。
-資格情報は同ディレクトリの .env から読む。送信先は localhost のみ。"""
+資格情報はリポジトリ直下の .env から読む。送信先は localhost のみ。"""
 import json, os, secrets, sys, urllib.request, pathlib
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]   # リポジトリ直下(.env はそこに 1 つ)
 ENV = ROOT / '.env'
 NC = 'http://127.0.0.1:8090'
 

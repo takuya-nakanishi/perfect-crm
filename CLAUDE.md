@@ -22,7 +22,8 @@ docs で「未決」「要確認」と書かれた箇所は `backlog/QUESTIONS.m
 
 ### `contacts/` の台帳へ書くとき(Claude Code / Codex 共通・省略不可)
 
-コマンドは `contacts/` で実行する(`docker-compose.yml` がそこにある。`.env` は直下に 1 つで、`contacts/.env` はそのリンク)。
+コマンドは `contacts/` で実行する(`docker-compose.yml` がそこにある)。`.env` はリポジトリ直下に 1 つだけなので、
+compose は必ず `docker compose --env-file ../.env …` と打つ(付け忘れると `CONTACTS_DB_PASSWORD` 未設定で止まる)。
 
 1. 接続はロール **`contacts_agent`**(`.env` の `CONTACTS_AGENT_DB_PASSWORD`)。所有者 `contacts` は使わない
 2. 書き込みトランザクションの先頭で **`SET LOCAL app.actor = 'Claude'`**(Codex は `'Codex'`)を宣言する。

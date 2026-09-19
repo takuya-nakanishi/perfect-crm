@@ -39,7 +39,8 @@ services:
       - contacts-ui-data:/usr/app/data
 
   # スマホからの経路。Surface から Cloudflare へ外向きに張るだけで、受信ポートは開けない。
-  # `docker compose --profile public up -d` で起動(トークンは scripts/cloudflare-tunnel-setup.py が .env へ書く)
+  # `docker compose --env-file ../.env --profile public up -d` で起動(トークンは scripts/cloudflare-tunnel-setup.py が直下の .env へ書く)。
+  # .env はリポジトリ直下に 1 つだけ置くので、このディレクトリで compose を使うときは常に --env-file ../.env を付ける
   tunnel:
     image: cloudflare/cloudflared:latest
     container_name: contacts-tunnel

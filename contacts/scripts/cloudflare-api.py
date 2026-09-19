@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cloudflare API の共通部品。.env の CLOUDFLARE_API_TOKEN を読む。送信先は api.cloudflare.com のみ。
+"""Cloudflare API の共通部品。リポジトリ直下の .env の CLOUDFLARE_API_TOKEN を読む。送信先は api.cloudflare.com のみ。
 他スクリプトから import して使う(単体実行はトークン検証)。"""
 import json, pathlib, sys, urllib.request, urllib.parse
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]   # リポジトリ直下(.env はそこに 1 つ)
 ENV = dict(l.split('=', 1) for l in (ROOT / '.env').read_text().splitlines() if '=' in l and not l.startswith('#'))
 API = 'https://api.cloudflare.com/client/v4'
 TOKEN = ENV.get('CLOUDFLARE_API_TOKEN', '').strip()
