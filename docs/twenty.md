@@ -67,6 +67,10 @@ Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。�
 **接続先は `https://works.sanei-clover.com/mcp`**(同じ Surface からなら `http://localhost:3000/mcp` でも同じ)。API キー無しのリクエストは Twenty が 401 で返す。
 クライアントが `Unexpected content type: text/html` で失敗するときは、前段に Access が戻っていて `/mcp` が素通しになっていない。
 
+0. **claude.ai のカスタムコネクタ(登録済み)**: claude.ai の Settings → Connectors に `https://works.sanei-clover.com/mcp` を登録してある(認証は OAuth)。
+   Claude Code には `claude.ai twenty` として現れ、ツールは `mcp__claude_ai_twenty__*` の 7 つ(`get_tool_catalog` → `learn_tools` → `execute_tool` の順に使う。
+   企業・担当者の CRUD、カスタム項目の新設、ビュー、ワークフローまで `execute_tool` 経由で届く)。**登録より前から開いているセッションにはツールが載らない**ので、セッションを開き直す。
+   以下の 1〜3 は、コネクタを使わず API キーで直接つなぐ場合(Codex はこちら)
 1. API キーを作る(人の作業): Twenty の Settings → API & Webhooks → + Create key。**表示は一度きり**。`.env` の `TWENTY_API_KEY` に控える。
    権限を絞るなら Settings → Members → Roles → Assignment タブでキーにロールを割り当てる
 2. Claude Code(全リポジトリから使うので user スコープ。キーは `~/.claude.json` に入り、このリポジトリには入らない):
@@ -90,6 +94,22 @@ Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。�
 
 **このリポジトリは公開なので、API キーを `.mcp.json`(project スコープ)に書かない。**
 
+## 台帳からの移行(2026-09-20 実施)
+
+撤去した連絡先台帳の企業 60 件・担当者 25 件を Twenty に入れた。退避したダンプを一時コンテナに復元 → MCP へ渡す引数をスクリプトで決定的に生成 →
+別プロセスの Claude Code(`claude -p`)に「引数を一字一句そのまま `execute_tool` へ渡す」だけをさせ、結果は Twenty の DB を旧 ID で元データと突き合わせた
+(件数・重複・欠け・項目ごとの不一致がすべて 0)。スクリプトは `~/backups/perfect-crm/migration/`(`build.py` / `run-phase.sh` / `verify.py`。個人情報を扱うので Git に入れない)。
+
+| 台帳 | Twenty |
+|---|---|
+| 企業の名称 / 担当者の氏名 | Company `name` / Person `name.lastName`(25 件とも姓名の区切りが無いので分けていない。`firstName` は空) |
+| 旧 ID(`o0001` / `p0001`) | カスタム項目 `legacyId`(台帳ID)。突き合わせと再実行時の重複確認に使う |
+| 略称・Drive フォルダ(パス文字列)・wiki 名・メモ | カスタム項目 `shortName` / `driveFolder` / `wikiEntity` / `memo`(テキスト。メモは最長 49 字なので Note にしなかった) |
+| フリガナ・役職・所属企業 | `nameKana`(カスタム)/ `jobTitle` / `company` |
+| 種別・状態 | カスタム項目(選択)`orgKind` / `orgStatus` / `personKind` / `personStatus`。値は英大文字(`CLIENT` `ACTIVE` …)、表示は日本語 |
+
+メール・電話・接触日・活動は元データが全件空だったので移していない。Twenty が最初から入れているサンプル(企業 5・人物 5)は残してある。
+
 ## バックアップと更新
 
 ```
@@ -106,4 +126,4 @@ Twenty を入れる前に、このリポジトリで動かしていた連絡先�
 
 退避(リポジトリ外・個人情報を含むので Git に入れない): `~/backups/perfect-crm/` に `contacts-2026-09-20.dump`(`pg_dump -Fc`)、
 `contacts-roles-2026-09-20.sql`(ロール)、`contacts-env-2026-09-20.env`(当時のパスワード)。元データの原本は Drive `マイドライブ/連絡先台帳-移行元-2026-09/`。
-Twenty への取り込みはまだしていない。
+Twenty へは 2026-09-20 に取り込み済み(下記「台帳からの移行」)。
