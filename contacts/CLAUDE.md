@@ -1,7 +1,7 @@
 # contacts/ — エージェント規約(Claude Code / Codex 共通)
 
 このディレクトリは現行の連絡先台帳の**正本**(PostgreSQL)を置く(perfect-crm 本体ができるまでの実運用の器)。
-コマンドはすべて `perfect-crm/contacts/` で実行する(`.env` と `docker-compose.yml` がここにある)。
+コマンドはすべて `perfect-crm/contacts/` で実行する(`docker-compose.yml` がここにある。`.env` はリポジトリ直下に 1 つで、ここの `.env` はそこへのシンボリックリンク)。
 
 ## 台帳へ書くとき(省略不可)
 

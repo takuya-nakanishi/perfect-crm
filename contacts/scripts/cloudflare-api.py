@@ -49,5 +49,8 @@ def add_env(key, value):
 
 
 if __name__ == '__main__':
-    v = api('/user/tokens/verify')
-    print('トークン:', v['status'], v.get('id', '')[:8] + '…')
+    # アカウント所有トークン(cfat…)は /user/tokens/verify を通れないので、ゾーンからアカウント ID を引いて検証する
+    zones = api('/zones')
+    aid = zones[0]['account']['id'] if zones else None
+    v = api(f'/accounts/{aid}/tokens/verify') if aid else api('/user/tokens/verify')
+    print('トークン:', v['status'], v.get('id', '')[:8] + '…', '| ゾーン:', [z['name'] for z in zones])

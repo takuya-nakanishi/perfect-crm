@@ -8,7 +8,8 @@
 
 - [ ] **J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)
   - 由来: 2026-09-19 に sanei-clover.com の権威 DNS をお名前.com から Cloudflare へ移した際の点検。先頭に置く理由: `autodiscover` が今壊れており、J-008 の Tunnel 公開もこのトークンが前提
-  - 人の作業: Cloudflare で Custom トークンを発行(`contacts/.env.example` の権限: Zone DNS:Edit を sanei-clover.com に限定 + Account Tunnel:Edit + Access: Apps and Policies:Edit)し、`contacts/.env` の `CLOUDFLARE_API_TOKEN` に入れる。`sc-products/.env` の既存トークンはアカウント所有(`cfat…`)で DNS 権限が無く、saneiclover.com も含めて DNS を読めない(実測)
+  - 人の作業: Cloudflare で Custom トークンを発行(権限は `.env.example` の Cloudflare 節)し、リポジトリ直下 `.env` の `CLOUDFLARE_API_TOKEN` に入れる。`sc-products/.env` の既存トークンはアカウント所有(`cfat…`)で DNS 権限が無く、saneiclover.com も含めて DNS を読めない(実測)
+  - [2026-09-19] トークン `sanei-clover.com` を `.env` に設置してもらったが、ポリシーがアカウント権限のみ(Zone 権限なし)で DNS を読めない。Edit で Zone DNS:Edit(sanei-clover.com 限定)を足し、余分なアカウント権限を外す。あわせて Zero Trust で Access を有効化(API が `not_enabled`)
   - トークン後の作業: ①`autodiscover` CNAME をプロキシ OFF(今はプロキシ経由で 521。Outlook の自動設定が失敗する)②apex A と `www` CNAME(GitHub Pages 宛て)をプロキシ OFF(`dns-cloudflare` skill の規約。プロキシ ON のままだと GitHub 側の証明書更新が止まる。現在の期限 2026-10-26)③`_dmarc` TXT を追加(旧ゾーンにも無かった)。MX・SPF・DKIM・検証 TXT は移行で欠けていない
 - [ ] **J-001** 採用候補のライブラリが非推奨でないことを一次資料で確認する(2026-09-19)
   - 由来: Q-009、共通ルール「非推奨ツールを使わない」

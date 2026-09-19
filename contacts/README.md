@@ -13,7 +13,7 @@ Google スプレッドシート「THE計画／連絡先台帳」の「規律」�
 - `db/001-schema.sql` — テーブル(organizations / people / activities / change_log)、enum、監査トリガー、採番関数 `next_id()`、ビュー `people_overview`
 - `seed/` — 初期投入 CSV の置き場(**個人情報のため Git 管理外**。原本は Drive。`seed/README.md`)
 - `db/002-roles.sql` — ロール(権限の高さで3段)
-- `.env` — 各パスワード(git 管理外)。項目は `.env.example`
+- `.env` — 各パスワード(git 管理外)。実体はリポジトリ直下の `.env` で、ここにあるのはそこへのシンボリックリンク。項目はリポジトリ直下の `.env.example`
 
 ## ロール(権限の高さで分ける。使う人ごとには分けない)
 
