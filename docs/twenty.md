@@ -37,13 +37,13 @@ Surface から Cloudflare へ外向きに張るだけで受信ポートは開け
 作り直すとき(再実行しても重複を作らない):
 
 ```
-python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <メール,メール> http://server:3000 'Twenty CRM'
+python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <メール,メール> http://server:3000 'Twenty CRM' /mcp
 docker compose --profile public up -d
 ```
 
 - One-time PIN は**ポリシーで許可されていないアドレスにはコードを送らない**(「送信した」画面は出るが届かない)。許可を増やすときは Access アプリのポリシーに足す
 - PIN は 1 回だけ要求し、メールのリンクを別のブラウザ(Gmail アプリ内ブラウザ等)で開かず、コードを同じタブに手入力する。連続要求や別ブラウザで開くと「That account does not have access」や白画面になる
-- **Access の内側にあるので、外部からの API・Webhook・Google / Microsoft の OAuth コールバックは届かない。**使うときは該当パスだけを対象にした Bypass の Access アプリを足す(未実施)
+- **Access の内側にあるので、外部からの API・Webhook・Google / Microsoft の OAuth コールバックは届かない。**使うときは該当パスを Bypass に足す(今は `/mcp` だけ)
 - API トークンの権限は最小より広い(受け入れたリスク・2026-09-19)。ゾーン `sanei-clover.com` の全権限とアカウントの全権限を持つ。前提は `.env` の外に出さない・漏えいが疑われたら即失効
 
 ## 初回のセットアップ(画面で行う)
@@ -56,27 +56,29 @@ docker compose --profile public up -d
 Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。公式ドキュメントに接続手順の頁は無いので、v2.41.0 の実装を読んで確認した:
 認証は `Authorization: Bearer <API キー>` か OAuth(`/.well-known/oauth-protected-resource`、動的クライアント登録あり)。ここでは API キーを使う。
 
-**接続先は `http://localhost:3000/mcp`。**Claude Code も Codex も Twenty と同じ Surface(WSL)で動くので、Access の内側にある公開 URL を通す必要が無い
-(エージェントは PIN の画面を通れない)。別の機械から繋ぐ必要が出たら、`/mcp` だけを対象にした Bypass の Access アプリを足す(Twenty 側の API キー認証は残る)。
+**接続先は `https://works.sanei-clover.com/mcp`**(同じ Surface からなら `http://localhost:3000/mcp` でも同じ)。
+エージェントは Access の PIN 画面を通れないので、**`/mcp` だけを対象にした Bypass の Access アプリ**「Twenty CRM /mcp (bypass)」を置いてある(2026-09-20)。
+このパスはインターネットから誰でも届くが、Twenty 自身が API キー無しのリクエストを 401 で返す。他のパス(`/`・`/graphql`・`/rest/*`)は Access の内側のまま。
+Bypass を忘れると、クライアントには Access のログイン画面が返り `Unexpected content type: text/html` で失敗する。
 
 1. API キーを作る(人の作業): Twenty の Settings → API & Webhooks → + Create key。**表示は一度きり**。`.env` の `TWENTY_API_KEY` に控える。
    権限を絞るなら Settings → Members → Roles → Assignment タブでキーにロールを割り当てる
 2. Claude Code(全リポジトリから使うので user スコープ。キーは `~/.claude.json` に入り、このリポジトリには入らない):
    ```
-   claude mcp add --transport http --scope user twenty http://localhost:3000/mcp --header "Authorization: Bearer <API キー>"
+   claude mcp add --transport http --scope user twenty https://works.sanei-clover.com/mcp --header "Authorization: Bearer <API キー>"
    claude mcp list    # ✔ Connected を確認
    ```
 3. Codex(`~/.codex/config.toml`。キーは環境変数から渡す):
    ```
    [mcp_servers.twenty]
-   url = "http://localhost:3000/mcp"
+   url = "https://works.sanei-clover.com/mcp"
    bearer_token_env_var = "TWENTY_API_KEY"
    ```
    `TWENTY_API_KEY` は Codex を起動するシェルに export しておく(例: `~/.bashrc` から、権限 600 の秘密ファイルを読む)
 4. 疎通の確認(キーを `.env` に入れたあと):
    ```
    KEY=$(grep '^TWENTY_API_KEY=' .env | cut -d= -f2-)
-   curl -s -X POST http://localhost:3000/mcp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+   curl -s -X POST https://works.sanei-clover.com/mcp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
      -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
    ```
 

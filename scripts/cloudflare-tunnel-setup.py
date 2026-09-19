@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """compose 内のサービスを Cloudflare Tunnel + Access で公開する準備を API で行う(再実行しても重複しない)。
 
-  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール> http://server:3000 [Access アプリ名]
+  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール,メール> http://server:3000 [Access アプリ名] [素通しパス 例 /mcp]
 
 やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ Access の One-time PIN →
 Access アプリ(セッション 24h・App Launcher に表示)→ 許可ポリシー(メール1件)→ 直下の .env に CLOUDFLARE_TUNNEL_TOKEN を追記。
@@ -62,6 +62,18 @@ if not any(p['decision'] == 'allow' for p in pols):
     print('ポリシー: allow', emails)
 else:
     print('ポリシー既存:', [(p['name'], p['decision']) for p in pols])
+
+# 5b. Access を素通しにするパス(第 5 引数、カンマ区切り。例 /mcp)。エージェントは PIN の画面を通れないので、
+#     アプリ自身の認証(API キー等)で守られているパスだけを指定する
+for path in [p.strip() for p in (sys.argv[5] if len(sys.argv) > 5 else '').split(',') if p.strip()]:
+    dom = host + path
+    ex = [a for a in cf.api(f'/accounts/{aid}/access/apps') if a.get('domain') == dom]
+    bp = ex[0] if ex else cf.api(f'/accounts/{aid}/access/apps', {
+        'name': f'{app_name} {path} (bypass)', 'domain': dom, 'type': 'self_hosted', 'session_duration': '24h', 'app_launcher_visible': False})
+    if not any(p['decision'] == 'bypass' for p in cf.api(f'/accounts/{aid}/access/apps/{bp["id"]}/policies')):
+        cf.api(f'/accounts/{aid}/access/apps/{bp["id"]}/policies',
+               {'name': 'アプリ自身の認証で守る', 'decision': 'bypass', 'precedence': 1, 'include': [{'everyone': {}}]})
+    print('Bypass:', dom, '(既存)' if ex else '(作成)')
 
 # 6. cloudflared 用トークンを .env へ(既存なら触らない)
 tok = cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/token')
