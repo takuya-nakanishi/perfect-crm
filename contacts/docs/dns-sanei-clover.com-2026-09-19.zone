@@ -1,0 +1,16 @@
+# sanei-clover.com DNS 棚卸し(2026-09-19、権威NS 01.dnsv.jp に直接照会。Cloudflare 移設前の突き合わせ用)
+# レジストラ: GMO(お名前.com)/ 期限 2026-11-30 / AXFR 拒否のため既知名の総当たり
+
+sanei-clover.com.	3600	IN	A	185.199.108.153
+sanei-clover.com.	3600	IN	A	185.199.109.153
+sanei-clover.com.	3600	IN	A	185.199.110.153
+sanei-clover.com.	3600	IN	A	185.199.111.153
+sanei-clover.com.	3600	IN	MX	1 saneiclover-com01c.mail.protection.outlook.com.
+sanei-clover.com.	3600	IN	MX	0 smtp.google.com.
+sanei-clover.com.	3600	IN	TXT	"v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all"
+sanei-clover.com.	3600	IN	TXT	"MS=ms39791533"
+sanei-clover.com.	3600	IN	TXT	"google-site-verification=R-WLraww8l1HvigGW_6tyqQHfbVCvEsQd9PaXG7S61U"
+sanei-clover.com.	3600	IN	TXT	"notion-domain-verification=jQU07ooFLVFGS2GasFTov8VqFh7mxxkyfJ8nJdwzQqf"
+www.sanei-clover.com.	3600	IN	CNAME	sanei-clover.github.io.
+autodiscover.sanei-clover.com. 3600 IN	CNAME	autodiscover.outlook.com.
+google._domainkey.sanei-clover.com. 3600 IN TXT	"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzBSBEPKChwHD+rcgI1fRzpgKrPYWfVKuZLY7ek7sJ8X4IkE2Y4TynwB0ZHtyhdF/jj5PnQop1gTGy3nw0k3ZSIMM76Q1v+oeCsMgEOUOs3JtJrdbcEqHagNuLmWO3EWXAQKQoS81ZqGWAREYtf9YyV7mRJaLIuYVbd/uM0pAgc1JPncF3RPmk2PcEZ5zBeYTf" "NIZw680u9/6EswH5um57kbSpeX1XvEsEM9aCfZ+2OPyF0prOQRQkZeoE4CGpJiPocWe7lXi8u+Kp6J2jspoIlyrQu09Wl37JxtUTiM8oiTataF+i6Ex/3nM64m/BoKE0fkQmCg9jcxisojzvU5bXwIDAQAB"

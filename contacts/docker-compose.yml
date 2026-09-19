@@ -1,0 +1,53 @@
+name: contacts
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: contacts-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contacts
+      POSTGRES_PASSWORD: ${CONTACTS_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: contacts
+      TZ: Asia/Tokyo
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - contacts-db-data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contacts -d contacts"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ui:
+    image: nocodb/nocodb:latest
+    container_name: contacts-ui
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NC_DB: "pg://db:5432?u=contacts&p=${CONTACTS_DB_PASSWORD}&d=nocodb_meta"
+      NC_PUBLIC_URL: ${CONTACTS_UI_PUBLIC_URL:-http://localhost:8090}   # 公開後は .env で https://works.sanei-clover.com
+      NC_DISABLE_TELE: "true"
+      NC_ALLOW_LOCAL_EXTERNAL_DBS: "true"   # 台帳DBはDocker内部ネットワーク(db)にあるため
+      TZ: Asia/Tokyo
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - contacts-ui-data:/usr/app/data
+
+  # スマホからの経路。Surface から Cloudflare へ外向きに張るだけで、受信ポートは開けない。
+  # `docker compose --profile public up -d` で起動(トークンは scripts/cloudflare-tunnel-setup.py が .env へ書く)
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: contacts-tunnel
+    restart: unless-stopped
+    profiles: ["public"]
+    depends_on:
+      - ui
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}   # 空なら起動に失敗する(profile 外では評価されない)
+volumes:
+  contacts-db-data:
+  contacts-ui-data:
