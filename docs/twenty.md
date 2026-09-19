@@ -51,6 +51,37 @@ docker compose --profile public up -d
 1. `https://works.sanei-clover.com` → Access の PIN → 「Continue with Email」で最初のユーザーとワークスペースを作る(**最初に作った人が管理者**)
 2. 2 人目以降はワークスペースからの招待で入れる(マルチワークスペースは無効のまま)
 
+## エージェントからの MCP 接続(Claude Code / Codex)
+
+Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。公式ドキュメントに接続手順の頁は無いので、v2.41.0 の実装を読んで確認した:
+認証は `Authorization: Bearer <API キー>` か OAuth(`/.well-known/oauth-protected-resource`、動的クライアント登録あり)。ここでは API キーを使う。
+
+**接続先は `http://localhost:3000/mcp`。**Claude Code も Codex も Twenty と同じ Surface(WSL)で動くので、Access の内側にある公開 URL を通す必要が無い
+(エージェントは PIN の画面を通れない)。別の機械から繋ぐ必要が出たら、`/mcp` だけを対象にした Bypass の Access アプリを足す(Twenty 側の API キー認証は残る)。
+
+1. API キーを作る(人の作業): Twenty の Settings → API & Webhooks → + Create key。**表示は一度きり**。`.env` の `TWENTY_API_KEY` に控える。
+   権限を絞るなら Settings → Members → Roles → Assignment タブでキーにロールを割り当てる
+2. Claude Code(全リポジトリから使うので user スコープ。キーは `~/.claude.json` に入り、このリポジトリには入らない):
+   ```
+   claude mcp add --transport http --scope user twenty http://localhost:3000/mcp --header "Authorization: Bearer <API キー>"
+   claude mcp list    # ✔ Connected を確認
+   ```
+3. Codex(`~/.codex/config.toml`。キーは環境変数から渡す):
+   ```
+   [mcp_servers.twenty]
+   url = "http://localhost:3000/mcp"
+   bearer_token_env_var = "TWENTY_API_KEY"
+   ```
+   `TWENTY_API_KEY` は Codex を起動するシェルに export しておく(例: `~/.bashrc` から、権限 600 の秘密ファイルを読む)
+4. 疎通の確認(キーを `.env` に入れたあと):
+   ```
+   KEY=$(grep '^TWENTY_API_KEY=' .env | cut -d= -f2-)
+   curl -s -X POST http://localhost:3000/mcp -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+   ```
+
+**このリポジトリは公開なので、API キーを `.mcp.json`(project スコープ)に書かない。**
+
 ## バックアップと更新
 
 ```
