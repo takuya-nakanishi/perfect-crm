@@ -6,6 +6,10 @@
 
 上から順にやる。ループはこの節の**先頭1件だけ**を取る。
 
+- [ ] **J-014** sanei-clover.com を操作できる Cloudflare API トークンを発行し、移行で壊れた DNS レコードを直す(2026-09-19)
+  - 由来: 2026-09-19 に sanei-clover.com の権威 DNS をお名前.com から Cloudflare へ移した際の点検。先頭に置く理由: `autodiscover` が今壊れており、J-008 の Tunnel 公開もこのトークンが前提
+  - 人の作業: Cloudflare で Custom トークンを発行(`contacts/.env.example` の権限: Zone DNS:Edit を sanei-clover.com に限定 + Account Tunnel:Edit + Access: Apps and Policies:Edit)し、`contacts/.env` の `CLOUDFLARE_API_TOKEN` に入れる。`sc-products/.env` の既存トークンはアカウント所有(`cfat…`)で DNS 権限が無く、saneiclover.com も含めて DNS を読めない(実測)
+  - トークン後の作業: ①`autodiscover` CNAME をプロキシ OFF(今はプロキシ経由で 521。Outlook の自動設定が失敗する)②apex A と `www` CNAME(GitHub Pages 宛て)をプロキシ OFF(`dns-cloudflare` skill の規約。プロキシ ON のままだと GitHub 側の証明書更新が止まる。現在の期限 2026-10-26)③`_dmarc` TXT を追加(旧ゾーンにも無かった)。MX・SPF・DKIM・検証 TXT は移行で欠けていない
 - [ ] **J-001** 採用候補のライブラリが非推奨でないことを一次資料で確認する(2026-09-19)
   - 由来: Q-009、共通ルール「非推奨ツールを使わない」
   - 対象: Better Auth(organization / apiKey / MCP プラグイン、追加 scope 取得 = Q-023)、Hono と `@hono/mcp`、`@modelcontextprotocol/sdk`(Streamable HTTP)、Drizzle + drizzle-kit、TanStack Router/Query/Table、pg-boss。Q-022(gmail.send の区分)・Q-024(claude.ai コネクタの認証)もここで見る。結果は docs/design/03 §9 に書き、候補を確定に変える
@@ -18,10 +22,14 @@
 - [ ] **J-005** コマンド層と MCP サーバ v1 を作る(2026-09-19)
   - 由来: Q-002・Q-003・Q-004。docs/design/03 §3・§5。重複ガードと監査ログを全コマンドに。MCP は API トークン認証
 - [ ] **J-006** Notion・Google コンタクト・Todoist からの移行スクリプトを書く(2026-09-19)
-  - 由来: Q-012・Q-014。docs/design/05 §2。Q-019・Q-020・Q-021 の答え待ち。切替(旧サービスの凍結)は含めない → J-010
+  - 由来: Q-012・Q-014・Q-019。移行元の実構造と設計との差分は docs/design/05 §2・§3。切替(旧サービスの凍結)は含めない → J-010
+  - 企業マスタが Notion に無いので、`企業名` テキストから名寄せして企業レコードを起こす。判断がつかないものは保留リストへ
+  - 「活動の記録」の `振り返り／NEXT` は phone_number 型(Notion 側の設定ミス)。テキストとして読む
+  - 案件とプロジェクトは分ける(Q-028)。`5-受注` 以降は 2 レコードに割る
+  - 活動は CRM に関連するものだけ取り込む(Q-029)。日記・健康・読書のタグだけのページは移行しない
   - 画面より先に置く理由: MCP があれば UI 完成前に Claude Code から試せる
 - [ ] **J-007** 画面 v1 を作る(2026-09-19)
-  - 由来: Q-003・Q-016。一覧・詳細(タイムライン)・今日のタスク。サイドバーにエンティティ。全画面レスポンシブ。参照は Attio / Linear
+  - 由来: Q-003・Q-016・Q-018。docs/design/06。一覧・詳細(タイムライン)・カンバン(軸を選べる)・今日・インボックス。キーボード操作(Q / J / K / E / C ほか)を最初から入れる。全画面レスポンシブ。参照は Attio / Linear
 - [ ] **J-010** Notion・Todoist から perfect-crm へ切り替える(2026-09-19)
   - 由来: Q-012・Q-014。docs/design/05 §3 の切替条件(Q-018 の必須機能が動く、J-007 で閲覧できる、件数照合、切戻し手順)を満たしてから。J-006 と分けた理由: 必須機能が未決のまま旧サービスを凍結すると日常のタスク操作が途切れる
 - [ ] **J-008** Cloudflare Tunnel で自社インスタンスを公開し、バックアップと復元を回す(2026-09-19)
@@ -30,6 +38,10 @@
   - 由来: Q-013。docs/design/04 §8。トリガー: 2 人目の利用開始が決まったら。候補は社内の小型機か VPS、同じ Compose
 - [ ] **J-011** Google ドライブ連携 v2 — ドキュメント / スプレッドシート / スライドの作成、既存ファイルのリンク、共有(2026-09-19)
   - 由来: Q-008・Q-025。docs/design/01 D-08、03 §7。v1(J-001〜J-010)の後
+- [ ] **J-013** Web 会議の自動連携(2026-09-19)
+  - 由来: Q-029・Q-030。会議から活動を起こす。Q-030 の結論待ち。v1 の後
+- [ ] **J-012** Google コンタクト同期(CRM → Google の一方向)を実装する(2026-09-19)
+  - 由来: Q-020。組織設定で ON にしたときだけ `contacts` scope を要求する。既定 OFF。v1 の後
 
 ## 完了
 
