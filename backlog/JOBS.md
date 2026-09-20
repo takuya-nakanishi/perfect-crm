@@ -1,12 +1,31 @@
 # JOBS
 
 作業を1枚で持つ。書式の正本は `questions-jobs` skill。問いは QUESTIONS.md へ。
+**今動いているもの**: Twenty v2.41.0(`docker-compose.yml`・`https://twenty.sanei-clover.com`)。構成と運用の正は `docs/twenty.md`。本体(`docs/design/`)は設計のみでコードは無い。
 
 ## 次の一手
 
 上から順にやる。ループはこの節の**先頭1件だけ**を取る。
 
-**[2026-09-20] Q-032(本体を作り続けるか Twenty に寄せるか)が決まるまで、この節は着手しない。**
+- [ ] **J-015** エージェント(Claude Code / Codex)から Twenty へ繋ぎ直す(2026-09-21)
+  - 由来: 2026-09-20 に公開ホスト名を `works` → `twenty.sanei-clover.com` へ変えた(J-014 の後、コミット `49a62d5`)。**claude.ai のカスタムコネクタ「Twenty SC」は旧 URL を持ったままなので今は繋がらない**
+  - 人の作業: ①claude.ai の Settings → Connectors でコネクタの URL を `https://twenty.sanei-clover.com/mcp` に直す(または削除して登録し直す。OAuth の再認証が 1 回入る)②Twenty の Settings → API & Webhooks で API キーを作り、直下 `.env` の `TWENTY_API_KEY` に入れる(表示は一度きり)
+  - そのあと: `claude mcp list` で `✔ Connected` を確認、Codex は `~/.codex/config.toml` に `[mcp_servers.twenty]`(手順は docs/twenty.md「エージェントからの MCP 接続」)、`tools/list` で疎通確認
+  - 注意: コネクタ名を変えるとツール名の接頭辞(`mcp__claude_ai_<名前>__*`)も変わる。`claude -p --allowedTools` に書く名前は `claude mcp list` で確かめる
+- [ ] **J-016** Twenty の拡張性調査(カスタムオブジェクト・カスタム項目・トリガー・独自画面・Apex 相当)を仕上げる(2026-09-21)
+  - 由来: Q-032 の判断材料。2026-09-20 に `/deep-research` で走らせたが、**セッションの中断で 2 回止まり、統合(Synthesize)の直前で終わっている**
+  - 途中結果は残っている: `~/.claude/projects/-home-takuya-workspace-perfect-crm/3b8a9456-.../subagents/workflows/wf_579ff615-a85/journal.jsonl`(150 件の agent 結果。検索・取得した主張・3 票の検証結果と根拠が入っている)。**`resumeFromRunId` は同一セッション内でしか効かない**ので、新セッションでは ①journal を読んで統合だけやる か ②`/deep-research` を同じ問いで流し直す
+  - 結論は `docs/twenty.md` に節を作って書き、Q-032 に要点とポインタを残す。ライセンス(AGPL / エンタープライズ版)が「他社にも売る」に与える制約も含める
+- [ ] **J-017** Twenty に残っている初期サンプルの後始末を決める(2026-09-21)
+  - 由来: 2026-09-20 に企業 5・人物 5・商談 6 を削除したが(`f9dcf42`)、**ワークフロー 2 本が ACTIVE のまま**残っている(`Quick Lead` / `Create company when adding a new person`)。条件が合えば勝手にレコードを作る
+  - 他に残っているもの: ダッシュボード `My First Dashboard`、タイトルの空のタスク 1 件。削除済みの 16 件はソフトデリート(ゴミ箱)で、完全に消すなら画面の Permanently destroy
+  - 決めること: ワークフローを止める / 消す / 学習用に残す。消すなら MCP の `delete_one_*` を ID 指定で
+- [ ] **J-018** スマホ実機で Twenty の PWA を確認する(2026-09-21)
+  - 由来: Q-033 の①。`https://twenty.sanei-clover.com` をホーム画面に追加し、全画面(standalone)で開くか・日常のタスク操作が実用に足るかを見る
+  - 調査済み: 公式ネイティブアプリは無い。`/manifest.json`(`display: standalone`)はあるが Service Worker が無いのでオフラインと Web Push は不可。iOS は `apple-mobile-web-app-capable` が無いので standalone になるか要確認(Q-033)
+  - 結果を Q-033 に追記し、足りなければ TwentyMobile(サードパーティ)か自作の判断へ
+
+**[2026-09-20] ここから下(J-001〜J-013)は Q-032(本体を作り続けるか Twenty に寄せるか)が決まるまで着手しない。**
 
 - [ ] **J-001** 採用候補のライブラリが非推奨でないことを一次資料で確認する(2026-09-19)
   - 由来: Q-009、共通ルール「非推奨ツールを使わない」
