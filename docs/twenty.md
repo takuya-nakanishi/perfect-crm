@@ -68,7 +68,9 @@ Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。�
 クライアントが `Unexpected content type: text/html` で失敗するときは、前段に Access が戻っていて `/mcp` が素通しになっていない。
 
 0. **claude.ai のカスタムコネクタ(登録済み)**: claude.ai の Settings → Connectors に `https://works.sanei-clover.com/mcp` を登録してある(認証は OAuth)。
-   Claude Code には `claude.ai twenty` として現れ、ツールは `mcp__claude_ai_twenty__*` の 7 つ(`get_tool_catalog` → `learn_tools` → `execute_tool` の順に使う。
+   Claude Code にはコネクタ名がそのまま出る(2026-09-20 時点は `claude.ai Twenty SC`)。**コネクタを改名するとツール名の接頭辞も変わる**ので、
+   `claude -p --allowedTools` に書く名前は `claude mcp list` で確かめてから使う(古い名前のままだと権限が当たらず実行されない)。
+   ツールは `mcp__claude_ai_<コネクタ名>__*` の 7 つ(`get_tool_catalog` → `learn_tools` → `execute_tool` の順に使う。
    企業・担当者の CRUD、カスタム項目の新設、ビュー、ワークフローまで `execute_tool` 経由で届く)。**登録より前から開いているセッションにはツールが載らない**ので、セッションを開き直す。
    以下の 1〜3 は、コネクタを使わず API キーで直接つなぐ場合(Codex はこちら)
 1. API キーを作る(人の作業): Twenty の Settings → API & Webhooks → + Create key。**表示は一度きり**。`.env` の `TWENTY_API_KEY` に控える。
@@ -108,7 +110,15 @@ Twenty は MCP サーバを内蔵している(`POST /mcp`、Streamable HTTP)。�
 | フリガナ・役職・所属企業 | `nameKana`(カスタム)/ `jobTitle` / `company` |
 | 種別・状態 | カスタム項目(選択)`orgKind` / `orgStatus` / `personKind` / `personStatus`。値は英大文字(`CLIENT` `ACTIVE` …)、表示は日本語 |
 
-メール・電話・接触日・活動は元データが全件空だったので移していない。Twenty が最初から入れているサンプル(企業 5・人物 5)は残してある。
+メール・電話・接触日・活動は元データが全件空だったので移していない。
+
+Twenty が初期に入れるサンプル(`SYSTEM` が作る企業 5・人物 5・商談 6)は同日に削除した。MCP には物理削除が無いのでソフトデリート(ゴミ箱行き)で、
+DB には `deletedAt` 付きで残る。完全に消すなら画面のレコードメニュー → Permanently destroy。削除前のダンプは `~/backups/perfect-crm/twenty-2026-09-20-before-seed-delete.dump`。
+**まだ残しているサンプル**: ワークフロー 2 本(`Quick Lead` / `Create company when adding a new person`。どちらも ACTIVE で、条件が合えば勝手にレコードを作る)、
+ダッシュボード `My First Dashboard`、タイトルの空のタスク 1 件。
+
+削除系ツールの注意: `delete_many_*` は ID ではなく `filter` を取り、その filter に `id` は無い(人物なら `legacyId`、企業なら `name` 等で絞る)。
+ID 指定で確実に消すなら `delete_one_*` を 1 件ずつ呼ぶ。`destroy_*`(物理削除)は MCP に無い。
 
 ## バックアップと更新
 
