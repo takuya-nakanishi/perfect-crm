@@ -30,7 +30,11 @@ DOCKER_CONFIG=/tmp/docker-nocreds docker pull twentycrm/twenty:<タグ>
 
 ## 外からの経路(Cloudflare Tunnel。Access は置かない)
 
-Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。作成済みのもの: Tunnel `perfect-crm-works`(名前は構築時のまま)、CNAME `twenty.sanei-clover.com`(プロキシ ON。Tunnel 宛ては必須)。
+Surface から Cloudflare へ外向きに張るだけで受信ポートは開けない。作成済みのもの: Tunnel `sanei-clover-lan`、CNAME `twenty.sanei-clover.com`(プロキシ ON。Tunnel 宛ては必須)。
+
+**Tunnel はこの LAN で 1 本に集約する**(2026-09-20 に `perfect-crm-works` → `sanei-clover-lan` へ改名。ID とトークンは変わらないので CNAME も `.env` もそのまま)。
+サービスを増やすときは同じ Tunnel にホスト名を足す。`scripts/cloudflare-tunnel-setup.py` は**既存の経路を残したまま**指定ホストの行だけ差し替える(最後は catch-all の 404)。
+他のサービスを載せる場合、cloudflared は宛先に compose のネットワーク越しで届く必要がある点に注意(別スタックなら共有ネットワークかホストの IP 経由にする)。
 
 **公開ホスト名は 2026-09-20 に `works.sanei-clover.com` から `twenty.sanei-clover.com` へ変えた。**works の CNAME は削除済み(名前解決しない)。
 変えるときに触るのは 3 つ: ①Tunnel の ingress(スクリプト再実行)②CNAME(新規作成 + 旧削除)③`.env` の `TWENTY_SERVER_URL` と `server` / `worker` の作り直し。

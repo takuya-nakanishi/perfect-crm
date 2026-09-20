@@ -15,20 +15,25 @@ cf = importlib.util.module_from_spec(spec); spec.loader.exec_module(cf)
 if len(sys.argv) < 4:
     sys.exit(__doc__)
 host, email, origin = sys.argv[1], sys.argv[2], sys.argv[3]
-app_name = sys.argv[4] if len(sys.argv) > 4 else 'works'
+app_name = sys.argv[4] if len(sys.argv) > 4 else host.split('.')[0]
 zone_name = '.'.join(host.split('.')[1:])
 z = cf.zone(zone_name); zid, aid = z['id'], z['account']['id']
-name = 'perfect-crm-works'
+name = 'sanei-clover-lan'   # この LAN から外へ出す経路をこの 1 本に集約する(サービスごとに Tunnel を増やさない)
 
 # 1. Tunnel(名前で検索し、無ければ作る)
 tunnels = [t for t in cf.api(f'/accounts/{aid}/cfd_tunnel', params={'name': name, 'is_deleted': 'false'})]
 tun = tunnels[0] if tunnels else cf.api(f'/accounts/{aid}/cfd_tunnel', {'name': name, 'config_src': 'cloudflare'})
 print('Tunnel:', tun['id'], '(既存)' if tunnels else '(作成)')
 
-# 2. 経路: ホスト名 → compose 内の宛先。それ以外は 404
-cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/configurations',
-       {'config': {'ingress': [{'hostname': host, 'service': origin}, {'service': 'http_status:404'}]}}, method='PUT')
-print('経路:', host, '->', origin)
+# 2. 経路: ホスト名 → compose 内の宛先。**既存の経路は消さない**(1 本の Tunnel を複数サービスで共有するため)。
+#    同じホスト名の行だけ差し替え、最後は必ず catch-all の 404 にする
+cur = cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/configurations')
+ingress = [r for r in ((cur.get('config') or {}).get('ingress') or []) if r.get('hostname') and r['hostname'] != host]
+ingress.append({'hostname': host, 'service': origin})
+ingress.sort(key=lambda r: r['hostname'])
+ingress.append({'service': 'http_status:404'})
+cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/configurations', {'config': {'ingress': ingress}}, method='PUT')
+print('経路:', ', '.join(f'{r["hostname"]} -> {r["service"]}' for r in ingress if r.get('hostname')))
 
 # 3. CNAME(プロキシ ON。Tunnel 宛てはプロキシ必須)
 target = f'{tun["id"]}.cfargotunnel.com'
