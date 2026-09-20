@@ -4,7 +4,15 @@
 
 ## 未解決
 
-- [ ] **Q-032** 自前の perfect-crm 本体を作り続けるか、Twenty に寄せるか(2026-09-20)
+- [ ] **Q-033** スマホから Twenty をどう使うか — PWA・サードパーティ製ネイティブアプリ・自作のどれを採るか(2026-09-20)
+  - 由来: Q-032(Twenty に寄せるかの判断)の材料。日常のタスク操作をスマホで回せないと Todoist の代わりにならない(docs/design/01 D-03「スマホでも用途を制限しない」)
+  - [2026-09-20] 一次調査(稼働中の v2.41.0 の実物): **公式のネイティブアプリは無い。PWA としてホーム画面に入れられる。**`/manifest.json` は実体があり `display: standalone`・`name: Twenty`・`theme_color: #000000`、アイコンは windows11 / ios / android 一式(`/images/icons/ios/192.png` は 200 image/png)。HTML に `<link rel="manifest">` と `<link rel="apple-touch-icon">` あり
+  - [2026-09-20] 一次調査: **Service Worker は無い**(`/sw.js` は SPA の index.html が返るだけ)。つまりオフライン動作と Web Push は無い。通知が要るなら別の経路が要る
+  - [2026-09-20] 一次調査: 公式ドキュメント(docs.twenty.com 全文)と twenty.com/product に、ネイティブアプリ・モバイルアプリの記述は無い(モーダルの挙動説明に "native iOS behavior" と出るだけ)
+  - [2026-09-20] 二次情報(検索結果。**未検証**): 公式はレスポンシブ Web が当面のモバイル手段で、ネイティブはロードマップ上という説明。GitHub に Discussion #6273「Mobile app」がある(リポジトリのスコープ制限により本文は未確認)。サードパーティ製 **TwentyMobile**(Luciosoft / Andrea Luciano、AGPL-3.0)が App Store(id6760371090)と Google Play(com.luciosoft.pocketcrm)にあり、セルフホストの実例に API トークンで直結、連絡先・企業・タスク・メモ・名刺 OCR・音声入力・タスク通知を持つという
+  - 決めること: ①まず実機(Android Chrome / iOS Safari)で `https://works.sanei-clover.com` をホーム画面に追加し、全画面で開くか・日常のタスク操作が実用に足るかを見る(iOS は `apple-mobile-web-app-capable` が無いので standalone になるか要確認)②足りなければ TwentyMobile を試すか(外部の実行ファイルに API トークンを渡す是非、AGPL ソースの確認)③自作するか
+  - 自作は可能: 認証は API キーの Bearer、経路は REST(`/rest/*`)・GraphQL(`/graphql`)・MCP(`/mcp`)が揃っており、カスタム項目もメタデータ API で作れることをこのセッションで実測済み(docs/twenty.md)。Cloudflare Access を外したのでスマホから直接届く。作るなら薄い読み取り+タスク操作の PWA か、Twenty の「Apps」でフロントを足す案(Apps でモバイル画面を作れるかは未調査)
+  - 通知(タスクの期限・新規リード)は v1 で設計しないと決めた(Q-027)が、スマホ利用では効いてくる。必要になったらそこで併せて決める
   - 由来: 2026-09-20 に Twenty v2.41.0 をセルフホストして試用開始(docs/twenty.md)。連絡先台帳 `contacts/` と NocoDB は撤去した
   - 見ること: ①企業↔担当者の多対多・案件・タスク(Todoist の代わり)が日常で足りるか ②エージェントからの入力経路(Twenty の API / MCP)が D-02・D-04 の要件(重複候補・監査)を満たすか ③「他社にも売る」との両立(ライセンスは一次資料で確認)④日本語(フリガナ・法人番号)をカスタム項目で持てるか
   - 決まるまで J-001 以降(本体の実装)は着手しない。寄せるなら docs/design/ を畳み、続けるなら Twenty を撤去する
