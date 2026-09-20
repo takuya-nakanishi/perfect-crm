@@ -1,5 +1,8 @@
 # Twenty のセルフホスト(試用・2026-09-20 構築)
 
+**2026-09-21 に撤去した。**コンテナ・ボリューム・イメージ、Cloudflare の Tunnel `sanei-clover-lan` と CNAME `twenty.sanei-clover.com` を削除済み。
+以下は稼働していた当時の手順と記録(`.env` の `TWENTY_*` も消してある)。Zero Trust のチームと One-time PIN の IdP、Cloudflare の API トークンは残っている。
+
 オープンソース CRM の [Twenty](https://twenty.com) を Surface(WSL2)の Docker で動かし、`https://twenty.sanei-clover.com` で開けるようにしてある(Cloudflare Tunnel 経由。Access は置いていない)。
 **試用**の位置づけ。自前で作る perfect-crm 本体(`docs/design/`)を続けるか Twenty に寄せるかは未決(`backlog/QUESTIONS.md` Q-032)。
 
