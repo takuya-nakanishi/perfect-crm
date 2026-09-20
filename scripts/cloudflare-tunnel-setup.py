@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """compose 内のサービスを Cloudflare Tunnel + Access で公開する準備を API で行う(再実行しても重複しない)。
 
-  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com <許可メール,メール か - > http://server:3000 [Access アプリ名] [素通しパス 例 /mcp]
+  python3 scripts/cloudflare-tunnel-setup.py twenty.sanei-clover.com <許可メール,メール か - > http://server:3000 [Access アプリ名] [素通しパス 例 /mcp]
 
 やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ Access の One-time PIN →
 Access アプリ(セッション 24h・App Launcher に表示)→ 許可ポリシー(メール1件)→ 直下の .env に CLOUDFLARE_TUNNEL_TOKEN を追記。

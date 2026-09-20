@@ -5,7 +5,7 @@ CRM(顧客)+ SFA(案件)+ プロジェクト/タスク管理。自社で使い�
 | 場所 | 中身 |
 |---|---|
 | `docs/design/` | 自前で作る本体の設計(01 要件と決定 → 02 データモデル → 03 アーキテクチャ → 04 配置 → 05 移行 → 06 UI) |
-| `docs/twenty.md` | 試用中の Twenty(オープンソース CRM)のセルフホスト手順。`https://works.sanei-clover.com` |
+| `docs/twenty.md` | 試用中の Twenty(オープンソース CRM)のセルフホスト手順。`https://twenty.sanei-clover.com` |
 | `docker-compose.yml` | Twenty のスタック(server / worker / db / redis / tunnel) |
 | `scripts/` | Cloudflare の DNS 突き合わせと Tunnel + Access の構築 |
 | `docs/dns/` | ドメインの DNS 棚卸し(Cloudflare 移設時の突き合わせ用) |
