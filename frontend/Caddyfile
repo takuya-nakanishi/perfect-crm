@@ -1,0 +1,46 @@
+# 画面(ビルド済みの静的ファイル)を配る。TLS と認証は手前の Cloudflare(Tunnel + Access)が持つので、ここは平文の HTTP だけ。
+# バックエンドができたら、下の /api/* をそこへ流す(画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ)。
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		# 画面は自分のオリジンの資源だけで完結する。style の 'unsafe-inline' は React の style 属性のため
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# 稼働確認(compose の healthcheck が叩く)
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# handle /api/* {
+	# 	reverse_proxy api:8000
+	# }
+
+	# ファイル名にハッシュが入るので、変わらないものとして長く持たせる。無いファイルは 404(index.html で誤魔化さない)
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# それ以外は SPA。どのパスでも index.html を返し、毎回更新を確かめさせる。
+	# no-transform は Cloudflare に HTML を書き換えさせないため。これが無いと、ゾーンの Web Analytics(自動挿入)が
+	# ビーコンのスクリプトを差し込み、上の CSP に止められてコンソールにエラーが出続ける。ホスト単位で除外するルールは
+	# 無料プランでは作れない(maxRulesError)ので、配る側で断る
+	handle {
+		header Cache-Control "no-cache, no-transform"
+		try_files {path} /index.html
+		file_server
+	}
+}

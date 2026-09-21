@@ -1,0 +1,544 @@
+[
+  {
+    "id": "0a000000-0000-7000-8000-000000000101",
+    "object": "accounts",
+    "type": "list",
+    "name": "一覧",
+    "position": 1,
+    "config": {
+      "columns": [
+        { "field": "name", "width": 280 },
+        { "field": "type", "width": 120 },
+        { "field": "industry", "width": 140 },
+        { "field": "prefecture", "width": 110 },
+        { "field": "phone", "width": 150 },
+        { "field": "owner_id", "width": 130 },
+        { "field": "updated_at", "width": 140 }
+      ],
+      "sort": [{ "field": "name_kana", "dir": "asc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000102",
+    "object": "accounts",
+    "type": "kanban",
+    "name": "カンバン",
+    "position": 2,
+    "config": {
+      "group_by": "type",
+      "card_fields": ["industry", "prefecture", "owner_id"],
+      "sort": [{ "field": "name_kana", "dir": "asc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000103",
+    "object": "accounts",
+    "type": "report",
+    "name": "レポート",
+    "position": 3,
+    "config": {
+      "widgets": [
+        { "id": "total", "type": "stat", "title": "取引先", "measure": { "op": "count" }, "format": "number" },
+        {
+          "id": "customers",
+          "type": "stat",
+          "title": "顧客",
+          "measure": { "op": "count" },
+          "filter": { "field": "type", "op": "eq", "value": "customer" },
+          "format": "number"
+        },
+        {
+          "id": "prospects",
+          "type": "stat",
+          "title": "見込み客",
+          "measure": { "op": "count" },
+          "filter": { "field": "type", "op": "eq", "value": "prospect" },
+          "format": "number"
+        },
+        {
+          "id": "new_this_month",
+          "type": "stat",
+          "title": "今月の新規",
+          "measure": { "op": "count" },
+          "filter": { "field": "created_at", "op": "gte", "value": "$start_of_month" },
+          "format": "number"
+        },
+        {
+          "id": "by_industry",
+          "type": "bar",
+          "title": "業種ごとの取引先数",
+          "group_by": { "field": "industry" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single",
+          "order": "value_desc"
+        },
+        {
+          "id": "by_type",
+          "type": "bar",
+          "title": "種別ごとの取引先数",
+          "group_by": { "field": "type" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single"
+        },
+        {
+          "id": "by_prefecture",
+          "type": "bar",
+          "title": "都道府県ごとの取引先数",
+          "description": "多い順に 8 件",
+          "group_by": { "field": "prefecture" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single",
+          "limit": 8,
+          "wide": true
+        }
+      ]
+    }
+  },
+
+  {
+    "id": "0a000000-0000-7000-8000-000000000201",
+    "object": "contacts",
+    "type": "list",
+    "name": "一覧",
+    "position": 1,
+    "config": {
+      "columns": [
+        { "field": "name", "width": 200 },
+        { "field": "account_id", "width": 240 },
+        { "field": "title", "width": 150 },
+        { "field": "role", "width": 110 },
+        { "field": "status", "width": 130 },
+        { "field": "email", "width": 250 },
+        { "field": "last_contacted_on", "width": 130 }
+      ],
+      "sort": [{ "field": "name_kana", "dir": "asc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000202",
+    "object": "contacts",
+    "type": "kanban",
+    "name": "カンバン",
+    "position": 2,
+    "config": {
+      "group_by": "status",
+      "card_fields": ["account_id", "title", "last_contacted_on"],
+      "sort": [{ "field": "last_contacted_on", "dir": "desc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000203",
+    "object": "contacts",
+    "type": "report",
+    "name": "レポート",
+    "position": 3,
+    "config": {
+      "widgets": [
+        { "id": "total", "type": "stat", "title": "取引先責任者", "measure": { "op": "count" }, "format": "number" },
+        {
+          "id": "active",
+          "type": "stat",
+          "title": "やり取り中",
+          "measure": { "op": "count" },
+          "filter": { "field": "status", "op": "eq", "value": "active" },
+          "format": "number"
+        },
+        {
+          "id": "decision_makers",
+          "type": "stat",
+          "title": "決裁者",
+          "measure": { "op": "count" },
+          "filter": { "field": "role", "op": "eq", "value": "decision_maker" },
+          "format": "number"
+        },
+        {
+          "id": "stale",
+          "type": "stat",
+          "title": "30 日以上ご無沙汰",
+          "measure": { "op": "count" },
+          "filter": {
+            "and": [
+              { "field": "status", "op": "ne", "value": "dormant" },
+              {
+                "or": [
+                  { "field": "last_contacted_on", "op": "lt", "value": "$today-30" },
+                  { "field": "last_contacted_on", "op": "is_empty" }
+                ]
+              }
+            ]
+          },
+          "format": "number",
+          "tone": "alert"
+        },
+        {
+          "id": "by_status",
+          "type": "bar",
+          "title": "関係ごとの人数",
+          "group_by": { "field": "status" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single"
+        },
+        {
+          "id": "by_role",
+          "type": "bar",
+          "title": "役割ごとの人数",
+          "group_by": { "field": "role" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single",
+          "order": "value_desc"
+        },
+        {
+          "id": "by_account",
+          "type": "bar",
+          "title": "取引先ごとの人数",
+          "description": "多い順に 8 件",
+          "group_by": { "field": "account_id" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single",
+          "limit": 8,
+          "wide": true
+        }
+      ]
+    }
+  },
+
+  {
+    "id": "0a000000-0000-7000-8000-000000000301",
+    "object": "opportunities",
+    "type": "list",
+    "name": "一覧",
+    "position": 1,
+    "config": {
+      "columns": [
+        { "field": "name", "width": 280 },
+        { "field": "account_id", "width": 230 },
+        { "field": "stage", "width": 120 },
+        { "field": "amount", "width": 130 },
+        { "field": "close_date", "width": 130 },
+        { "field": "next_step", "width": 240 },
+        { "field": "owner_id", "width": 130 }
+      ],
+      "sort": [{ "field": "close_date", "dir": "asc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000302",
+    "object": "opportunities",
+    "type": "kanban",
+    "name": "カンバン",
+    "position": 2,
+    "pin": { "label": "商談ボード", "position": 3 },
+    "config": {
+      "group_by": "stage",
+      "card_fields": ["account_id", "amount", "close_date", "owner_id"],
+      "sum_field": "amount",
+      "sort": [{ "field": "close_date", "dir": "asc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000303",
+    "object": "opportunities",
+    "type": "report",
+    "name": "レポート",
+    "position": 3,
+    "config": {
+      "widgets": [
+        {
+          "id": "open_amount",
+          "type": "stat",
+          "title": "進行中の金額",
+          "measure": { "op": "sum", "field": "amount" },
+          "filter": { "field": "stage", "op": "not_in", "value": ["won", "lost"] },
+          "format": "currency",
+          "secondary": { "measure": { "op": "count" }, "format": "number", "suffix": "件" }
+        },
+        {
+          "id": "weighted",
+          "type": "stat",
+          "title": "確度を掛けた見込み",
+          "measure": { "op": "sum", "field": "amount", "weight_field": "probability" },
+          "filter": { "field": "stage", "op": "not_in", "value": ["won", "lost"] },
+          "format": "currency"
+        },
+        {
+          "id": "won_this_month",
+          "type": "stat",
+          "title": "今月の受注",
+          "measure": { "op": "sum", "field": "amount" },
+          "filter": {
+            "and": [
+              { "field": "stage", "op": "eq", "value": "won" },
+              { "field": "close_date", "op": "gte", "value": "$start_of_month" },
+              { "field": "close_date", "op": "lte", "value": "$end_of_month" }
+            ]
+          },
+          "format": "currency",
+          "secondary": { "measure": { "op": "count" }, "format": "number", "suffix": "件" }
+        },
+        {
+          "id": "win_rate",
+          "type": "stat",
+          "title": "受注率",
+          "measure": { "op": "count" },
+          "filter": { "field": "stage", "op": "eq", "value": "won" },
+          "denominator_filter": { "field": "stage", "op": "in", "value": ["won", "lost"] },
+          "format": "percent"
+        },
+        {
+          "id": "by_stage",
+          "type": "bar",
+          "title": "フェーズごとの金額",
+          "description": "進行中の商談",
+          "group_by": { "field": "stage" },
+          "measure": { "op": "sum", "field": "amount" },
+          "filter": { "field": "stage", "op": "not_in", "value": ["won", "lost"] },
+          "format": "currency",
+          "color": "ordinal"
+        },
+        {
+          "id": "by_close_month",
+          "type": "column",
+          "title": "完了予定月ごとの金額",
+          "description": "進行中の商談、今月から 6 か月",
+          "group_by": { "field": "close_date", "bucket": "month", "range": { "from": 0, "to": 5 } },
+          "measure": { "op": "sum", "field": "amount" },
+          "filter": { "field": "stage", "op": "not_in", "value": ["won", "lost"] },
+          "format": "currency",
+          "color": "single"
+        },
+        {
+          "id": "by_account",
+          "type": "bar",
+          "title": "取引先ごとの金額",
+          "description": "進行中の商談、大きい順に 8 件",
+          "group_by": { "field": "account_id" },
+          "measure": { "op": "sum", "field": "amount" },
+          "filter": { "field": "stage", "op": "not_in", "value": ["won", "lost"] },
+          "format": "currency",
+          "color": "single",
+          "limit": 8
+        },
+        {
+          "id": "by_source",
+          "type": "bar",
+          "title": "きっかけごとの件数",
+          "group_by": { "field": "lead_source" },
+          "measure": { "op": "count" },
+          "format": "number",
+          "color": "single",
+          "order": "value_desc"
+        }
+      ]
+    }
+  },
+
+  {
+    "id": "0a000000-0000-7000-8000-000000000401",
+    "object": "tasks",
+    "type": "list",
+    "name": "一覧",
+    "position": 1,
+    "config": {
+      "columns": [
+        { "field": "title", "width": 360 },
+        { "field": "due_date", "width": 130 },
+        { "field": "priority", "width": 90 },
+        { "field": "status", "width": 110 },
+        { "field": "related", "width": 230 },
+        { "field": "contact_id", "width": 150 },
+        { "field": "assignee_id", "width": 120 }
+      ],
+      "filter": { "field": "status", "op": "ne", "value": "done" },
+      "sort": [
+        { "field": "due_date", "dir": "asc" },
+        { "field": "priority", "dir": "asc" }
+      ]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000404",
+    "object": "tasks",
+    "type": "list",
+    "name": "今日",
+    "position": 2,
+    "pin": { "label": "今日", "position": 1, "show_count": true },
+    "config": {
+      "columns": [
+        { "field": "title", "width": 400 },
+        { "field": "due_date", "width": 130 },
+        { "field": "priority", "width": 90 },
+        { "field": "related", "width": 240 },
+        { "field": "contact_id", "width": 160 }
+      ],
+      "filter": {
+        "and": [
+          { "field": "status", "op": "ne", "value": "done" },
+          { "field": "due_date", "op": "lte", "value": "$today" }
+        ]
+      },
+      "sort": [
+        { "field": "priority", "dir": "asc" },
+        { "field": "due_date", "dir": "asc" }
+      ]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000405",
+    "object": "tasks",
+    "type": "list",
+    "name": "今後 7 日間",
+    "position": 3,
+    "pin": { "label": "今後 7 日間", "position": 2, "show_count": true },
+    "config": {
+      "columns": [
+        { "field": "title", "width": 400 },
+        { "field": "due_date", "width": 130 },
+        { "field": "priority", "width": 90 },
+        { "field": "related", "width": 240 },
+        { "field": "contact_id", "width": 160 }
+      ],
+      "filter": {
+        "and": [
+          { "field": "status", "op": "ne", "value": "done" },
+          { "field": "due_date", "op": "gt", "value": "$today" },
+          { "field": "due_date", "op": "lte", "value": "$today+7" }
+        ]
+      },
+      "sort": [
+        { "field": "due_date", "dir": "asc" },
+        { "field": "priority", "dir": "asc" }
+      ]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000402",
+    "object": "tasks",
+    "type": "kanban",
+    "name": "カンバン",
+    "position": 4,
+    "config": {
+      "group_by": "status",
+      "card_fields": ["due_date", "priority", "related"],
+      "hidden_groups": ["done"],
+      "sort": [
+        { "field": "due_date", "dir": "asc" },
+        { "field": "priority", "dir": "asc" }
+      ]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000403",
+    "object": "tasks",
+    "type": "report",
+    "name": "レポート",
+    "position": 5,
+    "config": {
+      "widgets": [
+        {
+          "id": "open",
+          "type": "stat",
+          "title": "未完了",
+          "measure": { "op": "count" },
+          "filter": { "field": "status", "op": "ne", "value": "done" },
+          "format": "number"
+        },
+        {
+          "id": "overdue",
+          "type": "stat",
+          "title": "期限切れ",
+          "measure": { "op": "count" },
+          "filter": {
+            "and": [
+              { "field": "status", "op": "ne", "value": "done" },
+              { "field": "due_date", "op": "lt", "value": "$today" }
+            ]
+          },
+          "format": "number",
+          "tone": "alert"
+        },
+        {
+          "id": "due_today",
+          "type": "stat",
+          "title": "今日が期限",
+          "measure": { "op": "count" },
+          "filter": {
+            "and": [
+              { "field": "status", "op": "ne", "value": "done" },
+              { "field": "due_date", "op": "eq", "value": "$today" }
+            ]
+          },
+          "format": "number"
+        },
+        {
+          "id": "done_7d",
+          "type": "stat",
+          "title": "直近 7 日の完了",
+          "measure": { "op": "count" },
+          "filter": {
+            "and": [
+              { "field": "status", "op": "eq", "value": "done" },
+              { "field": "completed_at", "op": "gte", "value": "$today-6" }
+            ]
+          },
+          "format": "number"
+        },
+        {
+          "id": "done_by_day",
+          "type": "column",
+          "title": "日ごとの完了数",
+          "description": "直近 14 日",
+          "group_by": { "field": "completed_at", "bucket": "day", "range": { "from": -13, "to": 0 } },
+          "measure": { "op": "count" },
+          "filter": { "field": "status", "op": "eq", "value": "done" },
+          "format": "number",
+          "color": "single",
+          "wide": true
+        },
+        {
+          "id": "open_by_priority",
+          "type": "bar",
+          "title": "優先度ごとの未完了",
+          "group_by": { "field": "priority" },
+          "measure": { "op": "count" },
+          "filter": { "field": "status", "op": "ne", "value": "done" },
+          "format": "number",
+          "color": "single"
+        },
+        {
+          "id": "open_by_related",
+          "type": "bar",
+          "title": "関連先ごとの未完了",
+          "description": "どのテーブルのレコードに付いているか",
+          "group_by": { "field": "related_object" },
+          "measure": { "op": "count" },
+          "filter": { "field": "status", "op": "ne", "value": "done" },
+          "format": "number",
+          "color": "single"
+        }
+      ]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000406",
+    "object": "tasks",
+    "type": "list",
+    "name": "完了済み",
+    "position": 6,
+    "config": {
+      "columns": [
+        { "field": "title", "width": 400 },
+        { "field": "completed_at", "width": 150 },
+        { "field": "related", "width": 240 },
+        { "field": "contact_id", "width": 160 }
+      ],
+      "filter": { "field": "status", "op": "eq", "value": "done" },
+      "sort": [{ "field": "completed_at", "dir": "desc" }]
+    }
+  }
+]

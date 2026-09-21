@@ -38,14 +38,23 @@ def dns_records(zone_id):
     return api(f'/zones/{zone_id}/dns_records', params={'per_page': 500})
 
 
-def add_env(key, value):
-    """.env に key が無ければ追記する(既存値は上書きしない)"""
-    if key in ENV:
-        return False
-    with open(ROOT / '.env', 'a') as f:
-        f.write(f'{key}={value}\n')
+def set_env(key, value):
+    """.env の key を value にする。戻り値は 'added' / 'updated' / 'unchanged'。値そのものは表示しない。
+
+    Tunnel を作り直すとトークンも変わるので、古い値が残っていたら置き換える(残すと cloudflared が繋がらない)。
+    """
+    if ENV.get(key, '').strip() == value:
+        return 'unchanged'
+    path = ROOT / '.env'
+    lines = path.read_text().splitlines()
+    hit = [i for i, l in enumerate(lines) if l.startswith(key + '=')]
+    if hit:
+        lines[hit[0]] = f'{key}={value}'
+    else:
+        lines.append(f'{key}={value}')
+    path.write_text('\n'.join(lines) + '\n')
     ENV[key] = value
-    return True
+    return 'updated' if hit else 'added'
 
 
 if __name__ == '__main__':

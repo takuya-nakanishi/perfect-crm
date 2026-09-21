@@ -1,0 +1,83 @@
+# 01 運用の手順
+
+Surface(WSL2 の Ubuntu)で Works を動かすための手順と、実際に踏んだ落とし穴。構成の説明は `docs/design/06-deployment.md`。
+コマンドはリポジトリ直下で打つ。
+
+## 1. 起動・停止・更新
+
+```
+docker compose --profile public up -d --build     # 画面 + Tunnel。ソースを変えたあとの反映もこれ
+docker compose --profile public ps                # 状態(web が healthy であること)
+docker compose --profile public logs -f tunnel    # Tunnel の接続(Registered tunnel connection が 4 本)
+docker compose --profile public down              # 停止(ボリュームは残る)
+docker compose up -d --build                      # Tunnel なしで画面だけ(http://127.0.0.1:8610)
+```
+
+- `--profile public` を付けないと `tunnel` は対象にならない(止めるときも同じ)
+- **`docker compose down -v` は打たない。**`-v` はボリュームを消す。いまは空だが、`db` にデータが入ったら取り返しがつかない
+
+**イメージの取得でつまずく点**: この WSL の `~/.docker/config.json` は `credsStore: desktop.exe`(Docker Desktop の名残)で、公開イメージの pull まで
+`docker-credential-desktop.exe: executable file not found` で失敗する。ECR の認証が入っているので設定は消さず、pull やビルドのときだけ空の設定を使う:
+
+```
+mkdir -p /tmp/docker-nocreds && echo '{}' > /tmp/docker-nocreds/config.json
+DOCKER_CONFIG=/tmp/docker-nocreds docker compose --profile public up -d --build
+```
+
+一度取得したイメージがあれば、ふだんの `up -d` は上の回避なしで通る。
+
+## 2. 画面の開発
+
+```
+cd frontend
+npm install
+npm run dev          # http://127.0.0.1:5173(モックで動く)
+npm run build        # 型検査 + 本番ビルド
+npm run lint         # oxlint
+npm run e2e          # 実ブラウザで主要な操作を確かめる(開発サーバに対して)
+npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtures.mjs)
+```
+
+- E2E の向き先は引数で変えられる: `npm run e2e -- http://127.0.0.1:8610`(コンテナの本番ビルド)
+- E2E のブラウザは Playwright の Chromium(`~/.cache/ms-playwright/chromium-*`)。無ければ `npx playwright install chromium`。別の場所にあるなら `CHROMIUM_PATH`
+- モックのデータはブラウザごと。画面の利用者メニュー「モックのデータを初期化」で戻る。メタデータ(`fixtures/objects.json`・`views.json`)は手で直す
+
+**スクリーンショットで見た目を確かめるとき**: WSL には和文が IPA ゴシックしか無く、本番(Windows の BIZ UDP ゴシック)と見た目が変わる。
+Windows のフォントを一時的に参照させると揃う:
+
+```
+cat > /tmp/fonts.conf <<'EOF'
+<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>/mnt/c/Windows/Fonts</dir><cachedir>/tmp/fontcache</cachedir></fontconfig>
+EOF
+FONTCONFIG_FILE=/tmp/fonts.conf npm run e2e     # Playwright で撮るスクリプトも同じ環境変数で
+```
+
+## 3. Cloudflare(Tunnel・DNS・Access)
+
+```
+python3 scripts/cloudflare-api.py                  # API トークンが生きているか
+python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --app-name Works
+python3 scripts/cloudflare-access-check.py works.sanei-clover.com
+python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'npm --prefix frontend run -s e2e -- https://works.sanei-clover.com'
+```
+
+- `cloudflare-tunnel-setup.py` は何度打っても同じ結果になる。Tunnel を作り直したときは `.env` の `CLOUDFLARE_TUNNEL_TOKEN` を置き換えるので、そのあと `docker compose --profile public up -d` で cloudflared を作り直す
+- `cloudflare-access-check.py` は、未認証が Access へ送られること、認証済みなら画面の HTML まで届くことを外から確かめる。確認のあいだだけサービストークンとポリシーを作り、終わったら消す。`--exec` を付けると、そのトークンを環境変数に入れてコマンドを走らせる(上の例は、公開 URL に対する E2E)
+- トークンの値は、どのスクリプトも表示しない。`.env` の中身を画面やログに出さないこと
+
+## 4. 踏んだ落とし穴
+
+| 症状 | 原因と対処 |
+|---|---|
+| `web` が再起動を繰り返し、ログに `exec /usr/bin/caddy: operation not permitted` | 公式イメージの caddy は `cap_net_bind_service` 付きのバイナリ。`cap_drop: [ALL]` だけだと exec できない。`cap_add: [NET_BIND_SERVICE]` を足してある |
+| 公開 URL でだけ、コンソールに `static.cloudflareinsights.com/beacon.min.js … violates Content Security Policy` | ゾーンの Web Analytics が HTML にビーコンを自動挿入していた。CSP が止めるので実害は無い。配る側で `Cache-Control: no-transform` を返して挿入させないようにした。ホスト単位の除外ルールは無料プランでは作れない(`maxRulesError`) |
+| Access の確認で、同じ要求が 302 と 200 を行き来する | 作りたてのポリシーが Cloudflare の全拠点へ行き渡るまで十数秒かかる。確認スクリプトは 3 回続けて通るまで待つ |
+| 絞り込み欄で、打った文字が逆順に入る(「かささぎ」→「ぎささか」) | 幅 0 から広がるアニメーションの途中で打鍵すると、Chromium がキャレットを先頭に置き続ける。入力欄は、開いた状態でだけ描く(幅を動かさない)。**入力欄の幅をアニメーションさせない** |
+| 数字のゼロに全部斜線が入る | 書体(Atkinson Hyperlegible Next)の仕様で、切り替える機能も無い。Figtree に替えた。**書体を替えるときは、金額の並ぶ画面で確かめる** |
+| PostgreSQL 18 が空のまま起動する | 18 からデータの場所が `/var/lib/postgresql/18/docker`。ボリュームは `/var/lib/postgresql` に付ける |
+
+## 5. 版を上げる
+
+- 画面のライブラリ: `cd frontend && npm outdated` → 上げる → `npm run build && npm run e2e`。`@dnd-kit/react` は 1.0 前なので、E2E のドラッグの項目を必ず見る。上げる前に非推奨になっていないかを確かめる(共通ルール)
+- イメージ: `docker-compose.yml` と `frontend/Dockerfile` のタグを書き換えて `up -d --build`。`latest` は使わない。`db` を上げるときは、先に `pg_dump` を取る

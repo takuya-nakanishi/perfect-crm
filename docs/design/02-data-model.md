@@ -1,118 +1,92 @@
 # 02 データモデル
 
-## 1. 原則
+画面が読む形(メタデータとレコード)と、それを PostgreSQL にどう置くかの案。
+**いま動いているのはモックだけ**で、正は `frontend/src/mocks/fixtures/*.json`(DB の行と同じ形)と `frontend/src/api/types.ts`(型)。
+PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下書き。
 
-1. **全ドメインテーブルに `organization_id`。**RLS のポリシーは `organization_id = current_setting('app.organization_id')::uuid`。アプリ用 DB ロールは BYPASSRLS を持たない。マイグレーションは別ロールで流す
-2. **supertype `records`。**企業・担当者・リード・案件・プロジェクト・タスク・活動の各行は、同じ id で `records` にも 1 行持つ(class table inheritance)。レコード間の関係・監査・外部ファイルはすべて `records` を指すので FK が効く
-3. **`records` への参照は `(organization_id, id)` の複合 FK。**`records` に `UNIQUE (organization_id, id)` を置き、`record_links`・`audit_log`・`external_files`・各エンティティ表の PK など、`records` を指す列はすべて `(organization_id, record_id)` の組で参照する。理由: FK 検査は RLS を迂回するので、id 単独の FK では組織 A の行が組織 B の `records.id` を指せてしまう
-4. **関係は `record_links`。**何と何でも結べる(役割付き)。所属(企業↔担当者)だけは属性(部署・役職・期間)を持つので専用テーブル
-5. **カスタム項目は JSONB。ただし関連型は除く。**定義は `custom_field_definitions`(組織スコープ)、値は各テーブルの `custom`。**関連型の値だけは `custom` に入れず `record_links` に `role = 'custom:<key>'` で持つ**(JSONB の中の id には FK が付かないため)
-6. **書き込みは全部監査される。**`audit_log` に before / after と actor。リビジョン(元に戻す)はここから
-7. ID は UUID v7(時系列順)。時刻は `timestamptz`。削除は `records.deleted_at`(論理削除、既定で非表示)
+## 1. 考え方
 
-## 2. 図
+1. **定義もデータ。**テーブル(`objects`)・項目(`fields`)・ビュー(`views`)の定義をメタデータとして持ち、画面はそれを読んで描く(01 D-01)
+2. **レコードは「DB の 1 行」そのまま。**列名は snake_case、ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)。画面は camelCase に直さない。変換の層を挟まないので、API の返り値をそのまま差し込める
+3. **参照は ID で持ち、表示名はサーバが添える。**レコードには `account_id` だけが入り、一覧の応答に `references`(テーブル名 → ID → 表示名)が付く。SQL でいう JOIN を画面にやらせない
+4. **業務ルールはサーバ側。**「完了にしたら完了日時を入れる」「フェーズを変えたら確度を既定値にする」は、画面ではなくサーバ(いまはモックの `applyRules`)が行う。画面・MCP・AI チャットのどこから書いても同じ結果になる
 
-```mermaid
-erDiagram
-  organizations ||--o{ records : owns
-  records ||--o| companies : is
-  records ||--o| contacts : is
-  records ||--o| leads : is
-  records ||--o| deals : is
-  records ||--o| projects : is
-  records ||--o| tasks : is
-  records ||--o| activities : is
-  records ||--o{ record_links : from
-  records ||--o{ record_links : to
-  companies ||--o{ company_contacts : has
-  contacts ||--o{ company_contacts : has
-  contacts ||--o{ contact_identities : has
-  deal_stages ||--o{ deals : stage
-  projects ||--o{ tasks : contains
-  projects ||--o{ sections : has
-  sections ||--o{ tasks : groups
-  records ||--o{ record_labels : tagged
-  labels ||--o{ record_labels : on
-  records ||--o{ external_files : has
-  records ||--o{ audit_log : logs
-  organizations ||--o{ custom_field_definitions : defines
-```
+## 2. メタデータ
 
-## 3. テーブル
+### objects(テーブルの定義)
 
-共通列(全ドメインテーブル): `id uuid`、`organization_id uuid`、`created_at`、`updated_at`。以下は要点の列だけ。
-
-### テナントと利用者
-
-| テーブル | 要点 |
+| 列 | 意味 |
 |---|---|
-| `organizations` | Better Auth(候補)の organization プラグインが持つ。ドメイン側は id を参照するだけ。組織の設定(`document_sharing` 等)は `organization_settings` に別途持つ |
-| `users` / `members` / `sessions` / `accounts` | 同上。`accounts` に Google のトークンが載る(保存時に暗号化) |
-| `api_tokens` | Better Auth(候補)の apiKey プラグイン。利用者・組織ごと。MCP の認証に使う |
+| `key` | テーブル名。URL(`/o/accounts`)と API のキーにも使う |
+| `label` / `icon` / `color` | 表示名、lucide のアイコン名、色(タグと同じ 9 色) |
+| `name_field` | レコードの表示名に使う列(取引先なら `name`、タスクなら `title`) |
+| `subtitle_field` | 検索結果などで名前に添える列(任意) |
+| `position` / `in_sidebar` | サイドバーの並びと、出すかどうか |
+| `completion` | チェックで完了にできるテーブルの設定(`field`・`done_value`・`open_value`・`completed_at_field`)。いまはタスクだけ |
+| `fields` | 項目の定義(下) |
 
-### supertype
+### fields(項目の定義)
 
-| テーブル | 要点 |
+| 型 | 中身 | 備考 |
+|---|---|---|
+| `text` `textarea` `email` `phone` `url` | 文字 | 検索の対象 |
+| `number` `currency` `percent` | 数値 | `currency` は円。一覧の下に合計が出る |
+| `date` `datetime` | 日付、日時 | `semantic: "deadline"` を付けると締め切りとして扱い、過ぎていてレコードが終わっていなければ注意色 |
+| `select` | 選択肢 | `options` に `value`・`label`・`color`。カンバンの列になる。選択肢に `kind`(open / won / lost / done)と `probability` を持てる |
+| `checkbox` | 真偽 | |
+| `relation` | 別テーブルへの参照(`target`) | 列 = `key`(例 `account_id`) |
+| `polymorphic` | 複数テーブルのどれかへの参照(`targets`) | 列は 2 本(`columns.object` にテーブル名、`columns.id` に ID)。タスクの関連先 |
+| `user` | 利用者への参照 | |
+
+共通の属性: `required`、`readonly`(システムが埋める列)、`in_create_form`(新規作成フォームに出すか)、`placeholder`。
+
+### views(ビューの定義)
+
+1 テーブルに何枚でも持てる。画面のタブはこの並び(`position`)。`pin` を付けるとサイドバーの「お気に入り」に出る(`show_count` で件数付き)。
+
+| 型 | `config` |
 |---|---|
-| `records` | `type`(company / contact / lead / deal / project / task / activity)、`display_name`、`search_text`(名前・カナ・メール等を連結した検索用)、`deleted_at`、`created_by_user_id`。`UNIQUE (organization_id, id)` |
+| `list` | `columns`(列と幅の比)、`filter`、`sort` |
+| `kanban` | `group_by`(選択肢の列)、`card_fields`、`sum_field`(列見出しの合計)、`hidden_groups`(出さない列。完了済みなど)、`filter`、`sort` |
+| `report` | `widgets`。`stat`(数字 1 つ。`denominator_filter` で割合、`secondary` で補足、`tone: alert` で注意色)と、`bar` / `column`(`group_by`・`measure`・`color`・`order`・`limit`・`wide`) |
 
-### 顧客管理
+フィルタ・並び・集計の書き方は 04 §3〜§5。
 
-| テーブル | 要点 |
+## 3. テーブル(初回ローンチの 4 つ + 利用者)
+
+全テーブル共通: `id`(UUID)、`created_at`、`updated_at`。以下は主な列。全量は `fixtures/objects.json`。
+
+| テーブル | 主な列 |
 |---|---|
-| `companies` | `name`、`name_kana`、`name_normalized`(前株/後株・表記ゆれを落とした重複判定キー)、`corporate_number`(法人番号、組織内で一意・任意)、`website`、`phone`、`postal_code`、`prefecture`、`city`、`address1`、`address2`、`industry`、`owner_user_id`、`external_ids jsonb`(会計サービスの取引先 ID 等)、`notes`、`custom jsonb` |
-| `contacts` | `last_name`、`first_name`、`last_name_kana`、`first_name_kana`、`title`、`owner_user_id`、`notes`、`custom`。**主所属の列は持たない**(正本は `company_contacts.is_primary` だけ) |
-| `company_contacts` | `company_id`、`contact_id`、`is_primary`、`department`、`title`、`started_on`、`ended_on`、`note`。**主所属の正本はここ。**部分一意インデックス `(contact_id) WHERE is_primary AND ended_on IS NULL` で在籍中の主所属を 1 行に限る。転職は行を閉じて(`ended_on`)新しい行を足す。所属の変更は `setAffiliation` コマンド経由のみ |
-| `contact_identities` | `contact_id`、`kind`(email / phone / line / whatsapp / other)、`value`、`normalized_value`、`is_primary`。一意なのは `(contact_id, kind, normalized_value)` だけで、**組織内では一意にしない**(代表電話や共有メールを複数の担当者が持つため)。受信した連絡から担当者を引くときは候補を複数返す |
+| **accounts** 取引先 | `name`(必須)、`name_kana`、`type`(見込み客 / 顧客 / パートナー / その他)、`industry`、`phone`、`website`、`prefecture`、`address`、`employees`、`owner_id`、`description` |
+| **contacts** 取引先責任者 | `name`(必須)、`name_kana`、`account_id`(任意。所属の無い人も持てる)、`department`、`title`、`email`、`phone`、`role`(決裁者 / 推進役 / 窓口 / 技術担当 / 経理 / その他)、`status`(関係: 新規 / やり取り中 / 定期フォロー / 休眠)、`last_contacted_on`、`owner_id`、`description` |
+| **opportunities** 商談 | `name`(必須)、`account_id`(必須)、`primary_contact_id`、`stage`(見込み → ヒアリング → 提案 → 見積 → 交渉 → 受注 / 失注。選択肢に確度の既定値と open / won / lost)、`amount`、`probability`、`close_date`(締め切り)、`type`、`lead_source`、`next_step`、`owner_id`、`description` |
+| **tasks** タスク | `title`(必須)、`status`(未着手 / 進行中 / 相手待ち / 完了)、`priority`(P1〜P4。色は Todoist と同じ赤・橙・青・灰)、`due_date`(締め切り)、`related_object` + `related_id`(関連先: 取引先か商談)、`contact_id`、`assignee_id`、`description`、`completed_at` |
+| **users** 利用者 | `name`、`email`、`avatar_color`。サイドバーには出さない |
 
-### 案件管理
+関連リスト(レコードのパネルの下半分)は定義しない。**メタデータから「このテーブルを参照している列」を探して自動で出す**(取引先を開くと、取引先責任者・商談・タスクが並ぶ)。テーブルが増えれば関連リストも増える。
 
-| テーブル | 要点 |
-|---|---|
-| `leads` | `status`(new / working / qualified / converted / disqualified)、`source`、`company_name`、`contact_name`、`email`、`phone`、`message`、`raw jsonb`(受け取った生データ)、`owner_user_id`、`converted_company_id`、`converted_contact_id`、`converted_deal_id`、`converted_at`、`disqualified_reason`、`custom` |
-| `deal_stages` | `name`、`position`、`probability`、`kind`(open / won / lost)。組織ごとに設定。初期値は 初回接触 → 提案 → 見積 → 交渉 → 受注 / 失注 |
-| `deals` | `name`、`company_id`(必須)、`stage_id`、`amount numeric`(JPY 総額。明細は持たない。見積・請求は perfect-crm で持たない、Q-026)、`expected_close_on`、`closed_at`、`lost_reason`、`owner_user_id`、`custom`。担当者(決裁者・窓口)は `record_links` の role で |
+### サーバ側の業務ルール(いまはモックの `applyRules`)
 
-### プロジェクト管理
+- `completion.field` を `done_value` にしたら `completed_at` に現在時刻。戻したら NULL
+- 商談の `stage` を変えたら、`probability` をそのフェーズの既定値にする(同時に確度を指定したときは尊重)
+- 作成時の既定値: 必須の選択肢は先頭の値、`user` 型は自分、タスクの優先度は P4
+- 更新のたびに `updated_at`
 
-| テーブル | 要点 |
-|---|---|
-| `projects` | `name`、`company_id`(任意)、`deal_id`(任意。**案件とは別エンティティ**で、1 案件から複数のプロジェクトを起こせる)、`status`(planned / active / on_hold / done / cancelled)、`starts_on`、`ends_on`、`owner_user_id`、`description`、`custom` |
-| `tasks` | `title`、`description`、`status`(todo / doing / done / cancelled)、`priority`(1〜4)、`starts_on`、`due_on`、`due_at`(任意)、`assignee_user_id`、`project_id`(任意)、`section_id`(任意)、`parent_task_id`(任意)、`recurrence`(RRULE 文字列、任意)、`completed_at`、`position`、`custom`。**`project_id` が NULL のタスクがインボックス**(Todoist の代わりとして素早く放り込む先) |
-| `sections` | `project_id`、`name`、`position`。プロジェクト内の区分。カンバンの列にもなる。`project_id` が NULL のセクションはインボックス内の区分 |
-| `labels` | `name`、`color`、`position`。組織で共有。タスク以外にも付けられるよう `record_labels` で持つ |
-| `record_labels` | `record_id`、`label_id`。`(organization_id, record_id, label_id)` 一意 |
+## 4. PostgreSQL への置き方(下書き。J-022 で確定)
 
-### 横断
+- 4 つのテーブルは**ふつうの実テーブル**にする(列に型と制約が付き、集計が素直な SQL で書ける)。`relation` は FK、`select` は `text` + メタデータでの検証(選択肢を変えるたびに ALTER TYPE しないため、enum 型は使わない)
+- メタデータは `meta_objects` / `meta_fields` / `meta_views` の 3 表。`options` と `config` は JSONB
+- `polymorphic` は FK を張れない。`related_object` は `meta_objects.key` への FK、`related_id` は検証をアプリ側で行い、参照先を消すときに掃除する
+- 検索は `pg_trgm`(規模が小さいので足りる)。ひらがな・カタカナ・全角半角の正規化は、検索用の列を 1 本持って吸収する
+- 削除は論理削除(`deleted_at`)。画面の「元に戻す」はこれを外すだけ(API は `POST …/restore`)
+- ID は UUID v7(時系列順に並ぶ)
 
-| テーブル | 要点 |
-|---|---|
-| `activities` | `kind`(note / call / meeting / email / line / whatsapp / system)。**レコードに関連する活動だけ**(01 D-12)。`meeting` は対面と Web 会議の両方、`direction`(inbound / outbound / none)、`occurred_at`、`subject`、`body`(Markdown)、`source`(ui / mcp / import / system)、`external_ref jsonb`(Gmail の messageId / threadId 等)、`actor_user_id`、`actor_agent`、`custom`。関連先は `record_links` |
-| `record_links` | `from_record_id`、`to_record_id`、`role text NOT NULL DEFAULT 'related'`(決裁者・窓口・`custom:<key>` 等)。`UNIQUE (organization_id, from_record_id, to_record_id, role)`。role を NULL にしない理由: PostgreSQL の UNIQUE は NULL 同士を区別するので重複を防げない。両方向から引く |
-| `external_files` | `record_id`、`provider`(google_drive)、`kind`(doc / sheet / slide / file)、`origin`(created / linked)、`external_id`(Drive の file id。URL 貼り付けだけの場合は null)、`mime_type`、`url`、`title`、`created_by_user_id`。1 レコードに複数 |
-| `google_drive_folders` | `user_id`、`key`(root / 各エンティティ / record)、`record_id`(key が record のとき)、`folder_id`。名前で探さないための台帳。マイドライブなので利用者ごとに持つ |
-| `custom_field_definitions` | `record_type`、`key`、`label`、`type`(text / number / date / select / multi_select / relation / url)、`options jsonb`、`relation_target_type`、`required`、`position`。relation 型の値は `record_links`(§1-5) |
-| `organization_settings` | `document_sharing`(members / group:<address> / domain:<domain> / none。既定 members)など組織単位の設定 |
-| `audit_log` | `record_id`、`action`(create / update / delete / link / unlink)、`actor_user_id`、`actor_agent`、`via`(ui / mcp / api / import / system)、`evidence jsonb`(根拠: 元メール ID 等)、`before jsonb`、`after jsonb` |
+**ローンチ後にテーブルを画面から追加できるようにする(J-031)とき、レコードをどこに置くか**は未決 → **Q-036**。
+実テーブルを DDL で作る案と、汎用の 1 表 + JSONB に入れる案があり、J-022 のスキーマとバックエンドのフレームワーク選定(Q-034)に効く。
 
-## 4. 重複判定
+## 5. モックのデータ
 
-作成コマンドは既定で重複候補を探し、見つかれば作らずに候補を返す(呼び手が `allowDuplicate: true` を付けるか、既存 id を選ぶ)。**判定は候補を返すだけで、DB の一意制約にはしない**(共有の電話・メールが実在するため)。
-
-| 対象 | 鍵 |
-|---|---|
-| 企業 | `corporate_number` 完全一致 / `name_normalized` 完全一致 / `name` の trigram 類似 |
-| 担当者 | `contact_identities`(email・phone)の一致を**候補の信号**として使う / 姓名+主所属の一致 / 氏名の trigram 類似 |
-| リード変換 | 上の両方を走らせ、候補を返して呼び手に選ばせる |
-
-`name_normalized` の規則: 全角半角の統一、空白の除去、法人格(株式会社・(株)・有限会社・合同会社 等)の除去、英字の小文字化。
-
-## 5. 検索
-
-- `records.search_text` に `pg_trgm` の GIN。`search_records` はこの 1 列を引く
-- 各テーブルの名前・カナにも trigram。規模が小さい(1,000 レコード)のでこれで足りる見込み。PGroonga は最良だがホスティングを縛るので採らない(01 D-01)
-
-## 6. 未決
-
-- Web 会議の自動連携(Q-030)。`external_ref` に会議 ID・録画・文字起こしの参照を足す見込み
-- 移行元の項目対応(Q-019・Q-020)
+- `frontend/src/mocks/fixtures/` に、メタデータ(`objects.json`・`views.json`。手で書く)とレコード(`accounts.json` ほか。`npm run fixtures` で生成)を置く。会社・人物は架空、メールは `example.jp`、電話は実在しない局番
+- レコードの日付は生成時の基準日で書かれており、モックが読み込むときに「今日」基準へずらす。いつ開いても、今日のタスクと今月の商談がある
+- 画面での変更は localStorage に残る。利用者メニューの「モックのデータを初期化」で戻せる

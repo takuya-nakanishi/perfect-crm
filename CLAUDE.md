@@ -1,58 +1,52 @@
-# perfect-crm
-
-**このリポジトリは 2026-09-21 にアーカイブした。動いているものは無く、GitHub 上は読み取り専用。**経緯と理由は `README.md`。
-後継は Google スプレッドシート + Google Apps Script(このリポジトリの外)。以下はアーカイブ時点の記述で、現状ではない。
+# perfect-crm — 自作 CRM「Works」
 
 ## このリポジトリは何か
 
-CRM(顧客)+ SFA(案件)+ プロジェクト/タスク管理。**自社で使い、他社にも売る**。
-セルフホストでも SaaS でも同じ Docker イメージを動かす。
+取引先・取引先責任者・商談・タスクを扱う CRM を、**あり物(GAS・NocoDB・Twenty)を使わず、完全に AI で自作する**(2026-09-21、本人の決定)。
+これまでの顧客管理を置き換え、Todoist も廃止するのが到達点。**命は、きれいで「イケてる」画面・使いやすさ・サクサク動く軽快さ。**
 
-**AI は外に住む。**CRM 自身は LLM を呼ばない。入力は Claude Code 等のエージェントが
-MCP 経由で行い、人は画面で閲覧し台帳を直す(画面からの入力も従来通りできる)。
-「AI 密結合」の質は MCP ツールの粒度と説明文で決まる。
+設計の正は `docs/design/`(01 要件と決定 → 02 データモデル → 03 アーキテクチャ → 04 API → 05 UI → 06 配置 → 07 移行)。
+運用の手順と落とし穴は `docs/runbook/`。問いと作業は `backlog/`(書式は `questions-jobs` skill)。
 
-設計の正は `docs/design/`(01 要件と決定 → 02 データモデル → 03 アーキテクチャ →
-04 配置 → 05 移行)。問いと作業は `backlog/`(書式は `questions-jobs` skill)。
-docs で「未決」「要確認」と書かれた箇所は `backlog/QUESTIONS.md` に対応する問いがある。
+## 現状(2026-09-21)
 
-## 現状(2026-09-20)
+**画面のモックが `https://works.sanei-clover.com` で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access)。
+データはブラウザ内の擬似 DB。バックエンド(Python)・PostgreSQL・本物のログインはこれから。次の一手は `backlog/JOBS.md` の先頭。
+バックエンドのフレームワークは未決(Q-034。比較と推奨は `docs/design/03` §4)。決まるまで `backend/` を作り始めない。
 
-設計のみ。コードはまだ無い。次の一手は `backlog/JOBS.md` の先頭。
+- `.env` は直下に 1 つ。値を出力・コミット・外部送出しない(スクリプトも値を表示しない)
+- **Docker は WSL2 の中の Docker Engine を使う。Windows 側の Docker Desktop は使わない**
+- イメージのタグは固定する。`docker compose down -v` は打たない(ボリュームが消える)
+- このリポジトリは公開。個人情報を入れない。モックの会社・人物は架空にする。実データは `~/backups/perfect-crm/`
 
-**Twenty(オープンソース CRM)を試用中**(2026-09-20〜)。直下の `docker-compose.yml` で動き、`https://twenty.sanei-clover.com`
-(Cloudflare Tunnel。Access は置かず、Twenty 自身の認証で守る)で開く。手順は `docs/twenty.md`。本体を作り続けるか Twenty に寄せるかは未決(Q-032)なので、
-`docs/design/` と下の不変条件は本体を作る場合の正として残す。以前ここで動かしていた連絡先台帳 `contacts/` は撤去済み
-(退避先は `docs/twenty.md`「撤去したもの」。個人情報なので Git に入れない)。
+## 守ること(コードを書くとき)
 
-- `.env` は直下に 1 つ。値を出力・コミット・外部送出しない
-- Twenty のイメージは `TWENTY_TAG` でリリースタグに固定する。上げる前に `pg_dump` を取る
-- `docker compose down -v` は Twenty のデータを消す。指示なしに打たない
+- **画面はメタデータで描く。**テーブル名・項目名を画面のコードに書かない。足したいものは `objects` / `fields` / `views` の定義に足す(`docs/design/01` D-01)
+- **画面は `ApiClient`(`frontend/src/api/client.ts`)だけを通してデータに触る。**契約の型は `frontend/src/api/types.ts`、振る舞いの正はモック(`frontend/src/mocks/engine.ts`)。契約を変えたら、型・モック・`http.ts`・`docs/design/04` を同じコミットで揃える
+- **レコードは DB の 1 行そのままの形**(snake_case、UUID、参照は ID、表示名は `references`)。画面で camelCase に直さない
+- **業務ルールはサーバ側**(いまはモックの `applyRules`)。画面に同じ計算を持たせない。画面・MCP・AI チャットのどこから書いても同じ経路を通す
+- **更新は楽観的に。**応答を待たずに画面を書き換え、失敗したら戻す(`frontend/src/data/mutations.ts`)。確認ダイアログではなく「元に戻す」で守る
+- **キー操作を壊さない。**日本語入力の変換中はショートカットを反応させない。文字を打っている最中は 1 文字のキーを効かせない。入力欄の幅をアニメーションさせない(打った文字が逆順に入る。runbook §4)
+- **見た目はトークンで。**色・文字・影・動きは `frontend/src/styles/index.css` の変数を使い、生の色を書かない。太さは 400 と 700 だけ。グラフの色は `dataviz` の検証スクリプトを通した値だけ(`docs/design/05` §4)
+- 自社固有の値(会社名、メールアドレス、外部サービスの ID)をコードに埋めない。設定かデータに出す
 
-## 守る不変条件(コードを書くとき)
+## 確かめてから終える
 
-- 全ドメインテーブルに `organization_id`。PostgreSQL の RLS で強制。自社インスタンスは組織 1 つ
-- 全エンティティを `records`(supertype)に登録。レコード間の関係は `record_links`。
-  `records` への参照は必ず `(organization_id, id)` の複合 FK(RLS は FK 検査を止めない)
-- 書き込みは `packages/core` のコマンド経由のみ。UI・MCP・将来の内蔵 AI は同じコマンドを呼ぶ。
-  全コマンドが監査ログを残す(誰が・どのエージェントが・何を根拠に)
-- 重複を黙って作らない。作成コマンドは重複候補を返す
-- Google の scope は `openid email profile` / `drive.file` / `gmail.send` から増やさない。
-  読み取りはエージェント側の Gmail / Drive MCP が担う
-- 外部文書は ID で保持する。名前・パスで探さない
-- 状態は PostgreSQL と S3 互換ストレージだけ。クラウド固有サービスをコアに入れない
-- 自社固有の値(会社名・外部サービスの ID・業務フローの前提)はコードに埋めない。
-  組織の設定かデータに出す
+```
+cd frontend && npm run build && npm run lint && npm run e2e
+```
+
+画面を変えたら、スクリーンショットで明・暗・スマホ幅を見る(和文の書体を本番と揃える方法は runbook §2)。
+公開 URL まで確かめるなら `python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec '…'`(runbook §3)。
 
 ## スタック
 
-確定: TypeScript 端から端、PostgreSQL、Docker。
-候補(**J-001 で一次資料を確認してから確定**): pnpm workspaces、`packages/core`(ドメイン)/
-`apps/server`(Hono: API・MCP・認証・Google 連携)/ `apps/web`(Vite + React)、Drizzle、
-Better Auth、`@modelcontextprotocol/sdk`、Docker Compose(app / postgres / cloudflared)。
-候補を確定に変えるのは J-001 の結果を `docs/design/03` §9 に書いてから。
+確定: 画面は Vite + React + TypeScript + Tailwind CSS v4(+ React Router、TanStack Query、zustand、@dnd-kit/react、lucide)。配信は Caddy、公開は Cloudflare Tunnel + Access、DB は PostgreSQL 18、全体は Docker Compose。
+未決: バックエンドのフレームワーク(Python。Q-034)。
+採用したライブラリと非推奨の確認結果は `docs/design/03` §8。**新しく足すときは、非推奨でないことを一次資料で確かめてから。**
 
 ## 作業の仕方
 
 - 共通ルール(`~/.claude/CLAUDE.md`)に従う。ここでは重複させない
 - 決定は `docs/design/` を更新して残す。backlog にはポインタだけ
+- デザインを変えるときは、Anthropic 公式の `frontend-design` skill(claude-plugins-official)と `dataviz` skill の手順に従う

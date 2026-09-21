@@ -3,173 +3,144 @@
 ## 1. 全体像
 
 ```
-Claude Code / Codex / claude.ai ──MCP(Streamable HTTP)──┐
-ブラウザ / スマホ ──────────HTTP API(Hono RPC)──────────┤
-問い合わせフォーム ──────────Webhook(v2)─────────────────┤
-                                                          ▼
-                                              apps/server(Hono)
-                                                          │ 呼ぶだけ
-                                                          ▼
-                                     packages/core(コマンド / クエリ)
-                                                          │ Drizzle + RLS
-                                                          ▼
-                                                PostgreSQL 18
-
-apps/server ──Google API(drive.file / gmail.send)──▶ Google
+ブラウザ / スマホ ──https──▶ Cloudflare(Access で本人確認)──Tunnel──▶ cloudflared ──▶ web(Caddy)
+                                                                                        │ 静的ファイル(画面)
+                                                                                        │ /api/*(これから)
+                                                                                        ▼
+Claude Code / Codex ──MCP(これから)──────────────────────────────────────────────▶ api(Python)
+                                                                                        │
+                                                                                        ▼
+                                                                                  db(PostgreSQL 18)
 ```
 
-3 つの入口は全部 `packages/core` を呼ぶ。core は HTTP を知らない。将来の内蔵 AI も core を呼ぶ 4 つ目の入口に過ぎない。
+**いま動いているのは `web` と `tunnel` だけ**(2026-09-21)。画面はブラウザ内の擬似 DB(モック)で完結している。
+`api` は J-021 で足す。`db` は Compose に定義だけあり、`--profile backend` を付けるまで起動しない。
 
-## 2. パッケージ
+## 2. 構成
 
-ライブラリは J-001 で確定するまで候補(01 D-09)。
-
-| パス | 役割 | 主な依存(候補) |
-|---|---|---|
-| `packages/core` | ドメイン。コマンド・クエリ・Drizzle スキーマ・マイグレーション・重複判定・監査 | drizzle-orm、zod、pg |
-| `apps/server` | Hono。UI 向け API、MCP エンドポイント、Better Auth、Google 連携、Webhook、ビルド済み UI の配信 | core、hono、@hono/mcp、@modelcontextprotocol/sdk、better-auth、googleapis |
-| `apps/web` | Vite + React + TanStack Router / Query / Table + shadcn/ui + Tailwind | server の型(Hono RPC) |
-| `scripts/` | 移行・保守。core を直接呼ぶ | core |
-
-## 3. コマンド / クエリ層
-
-- すべての操作は `Context` を受ける: `{ organizationId, actor: { userId?, agent?, via: 'ui' | 'mcp' | 'api' | 'import' | 'system' }, evidence? }`
-- コマンドは 1 トランザクション。冒頭で `SET LOCAL app.organization_id` を発行し、RLS を効かせる
-- 入力は zod で検証。カスタム項目は `custom_field_definitions` に照らして検証
-- 作成コマンドは重複候補を探す(02 §4)。候補があれば `DuplicateCandidates` を返して作らない
-- 成功時に `audit_log` を 1 行書く(before / after / actor / evidence)
-- クエリは読み取り専用トランザクション。`getContext(recordId)` はレコード・リンク先・直近の活動・タスク・文書を Markdown に組む(ingest 用)
-
-主なコマンド(v1): `createCompany` `updateCompany` `createContact` `updateContact` `setAffiliation` `createLead` `convertLead` `disqualifyLead` `createDeal` `moveDealStage` `createProject` `createTask` `updateTask` `completeTask` `logActivity` `linkRecords` `unlinkRecords` `setCustomFields` `deleteRecord` `restoreRecord`
-
-主なクエリ(v1): `searchRecords` `getRecord` `getContext` `listRecords`(型・フィルタ・並び・ページ)`getTimeline` `myTasks`(today / overdue / upcoming)`getPipeline` `findDuplicates` `listDealStages` `listCustomFieldDefinitions`
-
-## 3.5 DB への接続は本サービスだけ
-
-**PostgreSQL に触れるのは `apps/server` のプロセスだけ**(01 D-13)。外部のシステム・エージェント・BI ツールは MCP か HTTP API を通す。
-
-- DB の接続情報は `app` コンテナだけが持つ。`postgres` はホストにポートを公開しない(04 §1)
-- 同一ホストでの運用作業は例外: マイグレーション(別ロール)、`pg_dump` のバックアップ、移行スクリプト(`packages/core` のコマンドを呼ぶので監査ログは残る)
-- これで、監査ログ・重複ガード・RLS を迂回してデータが書き換わる経路が無くなる(D-04 の守りが実際に効く)
-
-## 4. HTTP API(UI 向け)
-
-- Hono RPC。UI は `hc<AppType>` で型付きに呼ぶ。認証は Better Auth のセッション Cookie
-- 1 エンドポイント = 1 コマンド / クエリ。ロジックを持たない
-
-## 5. MCP サーバ
-
-- `POST /mcp`(Streamable HTTP)。`@modelcontextprotocol/sdk` を `@hono/mcp` で載せる
-- **認証(v1)**: 利用者ごとの API トークン(Better Auth apiKey)。`Authorization: Bearer …`。トークンは組織に属し、操作は `actor = { userId, agent: クライアント名, via: 'mcp' }` で記録される。Claude Code は `claude mcp add --transport http … --header "Authorization: Bearer …"`、Codex も同様
-- **認証(v2)**: OAuth 2.1(Better Auth の `mcp()` プラグイン)。claude.ai / Claude Desktop のカスタムコネクタは**静的ヘッダ・API キーの欄を持たず OAuth のみ**なので、同僚がそこから使い始める時点で要る(Q-024)
-  - **DCR(動的クライアント登録)は実装しない。**MCP 仕様が非推奨にしている(§10)。Better Auth も既定で無効
-  - 代わりに **Client ID Metadata Documents**(クライアントが HTTPS URL を client_id に使う)と**事前登録**(claude.ai の Advanced settings に Client ID / Secret を入れてもらう)の 2 つで足りる
-  - サーバが実装必須のもの: RFC 9728 Protected Resource Metadata(`/.well-known/oauth-protected-resource`)、RFC 8707 の `resource` パラメータとトークンの audience 検証、RFC 8414 か OIDC Discovery のどちらか
-  - 追加 scope は **step-up flow**: 足りなければ `403` + `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"` を返す。1 回の挑戦で必要な scope をまとめて出す
-- 書き込みツールは `evidence`(根拠: 元メール ID、会話の要約)を任意で受け、`audit_log.evidence` に残す
-- Cloudflare Access の後ろに置く場合、`/mcp` は Access を bypass しアプリの認証に任せる(04 §3)
-- 長時間接続: サーバから定期 ping(Cloudflare 経由の無通信切断への備え)
-
-ツール(v1)。説明文は業務語彙で書く。ここが AI の UX そのもの(01 D-02)。
-
-| ツール | 役割 |
+| 場所 | 役割 |
 |---|---|
-| `search_records(query, types?)` | 横断検索 |
-| `get_record(id)` | レコード+リンク+カスタム項目+直近の活動 |
-| `get_context(id)` | 全文脈を Markdown で(ingest 用) |
-| `list_records(type, filter?, sort?, page?)` | 一覧 |
-| `create_company` / `create_contact` / `create_lead` / `create_deal` / `create_project` / `create_task` | 作成。重複候補があれば作らず返す |
-| `update_record(id, patch)` | 更新(カスタム項目含む) |
-| `set_affiliation(contact_id, company_id, is_primary?, department?, title?, started_on?, ended_on?)` | 所属の作成・更新・終了。主所属の切替もここ |
-| `link_records(from, to, role?)` / `unlink_records` | 関連づけ(role 省略時は `related`) |
-| `log_activity(kind, occurred_at, body, links, direction?, external_ref?)` | 活動の記録。最重要 |
-| `find_duplicates(type, fields)` | 重複候補 |
-| `convert_lead(lead_id, company_id?, contact_id?, deal?)` | リード変換 |
-| `move_deal_stage(deal_id, stage)` / `list_deal_stages` | 案件の進行 |
-| `my_tasks(scope)` / `complete_task(id)` | タスク |
+| `frontend/` | 画面。Vite + React + TypeScript + Tailwind CSS v4。ビルドすると静的ファイルになる |
+| `frontend/Dockerfile` / `Caddyfile` | Node でビルドし、Caddy で配る。SPA の戻し、キャッシュ、CSP などのヘッダ、`/healthz` |
+| `backend/`(これから) | Python の JSON API。`/api/v1`(04) |
+| `docker-compose.yml` | `web` / `tunnel`(profile `public`)/ `db`(profile `backend`) |
+| `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認 |
+| `docs/` | 設計(`design/`)と運用手順(`runbook/`) |
+| `backlog/` | 問いと作業 |
 
-v2 で足すツール: `create_file(record_id, kind, title?, template?)`(ドキュメント / スプレッドシート / スライドの作成)、`link_file(record_id, url, title?)`、`list_files(record_id)`、`send_email(...)`。
+### frontend/src の中
 
-## 6. 認証・認可
+| 場所 | 中身 |
+|---|---|
+| `api/types.ts` | **画面とバックエンドの契約(型)。**ここが正 |
+| `api/client.ts` | 窓口 `ApiClient` と、mock / http の切り替え |
+| `api/http.ts` | 本物の API を叩く実装(`/api/v1`) |
+| `mocks/` | 擬似 DB。`fixtures/*.json`(DB の行と同じ形)と、絞り込み・並び替え・集計・検索を肩代わりする `engine.ts` |
+| `data/` | TanStack Query の取得と更新。楽観更新はここに集約(`mutations.ts`) |
+| `lib/` | 日付、書式、フィルタの評価、タスク追加欄の読み取り、キー操作 |
+| `state/ui.ts` | 画面の状態(テーマ、サイドバー、開いているモーダル、トースト) |
+| `components/` | `shell/`(外枠・サイドバー・検索・タスク追加)、`object/`(テーブルの画面と 3 種のビュー、グラフ)、`record/`(パネル、項目の表示と編集)、`ui/`(部品) |
+| `e2e/smoke.mjs` | 主要な操作を実ブラウザで確かめる(05 §6) |
 
-- Better Auth。Google でログイン(`openid email profile`)。organization プラグインで組織・メンバー・招待。ロールは owner / admin / member
-- レコードは組織内の全員に見える。権限の細分化はしない(v1)
-- 1 人が複数組織に属せる(SaaS 時)。UI は組織を切り替える
-- 製品では Google を使わない顧客向けにメール+パスワードも足す(v3)
+## 3. モックと本物の差し替え
 
-## 7. Google 連携
+```
+画面 ──▶ api(ApiClient)──┬─ mock: mocks/mockClient.ts ──▶ mocks/engine.ts ──▶ fixtures/*.json + localStorage
+                          └─ http: api/http.ts ──▶ /api/v1(Python)
+```
 
-### scope
+- 切り替えはビルド時の環境変数 `VITE_API_MODE`(`mock` が既定、`http` で本物)。Compose の `web` のビルド引数にもなっている
+- 実装は動的 import なので、`http` のビルドにモックのデータは入らない
+- モックは「サーバがやるはずの処理」を全部肩代わりする: フィルタの評価、選択肢の定義順や参照先の名前での並び替え、集計、ひらがな・カタカナを区別しない検索、業務ルール(02 §3)、参照先の表示名の添付、通信の待ち時間(読み 40ms・書き 120ms)
+- **バックエンドを作るときは、モックの振る舞いが仕様。**`engine.ts` と同じ入力に同じ出力を返せば、画面は何も変えずに動く。確認は同じ E2E(`npm run e2e`)を http モードで通すこと(J-024)
 
-| scope | 用途 | 区分 |
+## 4. バックエンドのフレームワーク(未決・Q-034)
+
+言語は Python(01 D-04)。このプロジェクトで効く観点で比べる。
+
+| 観点 | FastAPI | Litestar | Django(+ Django Ninja) |
+|---|---|---|---|
+| 画面との契約(OpenAPI を自動生成し、TypeScript の型と突き合わせる) | ◎ Pydantic v2 と一体 | ◎ | ○ Ninja なら可 |
+| メタデータ駆動の汎用 API(`/objects/{key}/records` が任意のテーブルを扱う。フィルタを安全に SQL へ訳す) | ◎ SQLAlchemy Core で動的に組める | ◎ 同左 | △ ORM は「モデル = クラス」が前提。動的なテーブルは生 SQL か無理のある動的モデルになる |
+| テーブルを画面から追加する(J-031。実行時に DDL を流す) | ◎ Core + 実行時 DDL が素直 | ◎ | △ マイグレーションがモデルのファイルを前提にしており、枠の外になる |
+| ログイン(セッション、パスワード、CSRF) | △ 自分で組む(小さいが、書く) | ○ 部品あり | ◎ 最初から全部ある |
+| MCP サーバ(J-028。公式 `mcp` は ASGI アプリに載せる形) | ◎ そのまま同居できる | ◎ | △ 載るが遠回り |
+| AI チャットのストリーミング(J-029。SSE + `anthropic` の非同期クライアント) | ◎ | ◎ | ○ できるが同期が基本の文化 |
+| 情報量(人にも AI にも) | ◎ 圧倒的 | △ 少ない。AI が間違えやすい | ◎ 圧倒的 |
+| 保守の安定 | ○ 利用者が非常に多い。0.x 番台が続くが実害は小さい | ○ コミュニティ運営 | ◎ 財団、LTS |
+| 管理画面 | 無し(要らない。自分の画面が製品) | 無し | ◎ あるが、使い道が薄い |
+
+**推奨: FastAPI + SQLAlchemy 2(Core 中心)+ Alembic + Pydantic v2 + psycopg 3、パッケージ管理は uv。**
+
+- 決め手は、この CRM の芯が「メタデータから SQL を組み立てる汎用 API」であること。Django の最大の強み(モデルを書けば管理画面も認証も付いてくる)は、モデルをコードに書かないこの作りでは活きにくい
+- MCP と AI チャットを同じプロセスに素直に載せられる
+- 弱みのログインは、利用者 1 名の規模なら小さく書ける(セッション Cookie + argon2)。Q-035 で Access を信頼する形にすれば、さらに小さくなる
+- 次点は Django + Django Ninja。「ローンチ後のテーブル追加は JSONB で済ませる」と割り切るなら(Q-036)、認証と管理画面が最初からある利点が勝つ
+
+2026-09-21 時点の版(PyPI。いずれも保守が続いている): fastapi 0.141.1 / litestar 2.24.0 / Django 6.1.1 / django-ninja 1.7.1 / SQLAlchemy 2.0.54 / alembic 1.20.0 / pydantic 2.13.5 / psycopg 3.3.6 / uvicorn 0.53.0 / mcp 2.2.0 / anthropic 1.7.0 / uv 0.12.17。
+**採用を決めたら、その時点で非推奨でないことを一次資料で確認し直す**(共通ルール)。
+
+## 5. 認証(未決・Q-035)
+
+ログイン画面はある(モックでは何を入れても通る)。本物にするときの形は 2 つ。
+
+| 案 | 中身 | 向き |
 |---|---|---|
-| `openid email profile` | ログイン | — |
-| `drive.file` | アプリが作ったファイル・フォルダの作成・参照・共有・エクスポート。Google Picker で利用者が選んだ既存ファイルへのアクセスもこの scope 内 | 非 sensitive |
-| `gmail.send` | 送信 | sensitive(確認は Q-022) |
+| A. アプリが自分で認証する | メール + パスワード、セッション Cookie。Access はその外側の門として残す(二重) | どこへ引っ越しても同じ。Access を外しても守られる |
+| B. Access を信頼する | Cloudflare が付ける `Cf-Access-Jwt-Assertion` を検証して利用者を決める。ログイン画面は出さない | 楽。ただし Cloudflare の外(AWS など)へ出すと成り立たない |
 
-これ以上増やさない。読み取り(受信メール・任意の Drive ファイル)はエージェント側の Gmail / Drive MCP が担う(01 D-05)。
+引っ越しやすさ(01 D-05)を取るなら A。当面の手軽さなら B。A を作ったうえで「Access の JWT があれば自動でログイン済みにする」という折衷もある。
 
-### 追加 scope の取得
+## 6. MCP サーバ(ローンチ後・J-028)
 
-ログイン時は `openid email profile` だけ。Docs / Gmail を初めて使うときに `drive.file` / `gmail.send` を段階的に求める(Better Auth の追加 scope 取得を使う。満たさなければ自前の OAuth フロー。Q-023)。
+- Claude Code や Codex から、レコードの検索・参照・作成・更新、タスクの追加と完了ができるようにする。公式の Python SDK(`mcp`)で、API と同じプロセスに載せる
+- **ツールは画面と同じ書き込み経路を通す**(検証、業務ルール、記録)。DB を直接触らせない
+- 公開 URL は Access の内側なので、エージェントは PIN の画面を通れない。`/mcp` だけ Access を素通しにしてアプリ側のトークンで守るか、Access のサービストークンを使うかを、着手時に決める(`scripts/cloudflare-tunnel-setup.py` の `--bypass` と、`cloudflare-access-check.py` のサービストークンの作り方が土台になる)
 
-### ファイルの作成とリンク(v2)
+## 7. サイドバーの AI チャット(ローンチ後・J-029)
 
-1. `google_drive_folders` から root(`PerfectCRM`)・エンティティ別・レコード別フォルダの ID を引く。無ければ作って記録する。名前で探さない
-2. `files.create` で `mimeType` を `application/vnd.google-apps.document` / `.spreadsheet` / `.presentation` のいずれかにし、テンプレート(CRM 側に持つ)を変換アップロード(HTML / CSV / PPTX)。`documents` `spreadsheets` `presentations` の scope は使わない
-3. `permissions.create` で組織設定 `document_sharing` に従って共有(members: メンバーの Google アカウントへ個別に `user` 権限 / group: 指定グループ / domain: 指定ドメイン / none)。既定 members。メンバー追加時に既存ファイルへは付与しない(必要時に再共有)
-4. `external_files` に `origin: created` で記録し、`activities` に `system` の 1 行
-5. 新規タブで開く。iframe 埋め込みはしない(壊れやすい)
+Notion AI や Twenty のように、サイドバーをチャット欄に切り替えられるようにする。
+**LLM は差し替えられる前提で組む**(Amazon Bedrock でも、個人の Claude API キーでも使える。01 D-11)。
 
-既存ファイルのリンク: UI では Google Picker で選び(`drive.file` の範囲で選んだファイルにアクセスできる)、file id・名前・mimeType を `external_files` に `origin: linked` で記録する。MCP や URL 貼り付けでは URL と呼び手が渡した名前だけを記録する(メタデータは取れない)。
+```
+画面のチャット欄 ──SSE──▶ api: /api/v1/chat ──▶ LLM プロバイダ(差し替え可能)──▶ Claude
+                                   │ ツール呼び出し
+                                   ▼
+                          コマンド層(画面・MCP と同じ)──▶ db
+```
 
-### Gmail 送信(v2)
+- **鍵はサーバ側だけが持つ。**ブラウザから LLM を直接呼ばない。設定は環境変数(`.env`)
+- **差し替えの単位は「クライアントの作り方」と「モデル ID」だけにする。**公式の Python SDK(`anthropic`)は、直接の API 用の `Anthropic()` と Bedrock 用の `AnthropicBedrockMantle(aws_region=…)` を持ち、作ったあとの呼び方(`messages.create` / `.stream`)は同じ。Bedrock のモデル ID は `anthropic.` が前に付く(例 `anthropic.claude-opus-5`)。認証は、直接なら API キー、Bedrock なら AWS の認証情報
+- **両方で使える機能だけに寄せる。**メッセージ、ストリーミング、自前のツール呼び出し、プロンプトキャッシュ、適応的思考は両方で使える。Anthropic 側で動くツール(Web 検索、コード実行)、MCP コネクタ、Files API、サーバ側フォールバックは Bedrock に無い。CRM のチャットに要るのは自前のツール(レコードの検索・作成・更新)だけなので、困らない
+- ツールの中身は MCP(§6)と共有する。「外から MCP で呼ぶ」「中からチャットが呼ぶ」の違いは入口だけ
+- 既定のモデルは `claude-opus-5`。費用を抑えたい操作に軽いモデルを使うかは、作るときに実測して決める
+- Claude 以外(他社のモデル)まで差し替え対象にするかは未決 → **Q-041**。する場合は、この層の上にもう 1 段の抽象が要る
 
-1. 宛先は `contact_identities` の email から選ぶ
-2. `users.messages.send`(RFC 2822 を base64url)
-3. 返ってきた `id` / `threadId` を `activities.external_ref` に、`kind: email, direction: outbound` で記録
+出典: Anthropic 公式の `claude-api` skill(2026-09-21 参照。プロバイダ別の機能表とクライアントの作り方)。
 
-## 8. Web 会議の自動連携(v4・Q-030)
+## 8. 一次資料での確認結果(2026-09-21)
 
-会議から活動を自動で起こす。CRM は LLM を呼ばない(01 D-02)ので、文字起こしの要約はエージェント側か連携先の機能を使い、CRM は結果を `log_activity` で受ける。連携先の候補と方式は Q-030。`activities.external_ref` に会議 ID・録画・文字起こしの参照を持つ。
+共通ルール「新規に技術選定するときは、その時点で非推奨でないかを確認する」に従い、npm レジストリの `deprecated` フラグと最新版を直接引いた。**採用したものに非推奨は無い。**
 
-## 9. 将来の内蔵 AI
-
-`packages/core` を呼ぶ 4 つ目の入口。自然文 → コマンド列の生成、差分提案 UI、要約の書き戻し。v4。
-
-## 10. 一次資料での確認結果(2026-09-19・J-001)
-
-### 採用候補の非推奨確認
-
-npm レジストリの `latest` を直接引いて `deprecated` フラグを見た(共通ルール「根拠は①ツール自身の出力」)。**全部が非推奨ではない。**
-
-| パッケージ | 版 | 判定 |
+| パッケージ | 版 | 用途 |
 |---|---|---|
-| better-auth | 1.7.5 | ok |
-| hono | 4.13.8 | ok |
-| @hono/mcp | 0.3.2 | ok |
-| @modelcontextprotocol/sdk | 1.30.0 | ok |
-| drizzle-orm / drizzle-kit | 0.45.2 / 0.31.10 | ok |
-| @tanstack/react-router / react-query / react-table | 1.170.38 / 5.103.1 / 9.2.4 | ok |
-| pg-boss | 12.33.2 | ok |
-| vite / react / tailwindcss | 8.3.0 / 19.3.0 / 4.3.3 | ok |
-| postgres / pg | 3.4.9 / 8.23.0 | ok |
+| vite / @vitejs/plugin-react | 8.3.0 / 6.1.1 | ビルド(公式テンプレート `react-ts` が元) |
+| typescript | 6.0.3 | 公式テンプレートの指定(`~6.0`) |
+| react / react-dom | 19.3.0 | |
+| react-router | 8.4.0 | 宣言的なルーティングだけを使う(`BrowserRouter` / `Routes`) |
+| @tanstack/react-query | 5.103.1 | 取得のキャッシュと楽観更新 |
+| zustand | 5.0.15 | 画面の状態 |
+| @dnd-kit/react | 0.5.0 | カンバンのドラッグ&ドロップ |
+| lucide-react | 1.47.0 | アイコン(使うものだけ束ねる) |
+| tailwindcss / @tailwindcss/vite | 4.3.3 | |
+| @fontsource-variable/figtree | 5.3.0 | 欧文と数字の書体(同梱) |
+| oxlint | 1.83.0 | 公式テンプレートの lint |
+| playwright-core | 1.63.0 | E2E(ブラウザは別途) |
 
-これで 01 D-09 の候補を**確定**に変える。
+判断を要したもの:
 
-### 機能の確認
+- **ドラッグ&ドロップ**: 従来の `@dnd-kit/core`(6.3.1)は非推奨ではないが、最終更新が 2024-12 で止まっている。同じ作者の後継 `@dnd-kit/react` は 0.5.0 と若いが 2026-09 も更新が続く。止まっているほうを新規に採ると次に非推奨になるのはそちらなので、後継を採った。1.0 前なので、上げるときは E2E のドラッグの項目で確かめる
+- **ダイアログやポップオーバーの部品ライブラリは入れていない。**モーダルはブラウザ標準の `<dialog>`(フォーカスの閉じ込めと背後の無効化を標準に任せる)、ポップオーバーは自前の小さな部品。束ねる JS を増やさないため
+- **グラフのライブラリも入れていない。**棒グラフ 2 種と数字タイルだけなので、HTML と CSS で描いている(`dataviz` の仕様どおりに作るのにも、そのほうが素直)
 
-| 問い | 結果 | 出典 |
-|---|---|---|
-| Q-022 `gmail.send` の区分 | **Sensitive**(Restricted ではない)。Restricted は `gmail.readonly` `gmail.modify` `gmail.compose` `mail.google.com/` など。読み取りをエージェント側に委ねる設計(D-05)により restricted を持たずに済む | Google Workspace「Gmail API scopes」 |
-| Q-023 Better Auth | 満たす。organization(組織・メンバー・ロール・招待・アクティブ組織)、apiKey(`verifyApiKey` で自前エンドポイントから検証、組織に紐づく、メタデータ・期限・レート制限)、mcp(OAuth 2.1 プロバイダ、RFC 9728 実装、`requireMcpAuth`) | Better Auth 公式ドキュメント |
-| Q-024 claude.ai のコネクタ | **OAuth のみ。**静的 bearer・カスタムヘッダ・API キーの欄は無い。ただし Advanced settings で **OAuth Client ID / Secret を手で設定できる**ので、事前登録クライアントで足り、DCR は要らない | Claude Help Center「Get started with custom connectors using remote MCP」 |
-
-### 非推奨だったもの(設計を変えた)
-
-- **DCR(RFC 7591 動的クライアント登録)**は MCP 仕様で**非推奨**。「Dynamic Client Registration is deprecated and retained for backwards compatibility with authorization servers that do not support Client ID Metadata Documents」。代替は **OAuth Client ID Metadata Documents**(draft-ietf-oauth-client-id-metadata-document-00)で、仕様上は SHOULD。Better Auth も「MCP deprecates Dynamic Client Registration (DCR), so Better Auth never enables DCR implicitly」と書き、既定で無効。**当初の設計(v2 で DCR)を §5 のとおり改めた**
-- Better Auth の `organizationCreation` フックは非推奨。`organizationHooks` を使う
-
-### 積み残し
-
-`gmail.send` が Sensitive であることは確認したが、**Sensitive scope の審査に CASA(年次セキュリティ評価)が伴わないこと自体**は未確認。製品化(v3)の直前に Google の審査要件を読み直す → J-014。
+コンテナのイメージ(Docker Hub の現行タグ): `node:24-alpine`(Active LTS。ビルド用)、`caddy:2.11.4-alpine`、`cloudflare/cloudflared:2026.9.1`、`postgres:18.6-alpine`。`latest` は使わない。

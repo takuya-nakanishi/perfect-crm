@@ -1,90 +1,66 @@
-# Twenty(オープンソース CRM)のセルフホスト。公式 packages/twenty-docker/docker-compose.yml(2026-09-20 取得)が元。
-# 公式との差: ①イメージのタグを固定(公式手順が latest を受け付けない)②ポートは 127.0.0.1 のみ(外へは Cloudflare Tunnel 経由)
-# ③.env の変数名に TWENTY_ を付ける(直下の .env を他の用途と共有するため)④APP_SECRET は legacy なので渡さない ⑤tunnel を足す
-# 起動: `docker compose --profile public up -d`(profile を付けないと tunnel は起動しない)。手順は docs/twenty.md
-name: twenty
-
-x-twenty-env: &twenty-env
-  PG_DATABASE_URL: postgres://postgres:${TWENTY_PG_PASSWORD:?set in .env}@db:5432/default
-  SERVER_URL: ${TWENTY_SERVER_URL:?set in .env}
-  REDIS_URL: redis://redis:6379
-  STORAGE_TYPE: local
-  ENCRYPTION_KEY: ${TWENTY_ENCRYPTION_KEY:?set in .env}
+# Works(自作 CRM)。Surface の WSL2 上の Docker で動かす。Windows 側の Docker Desktop は使わない。
+#
+#   docker compose --profile public up -d --build    画面 + Cloudflare Tunnel(https://works.sanei-clover.com)
+#   docker compose up -d --build                     画面だけ(http://127.0.0.1:8610)
+#
+# 手順と落とし穴(イメージの取得でつまずく点など)は docs/runbook/01-operations.md。
+# api(Python バックエンド)は J-002 で足す。db はその準備として定義だけ置いてある(profile backend)。
+name: works
 
 services:
-  server:
-    image: twentycrm/twenty:${TWENTY_TAG:-v2.41.0}
-    volumes:
-      - server-local-data:/app/packages/twenty-server/.local-storage
+  # 画面。ビルド済みの静的ファイルを Caddy で配る。無状態
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_MODE: ${VITE_API_MODE:-mock}
+    image: works-web:local
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      <<: *twenty-env
-      NODE_PORT: 3000
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "127.0.0.1:${WEB_PORT:-8610}:8080" # ホストの中からだけ。外へは tunnel 経由
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /config
+      - /data
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE] # 公式イメージの caddy はこの権限付きのバイナリ。落とすと exec が operation not permitted で失敗する
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
-      test: curl --fail http://localhost:3000/healthz
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: always
-
-  worker:
-    image: twentycrm/twenty:${TWENTY_TAG:-v2.41.0}
-    volumes:
-      - server-local-data:/app/packages/twenty-server/.local-storage
-    command: ["yarn", "worker:prod"]
-    environment:
-      <<: *twenty-env
-      DISABLE_DB_MIGRATIONS: "true" # it already runs on the server
-      DISABLE_CRON_JOBS_REGISTRATION: "true" # it already runs on the server
-    depends_on:
-      db:
-        condition: service_healthy
-      server:
-        condition: service_healthy
-    restart: always
-
-  db:
-    image: postgres:16
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: default
-      POSTGRES_PASSWORD: ${TWENTY_PG_PASSWORD:?set in .env}
-      POSTGRES_USER: postgres
-    healthcheck:
-      test: pg_isready -U postgres -h localhost -d postgres
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: always
-
-  redis:
-    image: redis
-    restart: always
-    command: ["--maxmemory-policy", "noeviction"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # 外からの経路。Surface から Cloudflare へ外向きに張るだけで、受信ポートは開けない。
-  # トークンは scripts/cloudflare-tunnel-setup.py が .env へ書く
+  # 行き先(works.sanei-clover.com → http://web:8080)と Access は scripts/cloudflare-tunnel-setup.py が Cloudflare 側に設定する
   tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: always
+    image: cloudflare/cloudflared:2026.9.1
+    restart: unless-stopped
     profiles: ["public"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-} # 空なら起動に失敗する(profile 外では使われない)
     depends_on:
-      server:
+      web:
         condition: service_healthy
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}   # 空なら起動に失敗する(profile 外では評価されない)
+
+  # PostgreSQL。バックエンドを足すまでは起動しない。ホストにポートを開けない(触れるのは api だけ)
+  db:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    profiles: ["backend"]
+    environment:
+      POSTGRES_DB: works
+      POSTGRES_USER: works
+      POSTGRES_PASSWORD: ${WORKS_DB_PASSWORD:-}
+    volumes:
+      - db-data:/var/lib/postgresql # 18 系からデータは /var/lib/postgresql/18/docker。/data を指すと空のまま起動する
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U works -d works"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   db-data:
-  server-local-data:
