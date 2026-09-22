@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, resetTables, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, resetTables, restoreView, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -628,5 +628,18 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => deleteView(mine[0]))).toBe(400)
     expect(viewsOf('accounts')).toEqual([mine[0]])
     expect(getMeta().views.filter((v) => v.object !== 'accounts').length).toBe(others)
+  })
+
+  it('META-053 deleteView → GET /meta から消える。restoreView → 同じ id・同じ定義(並び・お気に入りも)で戻る', () => {
+    const before = getMeta().views
+    // 定義の多いビュー(お気に入りに入っているものがあればそれ)で確かめる
+    const target = before.find((v) => v.pin) ?? before[0]
+    const deleted = deleteView(target.id)
+    expect(deleted.views.some((v) => v.id === target.id)).toBe(false)
+    expect(getMeta().views.some((v) => v.id === target.id)).toBe(false)
+    expect(getMeta().views).toEqual(before.filter((v) => v.id !== target.id))
+    const restored = restoreView(target.id)
+    expect(restored.views.find((v) => v.id === target.id)).toEqual(target)
+    expect(getMeta().views).toEqual(before)
   })
 })
