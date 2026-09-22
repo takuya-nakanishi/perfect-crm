@@ -2480,6 +2480,47 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
     expect(find('scaled', got.id as string)!.record).toMatchObject(expected)
   })
 
+  it('REC-081 insert: 日付の列に 2026/09/30 や 2026-13-01 を渡すと 400 で行は増えない。2026-09-30 は通る。日時は ISO 8601 だけ', () => {
+    // 書ける日時の列を持つテーブルを用意する(初めからあるテーブルの日時の列は読み取り専用)
+    const body: ObjectInput = {
+      ...input('dated'),
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'held_on', label: '開催日', type: 'date' },
+        { key: 'starts_at', label: '開始日時', type: 'datetime' },
+      ],
+    }
+    expect(statusOf(() => createObject(body))).toBeNull()
+
+    // 日付は YYYY-MM-DD だけ。区切りが違う・月が無い・時刻付き・数値は 400。行は増えない(既存の日付の列も同じ)
+    const cases: [string, Record<string, Scalar>][] = [
+      ['dated', { name: 'スラッシュ', held_on: '2026/09/30' }],
+      ['dated', { name: '13 月', held_on: '2026-13-01' }],
+      ['dated', { name: '時刻付き', held_on: '2026-09-30T10:00:00Z' }],
+      ['dated', { name: '数値', held_on: 20260930 }],
+      ['dated', { name: '日時にスラッシュ', starts_at: '2026/09/30 10:00' }],
+      ['dated', { name: '日時に日付だけ', starts_at: '2026-09-30' }],
+      ['dated', { name: '日時に 13 月', starts_at: '2026-13-01T10:00:00Z' }],
+      ['opportunities', { name: '完了予定日にスラッシュ', account_id: table('accounts')[0].id, close_date: '2026/09/30' }],
+      ['opportunities', { name: '完了予定日に 13 月', account_id: table('accounts')[0].id, close_date: '2026-13-01' }],
+    ]
+    for (const [object, values] of cases) {
+      const before = table(object).length
+      expect(statusOf(() => insert(object, values, null)), String(values.name)).toBe(400)
+      expect(table(object), String(values.name)).toHaveLength(before)
+    }
+
+    // YYYY-MM-DD の日付と ISO 8601 の日時は通り、そのまま保存される
+    const ok = { held_on: '2026-09-30', starts_at: '2026-09-30T10:00:00+09:00' }
+    const got = insert('dated', { name: '正しい形', ...ok }, null).record
+    expect(got).toMatchObject(ok)
+    expect(find('dated', got.id as string)!.record).toMatchObject(ok)
+    const utc = insert('dated', { name: 'UTC', starts_at: '2026-09-30T01:00:00.000Z' }, null).record
+    expect(utc.starts_at).toBe('2026-09-30T01:00:00.000Z')
+    const deal = insert('opportunities', { name: '完了予定日', account_id: table('accounts')[0].id, close_date: '2026-09-30' }, null).record
+    expect(find('opportunities', deal.id as string)!.record.close_date).toBe('2026-09-30')
+  })
+
   it('REC-082 insert: 参照の列に無い ID・利用者の列に無い ID・チェックの列に文字は 400 で行は増えない。有る ID と真偽なら作れる', () => {
     const account_id = table('accounts')[0].id as string
     const contact_id = table('contacts')[0].id as string
