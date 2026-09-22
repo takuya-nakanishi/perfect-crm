@@ -902,4 +902,46 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => updateObject('opportunities', body(bodyFields)))).toBeNull()
     expect(list()).toEqual(beforeList)
   })
+
+  it('META-091 項目を外すとその項目を指すビューの条件も外れ、and の中の 1 条件なら他は残り、全部無くなれば条件ごと無くなる', () => {
+    const before = getMeta().objects.find((o) => o.key === 'opportunities')!
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'opportunities', label: before.label, icon: before.icon, color: before.color, fields })
+    const list = (name: string, filter: Extract<ViewInput, { type: 'list' }>['config']['filter']): ViewInput => ({
+      name,
+      type: 'list',
+      config: { columns: [{ field: 'name' }, { field: 'stage' }], filter },
+    })
+    // close_date を指す条件と、指さない条件を and に並べたビュー(or の群の中にも 1 つずつ)
+    const mixed = {
+      and: [
+        { field: 'close_date', op: 'lte' as const, value: '$today+30' },
+        { field: 'amount', op: 'gte' as const, value: 1000000 },
+        { or: [{ field: 'close_date', op: 'is_empty' as const }, { field: 'lead_source', op: 'is_not_empty' as const }] },
+      ],
+    }
+    // close_date を指す条件だけのビュー(and の直下と、その中の or の群)
+    const only = { and: [{ field: 'close_date', op: 'is_not_empty' as const }, { or: [{ field: 'close_date', op: 'gte' as const, value: '$start_of_month' }] }] }
+    const mixedId = createView('opportunities', list('期日の近い大口', mixed)).views.find((v) => v.name === '期日の近い大口')!.id
+    const onlyId = createView('opportunities', list('期日のあるもの', only)).views.find((v) => v.name === '期日のあるもの')!.id
+    const view = (id: string) => getMeta().views.find((v) => v.id === id)!
+
+    // 外して保存 → close_date を指す条件だけが外れ、ほかの条件は残る。空になった or の群・and の群は群ごと外れる
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields.filter((f) => f.key !== 'close_date'))))).toBeNull()
+    const kept = view(mixedId)
+    if (kept.type !== 'list') throw new Error('一覧のビューがありません')
+    expect(kept.config.filter).toEqual({ and: [{ field: 'amount', op: 'gte', value: 1000000 }, { or: [{ field: 'lead_source', op: 'is_not_empty' }] }] })
+    const emptied = view(onlyId)
+    if (emptied.type !== 'list') throw new Error('一覧のビューがありません')
+    expect(emptied.config.filter).toBeUndefined()
+    // 条件が無くなったビューも消えず、列はそのまま
+    expect(emptied.config.columns).toEqual([{ field: 'name' }, { field: 'stage' }])
+
+    // 同じ列名・同じ型で戻す → 保存してある定義には残っていたので、条件も元どおりに戻る
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields)))).toBeNull()
+    expect(view(mixedId).config).toEqual(list('', mixed).config)
+    expect(view(onlyId).config).toEqual(list('', only).config)
+  })
 })
