@@ -792,4 +792,29 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(plain().fields.find((f) => f.key === 'headcount')).toEqual(kept)
     expect(table('plain')).toEqual(rows)
   })
+
+  it('META-076 参照先のテーブルを削除すると参照元の relation の項目は GET /meta から隠れ、参照先を戻すと項目も戻る', () => {
+    const source = () => getMeta().objects.find((o) => o.key === 'source')!
+    createObject(input('plain'))
+    const target = insert('plain', { name: '参照される一件' }, null)
+    createObject({ ...input('source'), fields: [{ key: 'name', label: '名前', type: 'text' }, { key: 'plain_id', label: '参照先', type: 'relation', target: 'plain' }] })
+    insert('source', { name: '参照する一件', plain_id: target.record.id }, null)
+    expect(table('source')[0]!.plain_id).toBe(target.record.id)
+    const before = source()
+    const link = before.fields.find((f) => f.key === 'plain_id')!
+    expect(link.target).toBe('plain')
+    const rows = structuredClone(table('source'))
+
+    // 参照先を削除 → 参照元のテーブルは残り、relation の項目だけ隠れる(列の値は行に残る)
+    deleteObject('plain')
+    expect(source().fields.some((f) => f.key === 'plain_id')).toBe(false)
+    expect(source().fields.some((f) => f.key === 'name')).toBe(true)
+    expect(table('source')).toEqual(rows)
+
+    // 参照先を戻す → 項目も同じ定義で戻る
+    restoreObject('plain')
+    expect(source().fields.find((f) => f.key === 'plain_id')).toEqual(link)
+    expect(source()).toEqual(before)
+    expect(table('source')).toEqual(rows)
+  })
 })
