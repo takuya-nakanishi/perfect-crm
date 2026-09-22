@@ -1348,4 +1348,45 @@ describe('集計(mocks/engine.ts の aggregate)', () => {
     expect(weighted({ field: 'name', op: 'in', value: ['A', 'B', 'C'] })).toBe(530)
     expect(weighted({ field: 'name', op: 'eq', value: 'F' })).toBe(999)
   })
+  it('IO-028 aggregate の group_by が選択肢なら定義順、order: value_desc なら値の大きい順で、値が空のグループは key: null・「未設定」で末尾', () => {
+    const options: SelectOption[] = [
+      { value: 'lead', label: '見込み', color: 'blue' },
+      { value: 'deal', label: '商談中', color: 'green' },
+      { value: 'won', label: '受注', color: 'orange' },
+      { value: 'lost', label: '失注', color: 'red' },
+    ]
+    createObject({
+      key: 'deals',
+      label: '試しの案件',
+      icon: 'box',
+      color: 'blue',
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'stage', label: '段階', type: 'select', options },
+      ],
+    })
+    // 件数は 見込み 2・商談中 1・受注 4・失注 3・空 5。空のグループがいちばん多く、入れる順も定義順とばらばら
+    const stages = ['won', null, 'lost', 'lead', null, 'won', 'deal', null, 'lost', 'won', null, 'lead', 'lost', null, 'won']
+    stages.forEach((stage, i) => insert('deals', { name: `D${i}`, stage }, null))
+    const rows = (order?: 'value_desc') => aggregate('deals', { group_by: { field: 'stage' }, measure: { op: 'count' }, ...(order ? { order } : {}) }, null)
+
+    // 省略時: 選択肢の定義順。空は末尾に key: null・「未設定」で出る
+    expect(rows().map((r) => [r.key, r.label, r.value])).toEqual([
+      ['lead', '見込み', 2],
+      ['deal', '商談中', 1],
+      ['won', '受注', 4],
+      ['lost', '失注', 3],
+      [null, '未設定', 5],
+    ])
+    expect(rows().map((r) => r.color)).toEqual(['blue', 'green', 'orange', 'red', undefined])
+
+    // value_desc: 選択肢でも値の大きい順。空のグループは値が最大でも末尾
+    expect(rows('value_desc').map((r) => [r.key, r.label, r.value])).toEqual([
+      ['won', '受注', 4],
+      ['lost', '失注', 3],
+      ['lead', '見込み', 2],
+      ['deal', '商談中', 1],
+      [null, '未設定', 5],
+    ])
+  })
 })
