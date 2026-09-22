@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, insert, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -1073,5 +1073,42 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(after.name_field).toBe('name')
     expect(refOf('accounts', id)).toEqual({ id, name: '株式会社アオバ精機', subtitle: null })
     expect(hit().subtitle).toBeNull()
+  })
+})
+
+// テストケース表: docs/tests/io.md
+describe('一覧の読み取り(mocks/engine.ts の query)', () => {
+  beforeEach(() => resetTables())
+
+  /** その選択肢の項目の、定義の順に並んだ値 */
+  const optionValues = (object: string, field: string) =>
+    getMeta().objects.find((o) => o.key === object)!.fields.find((f) => f.key === field)!.options!.map((o) => o.value)
+
+  it('IO-020 選択肢の列で並べると定義順(P1 → P4、見込み → 失注)になり、値や表示名の文字順ではない', () => {
+    const stages = optionValues('opportunities', 'stage')
+    expect(stages[0]).toBe('lead')
+    expect(stages.at(-1)).toBe('lost')
+    // 値の文字順(hearing, lead, lost, …)とも表示名の文字順とも違う並びであることを前提として確かめる
+    expect([...stages].sort()).not.toEqual(stages)
+
+    const asc = query('opportunities', { sort: [{ field: 'stage', dir: 'asc' }] }, null).records.map((r) => r.stage as string)
+    expect(asc.length).toBe(table('opportunities').length)
+    // 全部の選択肢が並びに出ていて、定義順に束になっている
+    expect([...new Set(asc)]).toEqual(stages)
+    expect(asc.map((v) => stages.indexOf(v))).toEqual([...asc.map((v) => stages.indexOf(v))].sort((a, b) => a - b))
+    expect(asc[0]).toBe('lead')
+    expect(asc.at(-1)).toBe('lost')
+
+    // 降順は定義の逆順(失注 → 見込み)
+    const desc = query('opportunities', { sort: [{ field: 'stage', dir: 'desc' }] }, null).records.map((r) => r.stage as string)
+    expect([...new Set(desc)]).toEqual([...stages].reverse())
+
+    // タスクの優先度: P1 → P4、降順は P4 → P1
+    const priorities = optionValues('tasks', 'priority')
+    expect(priorities).toEqual(['p1', 'p2', 'p3', 'p4'])
+    const pAsc = query('tasks', { sort: [{ field: 'priority', dir: 'asc' }] }, null).records.map((r) => r.priority as string)
+    expect([...new Set(pAsc)]).toEqual(priorities)
+    const pDesc = query('tasks', { sort: [{ field: 'priority', dir: 'desc' }] }, null).records.map((r) => r.priority as string)
+    expect([...new Set(pDesc)]).toEqual([...priorities].reverse())
   })
 })
