@@ -304,6 +304,40 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '404 は送信に数えない').toBe(3)
   })
 
+  it('SET-048 submitWebForm で作ったレコードの担当(user 型)は空で、ログイン中に送っても送った人にならず、defaults に入れた人なら担当になる', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    await api.createObject({
+      ...input('set_form_owner'),
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'owner', label: '担当', type: 'user' },
+      ],
+    })
+    const plain = await api.createWebForm({ name: '担当なしのフォーム', object: 'set_form_owner', fields: ['name'], defaults: {}, enabled: true, redirect_url: null })
+    const assigned = await api.createWebForm({ name: '担当ありのフォーム', object: 'set_form_owner', fields: ['name'], defaults: { owner: member.id }, enabled: true, redirect_url: null })
+
+    // 対照: 画面から作れば担当は自分(担当が空なのは受け口だからで、テーブルの作りのせいではない)
+    const byScreen = await api.createRecord('set_form_owner', { name: '画面から' })
+    expect(byScreen.record.owner, '画面からの作成は自分が担当').toBe(admin.id)
+
+    // ログインしたままでも、受け口は認証なしなので送った人は担当にならない
+    const whileLoggedIn = await api.submitWebForm(plain.key, { name: 'ログイン中に送信' })
+    expect(whileLoggedIn.record.owner ?? null, 'ログイン中に送っても担当は空').toBeNull()
+
+    await api.logout()
+    const anonymous = await api.submitWebForm(plain.key, { name: '送信' })
+    expect(anonymous.record.owner ?? null, '担当は空').toBeNull()
+    const withDefault = await api.submitWebForm(assigned.key, { name: '既定の担当' })
+    expect(withDefault.record.owner, 'defaults に入れた人が担当').toBe(member.id)
+
+    // 保存された行でも同じ
+    await api.login(admin.email, 'x')
+    const { records } = await api.listRecords('set_form_owner')
+    const ownerOf = Object.fromEntries(records.map((r) => [r.name as string, r.owner ?? null]))
+    expect(ownerOf).toEqual({ 画面から: admin.id, ログイン中に送信: null, 送信: null, 既定の担当: member.id })
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
