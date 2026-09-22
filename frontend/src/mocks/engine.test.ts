@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput } from '@/api/types'
+import type { ObjectInput, SelectOption, TagColor } from '@/api/types'
 import { createObject, getMeta, resetTables } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -102,5 +102,32 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(next?.position).toBeGreaterThan(made!.position)
     expect(next?.in_sidebar).toBe(false)
     expect(next?.fields.filter((f) => f.readonly).map((f) => f.key)).toEqual(['created_at', 'updated_at'])
+  })
+
+  it('META-009 選択肢の項目は options 無し・値が重なる options・9 色の外の色なら 400', () => {
+    const body = (table: string, type: 'select' | 'multi_select', options?: SelectOption[]): ObjectInput => ({
+      ...input(table),
+      fields: [{ key: 'name', label: '名前', type: 'text' }, { key: 'stage', label: '段階', type, ...(options ? { options } : {}) }],
+    })
+    const bad: [string, SelectOption[] | undefined][] = [
+      ['none', undefined],
+      ['empty', []],
+      // 名前が空白だけの選択肢は捨てられるので、無いのと同じ
+      ['blank', [{ value: 'a', label: '  ', color: 'gray' }]],
+      ['dup', [{ value: 'a', label: '甲', color: 'gray' }, { value: 'a', label: '乙', color: 'blue' }]],
+      ['color', [{ value: 'a', label: '甲', color: 'purple' as TagColor }]],
+    ]
+    for (const type of ['select', 'multi_select'] as const) {
+      for (const [name, options] of bad) {
+        const table = `opt_${type}_${name}`
+        expect(statusOf(() => createObject(body(table, type, options))), table).toBe(400)
+        expect(getMeta().objects.some((o) => o.key === table), table).toBe(false)
+      }
+      // 9 色のどれでも、値が別々なら作れる
+      const colors: TagColor[] = ['gray', 'green', 'teal', 'blue', 'violet', 'pink', 'red', 'orange', 'amber']
+      const table = `opt_${type}_ok`
+      expect(statusOf(() => createObject(body(table, type, colors.map((color, i) => ({ value: `v${i}`, label: `選択肢 ${i}`, color })))))).toBeNull()
+      expect(getMeta().objects.find((o) => o.key === table)?.fields.find((f) => f.key === 'stage')?.options?.map((o) => o.color)).toEqual(colors)
+    }
   })
 })
