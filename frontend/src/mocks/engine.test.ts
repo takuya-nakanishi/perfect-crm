@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, getMeta, reorderObjects, resetTables, updateObject } from './engine'
+import { createObject, createView, deleteObject, getMeta, reorderObjects, resetTables, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -508,5 +508,30 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createView('accounts', view({}, '  試しのビュー  ')))).toBeNull()
     expect(count()).toBe(before + 1)
     expect(getMeta().views.filter((v) => v.object === 'accounts').map((v) => v.name)).toContain('試しのビュー')
+  })
+
+  it('META-049 カンバンの group_by に選択肢でない項目(文字・参照・金額・日付・担当者など)や無い項目を指すと 400 で、ビューは増えない', () => {
+    const opps = getMeta().objects.find((o) => o.key === 'opportunities')!
+    const select = opps.fields.find((f) => f.type === 'select')!
+    const others = opps.fields.filter((f) => f.type !== 'select')
+    // 前提: 選択肢でない型が何種類もある(文字・参照・金額・日付など)
+    expect(new Set(others.map((f) => f.type)).size).toBeGreaterThan(1)
+    const kanban = (group_by: string): ViewInput => ({
+      name: '試しのカンバン',
+      type: 'kanban',
+      config: { group_by, card_fields: [opps.name_field] },
+    })
+    const count = () => getMeta().views.filter((v) => v.object === 'opportunities').length
+    const before = count()
+    for (const f of others) expect(statusOf(() => createView('opportunities', kanban(f.key))), `${f.key}(${f.type})`).toBe(400)
+    expect(statusOf(() => createView('opportunities', kanban('no_such_field')))).toBe(400)
+    // 既にあるビューをカンバンに変えるときも同じ
+    const list = getMeta().views.find((v) => v.object === 'opportunities' && v.type === 'list')!
+    for (const f of others) expect(statusOf(() => updateView(list.id, kanban(f.key))), `${f.key}(${f.type})`).toBe(400)
+    expect(getMeta().views.find((v) => v.id === list.id)!.type).toBe('list')
+    expect(count()).toBe(before)
+    // 選択肢の項目なら作れる
+    expect(statusOf(() => createView('opportunities', kanban(select.key)))).toBeNull()
+    expect(count()).toBe(before + 1)
   })
 })
