@@ -873,4 +873,33 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(targets()).toEqual([...others, 'trial'])
     expect(row()).toEqual(before)
   })
+  it('META-090 項目を外すとその項目を指す一覧の列・並びは GET /meta で外れ、保存してある定義には残り、戻すと列も並びも元の位置・幅で戻る', () => {
+    const deals = () => getMeta().objects.find((o) => o.key === 'opportunities')!
+    const list = () => getMeta().views.find((v) => v.object === 'opportunities' && v.type === 'list')!
+    const before = deals()
+    const beforeList = list()
+    if (beforeList.type !== 'list') throw new Error('一覧のビューがありません')
+    // close_date は一覧の列(末尾ではない位置・既定と違う幅)と並びの両方に使われている
+    const index = beforeList.config.columns.findIndex((c) => c.field === 'close_date')
+    expect(index).toBeGreaterThan(0)
+    expect(index).toBeLessThan(beforeList.config.columns.length - 1)
+    expect(beforeList.config.columns[index]!.width).toBe(130)
+    expect(beforeList.config.sort).toEqual([{ field: 'close_date', dir: 'asc' }])
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'opportunities', label: before.label, icon: before.icon, color: before.color, fields })
+
+    // 外して保存 → GET /meta の一覧から列と並びが外れる(ほかの列はそのまま)
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields.filter((f) => f.key !== 'close_date'))))).toBeNull()
+    const hidden = list()
+    if (hidden.type !== 'list') throw new Error('一覧のビューがありません')
+    expect(hidden.id).toBe(beforeList.id)
+    expect(hidden.config.columns).toEqual(beforeList.config.columns.filter((c) => c.field !== 'close_date'))
+    expect(hidden.config.sort).toEqual([])
+
+    // 同じ列名・同じ型で戻す → 保存してある定義に残っていたので、列は元の位置・幅で、並びも元どおりに戻る(末尾に既定の幅で足されるのではない)
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields)))).toBeNull()
+    expect(list()).toEqual(beforeList)
+  })
 })
