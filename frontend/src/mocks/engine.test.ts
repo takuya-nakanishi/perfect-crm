@@ -817,4 +817,36 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(source()).toEqual(before)
     expect(table('source')).toEqual(rows)
   })
+
+  it('META-077 参照先が削除中のあいだに参照元のテーブルの名前だけ変えて保存しても、本文に無い隠れた relation の項目は外れず、参照先を戻すと同じ定義で戻る', () => {
+    const source = () => getMeta().objects.find((o) => o.key === 'source')!
+    createObject(input('plain'))
+    const target = insert('plain', { name: '参照される一件' }, null)
+    createObject({ ...input('source'), fields: [{ key: 'name', label: '名前', type: 'text' }, { key: 'plain_id', label: '参照先', type: 'relation', target: 'plain' }] })
+    insert('source', { name: '参照する一件', plain_id: target.record.id }, null)
+    const before = source()
+    const link = before.fields.find((f) => f.key === 'plain_id')!
+    const rows = structuredClone(table('source'))
+
+    // 参照先を削除 → relation の項目は GET /meta から隠れる
+    deleteObject('plain')
+    const hidden = source()
+    expect(hidden.fields.some((f) => f.key === 'plain_id')).toBe(false)
+
+    // 画面は GET /meta で見えている項目だけを本文に載せて、名前だけ変えて保存する(隠れた項目は本文に無い)
+    const bodyFields = hidden.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    expect(bodyFields.some((f) => f.key === 'plain_id')).toBe(false)
+    expect(statusOf(() => updateObject('source', { key: 'source', label: '名前を変えたテーブル', icon: hidden.icon, color: hidden.color, fields: bodyFields }))).toBeNull()
+    expect(source().label).toBe('名前を変えたテーブル')
+    expect(source().fields.some((f) => f.key === 'plain_id')).toBe(false)
+    expect(table('source')).toEqual(rows)
+
+    // 参照先を戻す → 隠れていた項目は外れておらず、同じ定義で戻る(名前の変更はそのまま)
+    restoreObject('plain')
+    expect(source().fields.find((f) => f.key === 'plain_id')).toEqual(link)
+    expect(source()).toEqual({ ...before, label: '名前を変えたテーブル' })
+    expect(table('source')).toEqual(rows)
+  })
 })
