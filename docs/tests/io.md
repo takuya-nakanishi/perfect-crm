@@ -14,7 +14,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-001 | システム | 条件 | 整合 | L1 | `ne` は NULL を含む(空も「違う」)。値が同じなら偽 | `filter.test.ts` |
 | IO-002 | システム | 条件 | 整合 | L1 | `eq` と `lt`〜`gte` は NULL に対して偽 | `filter.test.ts` |
 | IO-003 | システム | 条件 | 整合 | L1 | `$today` / `$today+7` / `$start_of_month` は文脈の今日を基準に解決する | `filter.test.ts` |
-| IO-004 | システム | 条件 | 整合 | L1 | `in` は配列のどれかと一致、`not_in` はどれとも一致しない(NULL は `not_in` で真) | — |
+| IO-004 | システム | 条件 | 整合 | L1 | `in` は配列のどれかと一致、`not_in` はどれとも一致しない(NULL は `not_in` で真) | `filter.test.ts` |
 | IO-005 | システム | 条件 | 表記 | L1 | `contains` は大文字小文字を区別しない。文字でない列には偽 | — |
 | IO-006 | システム | 条件 | 整合 | L1 | `is_empty` は NULL・空文字・`[]`(複数選択の空)で真、`is_not_empty` はその逆 | — |
 | IO-007 | システム | 条件 | 整合 | L1 | 日時の列(ISO)を日付(`YYYY-MM-DD`)と比べる → 文脈の時刻帯(`ctx.timezone`。ワークスペースの設定)での日付に直してから比べる。UTC 23:30 の完了は `Asia/Tokyo` では翌日、`UTC` では当日(端末の時刻帯に依らない) | — |

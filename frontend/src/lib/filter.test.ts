@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Row } from '@/api/types'
+import type { Condition, Row } from '@/api/types'
 import { matchFilter } from './filter'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -25,5 +25,18 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     expect(matchFilter(row({ due: '2026-09-29' }), { field: 'due', op: 'lte', value: '$today+7' }, ctx)).toBe(true)
     expect(matchFilter(row({ due: '2026-09-30' }), { field: 'due', op: 'lte', value: '$today+7' }, ctx)).toBe(false)
     expect(matchFilter(row({ due: '2026-09-01' }), { field: 'due', op: 'eq', value: '$start_of_month' }, ctx)).toBe(true)
+  })
+  it('IO-004 in は配列のどれかと一致、not_in はどれとも一致しない(NULL は not_in で真)', () => {
+    const inList: Condition = { field: 'stage', op: 'in', value: ['won', 'lost'] }
+    const notIn: Condition = { field: 'stage', op: 'not_in', value: ['won', 'lost'] }
+    expect(matchFilter(row({ stage: 'won' }), inList, ctx)).toBe(true)
+    expect(matchFilter(row({ stage: 'lost' }), inList, ctx)).toBe(true)
+    expect(matchFilter(row({ stage: 'open' }), inList, ctx)).toBe(false)
+    expect(matchFilter(row({ stage: null }), inList, ctx)).toBe(false)
+    expect(matchFilter(row({ stage: 'won' }), notIn, ctx)).toBe(false)
+    expect(matchFilter(row({ stage: 'open' }), notIn, ctx)).toBe(true)
+    // NULL はどれとも一致しないので not_in は真(列が無いときも同じ)
+    expect(matchFilter(row({ stage: null }), notIn, ctx)).toBe(true)
+    expect(matchFilter(row({}), notIn, ctx)).toBe(true)
   })
 })
