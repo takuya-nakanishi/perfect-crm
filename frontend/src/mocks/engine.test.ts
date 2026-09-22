@@ -1595,3 +1595,38 @@ describe('タスクの完了のやり直し(mocks/engine.ts の update)', () => 
     }
   })
 })
+
+describe('タスクを完了でない状況へ移す(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-026 open → 相手待ちでは completed_at は null のまま、done → 相手待ちでは completed_at が null になる', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+
+      // open → 相手待ち: 完了日時は付かない
+      const open = insert('tasks', { title: '見積もりの返事を待つ' }, TAKUYA).record
+      const openId = open.id as string
+      expect(open).toMatchObject({ status: 'open', completed_at: null })
+      const waiting = update('tasks', openId, { status: 'waiting' }, TAKUYA)!.record
+      expect(waiting).toMatchObject({ status: 'waiting', completed_at: null })
+      expect(find('tasks', openId)!.record.completed_at).toBeNull()
+
+      // done → 相手待ち: 完了日時は消える
+      const { record } = insert('tasks', { title: '契約書を送る' }, TAKUYA)
+      const doneId = record.id as string
+      const doneAt = '2026-10-02T01:23:45.000Z'
+      vi.setSystemTime(new Date(doneAt))
+      expect(update('tasks', doneId, { status: 'done' }, TAKUYA)!.record.completed_at).toBe(doneAt)
+
+      vi.setSystemTime(new Date('2026-10-03T04:56:07.000Z'))
+      const back = update('tasks', doneId, { status: 'waiting' }, TAKUYA)!.record
+      expect(back).toMatchObject({ status: 'waiting', completed_at: null })
+      expect(find('tasks', doneId)!.record.completed_at).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

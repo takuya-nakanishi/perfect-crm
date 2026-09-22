@@ -28,7 +28,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` の既定値、`applyRul
 | TASK-023 | システム | 完了 | 整合 | L2 | `update`(status → done)→ `completed_at` に現在時刻、`updated_at` も更新。戻す(→ open)→ `completed_at` は null | `engine.test.ts` |
 | TASK-024 | システム | 完了 | 整合 | L2 | `update`(status → done, completed_at も本文に)→ 渡した `completed_at` を尊重する(移行で元の日時を保つ)。`insert` で最初から done + completed_at も同じ | `engine.test.ts` |
 | TASK-025 | システム | 完了 | 冪等 | L2 | `update`(done のタスクにもう一度 done)→ `completed_at` は変わらない | `engine.test.ts` |
-| TASK-026 | システム | 完了 | 整合 | L2 | `update`(open → 相手待ち)→ `completed_at` は null のまま。`update`(done → 相手待ち)→ `completed_at` は null になる(完了でない状況へ移せば消える) | — |
+| TASK-026 | システム | 完了 | 整合 | L2 | `update`(open → 相手待ち)→ `completed_at` は null のまま。`update`(done → 相手待ち)→ `completed_at` は null になる(完了でない状況へ移せば消える) | `engine.test.ts` |
 
 ## 3. 繰り返し(Todoist の型)
 
