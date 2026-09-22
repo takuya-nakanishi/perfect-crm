@@ -1885,3 +1885,20 @@ describe('ラベルの保存(mocks/engine.ts の update)', () => {
     expect(find('tasks', id)!.record.labels).toBeNull()
   })
 })
+
+describe('ラベルの形(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-063 labels に配列でない文字を送ると 400 で、保存済みの値は変わらない', () => {
+    const id = insert('tasks', { title: '先方へ連絡' }, TAKUYA).record.id as string
+    update('tasks', id, { labels: '["sales"]' }, TAKUYA)
+
+    // 選択肢の値そのもの・JSON の文字列・区切りの文字は、どれも配列ではない
+    for (const labels of ['sales', '"sales"', 'sales,follow_up']) {
+      expect(statusOf(() => update('tasks', id, { labels }, TAKUYA))).toBe(400)
+      expect(find('tasks', id)!.record.labels).toBe('["sales"]')
+    }
+  })
+})
