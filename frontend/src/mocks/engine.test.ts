@@ -1680,3 +1680,37 @@ describe('繰り返しのタスクの完了(mocks/engine.ts の update)', () => 
     }
   })
 })
+
+describe('繰り返しを完了した日から数える(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-045 repeat_from_completion が真なら、期限が過去(9/1)でも次回は完了した日(9/22)+7 = 9/29 になる。偽なら元の期限 +7 = 9/8', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      // 日本時間でも UTC でも同じ日付になる時刻(9/22 の昼)
+      vi.setSystemTime(new Date('2026-09-22T03:00:00Z'))
+      const nextDueOf = (fromCompletion: boolean) => {
+        const { record } = insert('tasks', {
+          title: '週報を書く',
+          due_date: '2026-09-01',
+          repeat: 'weekly',
+          repeat_from_completion: fromCompletion,
+        }, TAKUYA)
+        const id = record.id as string
+        update('tasks', id, { status: 'done' }, TAKUYA)
+        const next = table('tasks').filter((r) => r.repeat_of === id)
+        expect(next).toHaveLength(1)
+        return next[0]
+      }
+
+      const fromCompletion = nextDueOf(true)
+      expect(fromCompletion).toMatchObject({ due_date: '2026-09-29', status: 'open', repeat_from_completion: true })
+      // 比べる相手: 偽なら元の期限から数える
+      expect(nextDueOf(false).due_date).toBe('2026-09-08')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
