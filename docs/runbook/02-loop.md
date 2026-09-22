@@ -82,8 +82,8 @@
 
 | 段階 | 起動する人 | 着地 | 次へ進む目安 |
 |---|---|---|---|
-| 1(現在) | 人が `scripts/loop-run.sh` を実行 | `--land hold`。人が差分を見て着地 | 取り込んだ差分に手直しが要らない状態が続く |
-| 2 | 人、またはタイマー | `--land auto` | `保留` と不合格の理由が妥当で、放置しても害が無い |
+| 1 | 人が `scripts/loop-run.sh` を実行 | `--land hold`。人が差分を見て着地 | 取り込んだ差分に手直しが要らない状態が続く |
+| 2(現在。2026-09-22 から) | 人、またはタイマー | `--land auto` | `保留` と不合格の理由が妥当で、放置しても害が無い |
 | 3 | タイマー | `--land auto` | — |
 
 ループは `claude` の認証と Node が要るので、**この PC(WSL2)でしか動かない**。
@@ -104,3 +104,6 @@
 - **ループは `origin/main` から選ぶ。**表を直したら push しないと、ループには見えない
 - worktree は本体の `frontend/node_modules` をシンボリックリンクで共有する。依存を足したら本体で `npm install` してから回す
 - `verify.sh` に E2E は含めない(開発サーバと Chromium が要る)。L3 の行は人が `npm run e2e` で確かめる
+- **ループが回っている間に人が `main` へ push しない。**着地は fetch → rebase → verify → push なので、verify の 20〜30 秒の間に人が push すると push が弾かれて `failed` になり、worktree が残る(2026-09-22 に 3 件)。表の隣の行を人が直すと rebase が衝突して同じことが起きる。保留を解く修正は、ループの終了(`lock` が空く)を待ってから push し、次の起動でループに拾わせる
+- 残った worktree を人が着地させるときは、`cd .claude/worktrees/loop-<id> && bash scripts/wt-land.sh`。衝突を解いたあとの `--continue` で verify が red になったら、rebase は既に終わっているので直して `git commit --amend --no-edit` → `bash scripts/wt-land.sh`(`--continue` ではない)。**別の worktree を直しているつもりで作業ディレクトリを取り違えない**(`pwd` を確かめる。取り違えると直した行が別の項目のコミットに紛れる)
+- テストの衝突はたいてい「同じ `describe` の末尾に両方が `it` を足した」形。両方を残せばよいが、衝突の範囲が `it` の閉じ `})` を共通部分として持つことがあり、単純につなぐと閉じ括弧が 1 つ足りなくなる。解いたら `npx vitest run <ファイル>` で構文を確かめてから着地する
