@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { importCsv, parseCsv } from './csv'
+import type { FieldMeta } from '@/api/types'
+import { coerce, importCsv, parseCsv } from './csv'
 import { resetTables, table, users } from './engine'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -111,5 +112,56 @@ describe('CSV の取り込み(mocks/csv.ts)', () => {
       { name: '森田物産', employees: 7 },
     ])
     for (const name of ['山田商店', '川口工業']) expect(table('accounts').some((r) => r.name === name)).toBe(false)
+  })
+})
+
+describe('文字から値への変換(mocks/csv.ts の coerce)', () => {
+  it('IO-064 数値は全角・カンマ・円記号、日付は / と年月日、選択肢はラベルか値、利用者は名前かメール、チェックは「はい / true / 1 / ○」を受ける', () => {
+    const amount: FieldMeta = { key: 'amount', label: '金額', type: 'currency' }
+    const count: FieldMeta = { key: 'count', label: '人数', type: 'number' }
+    // 全角の数字、桁区切りのカンマ、円記号(¥ と「円」)を受ける
+    expect(coerce(count, '１２３')).toBe(123)
+    expect(coerce(amount, '1,200,000')).toBe(1200000)
+    expect(coerce(amount, '¥1,200')).toBe(1200)
+    expect(coerce(amount, '￥３，４００')).toBe(3400)
+    expect(coerce(amount, '5,000円')).toBe(5000)
+    expect(() => coerce(amount, '千円')).toThrow('数値ではありません')
+
+    const due: FieldMeta = { key: 'due', label: '期日', type: 'date' }
+    // 区切りが / でも年月日でも、1 桁の月日は 0 で埋めた ISO の日付にする
+    expect(coerce(due, '2026-09-30')).toBe('2026-09-30')
+    expect(coerce(due, '2026/9/30')).toBe('2026-09-30')
+    expect(coerce(due, '2026年9月30日')).toBe('2026-09-30')
+    expect(coerce(due, '２０２６年９月３日')).toBe('2026-09-03')
+    expect(() => coerce(due, '9月30日')).toThrow('日付として読めません')
+
+    const rank: FieldMeta = {
+      key: 'rank',
+      label: '確度',
+      type: 'select',
+      options: [
+        { value: 'hot', label: '高い', color: 'green' },
+        { value: 'cold', label: '低い', color: 'gray' },
+      ],
+    }
+    // ラベルでも値でも、保存するのは値
+    expect(coerce(rank, '高い')).toBe('hot')
+    expect(coerce(rank, 'cold')).toBe('cold')
+    expect(() => coerce(rank, '普通')).toThrow('という選択肢はありません')
+
+    const owner: FieldMeta = { key: 'owner', label: '担当', type: 'user' }
+    const [first, second] = users
+    // 名前でもメール(大文字小文字は問わない)でも、保存するのは利用者の ID
+    expect(coerce(owner, first.name)).toBe(first.id)
+    expect(coerce(owner, second.email)).toBe(second.id)
+    expect(coerce(owner, second.email.toUpperCase())).toBe(second.id)
+    expect(() => coerce(owner, 'nobody@example.jp')).toThrow('という利用者はいません')
+
+    const done: FieldMeta = { key: 'done', label: '完了', type: 'checkbox' }
+    for (const yes of ['はい', 'true', 'TRUE', '1', '○']) expect(coerce(done, yes), yes).toBe(true)
+    for (const no of ['いいえ', 'false', '0', '×']) expect(coerce(done, no), no).toBe(false)
+    // 空は型によらず null(値なし)
+    expect(coerce(done, '  ')).toBeNull()
+    expect(coerce(amount, '')).toBeNull()
   })
 })
