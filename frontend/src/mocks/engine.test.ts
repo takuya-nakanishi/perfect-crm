@@ -194,4 +194,21 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(getMeta().objects.find((o) => o.key === 'type_fixed')?.label).toBe('変えた名前')
     expect(typeOf()).toBe('number')
   })
+
+  it('META-013 updateObject で既存の参照項目の参照先を変える本文を送っても、参照先は元のまま保たれる', () => {
+    const fields = (target: string): ObjectInput['fields'] => [
+      { key: 'name', label: '名前', type: 'text' },
+      { key: 'ref', label: '参照', type: 'relation', target },
+    ]
+    expect(statusOf(() => createObject({ ...input('ref_fixed'), fields: fields('accounts') }))).toBeNull()
+    const targetOf = () => getMeta().objects.find((o) => o.key === 'ref_fixed')?.fields.find((f) => f.key === 'ref')?.target
+    expect(targetOf()).toBe('accounts')
+    // 生きている別のテーブル・無いテーブル・空を指しても、参照先は変わらない(他の変更は通る)
+    for (const target of ['contacts', 'no_such_table', '']) {
+      const label = `変えた名前_${target}`
+      updateObject('ref_fixed', { ...input('ref_fixed'), label, fields: fields(target) })
+      expect(targetOf(), target).toBe('accounts')
+      expect(getMeta().objects.find((o) => o.key === 'ref_fixed')?.label, target).toBe(label)
+    }
+  })
 })
