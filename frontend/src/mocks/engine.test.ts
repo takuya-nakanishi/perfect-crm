@@ -2439,3 +2439,44 @@ describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
     expect(table('accounts')).toHaveLength(count)
   })
 })
+
+describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
+  beforeEach(() => resetTables())
+
+  it('REC-080 insert: 数値の列に文字 "12.34" や NaN を渡すと 400 で行は増えない。数値なら scale の桁で丸めて保存する', () => {
+    // scale 付きの数値の列を持つテーブルを用意する(初めからあるテーブルには scale の列が無い)
+    const body: ObjectInput = {
+      ...input('scaled'),
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'price', label: '単価', type: 'number', scale: 2 },
+        { key: 'units', label: '個数', type: 'number', scale: 0 },
+        { key: 'rate', label: '割合', type: 'percent', scale: 1 },
+        { key: 'free', label: '自由', type: 'number' },
+      ],
+    }
+    expect(statusOf(() => createObject(body))).toBeNull()
+
+    // 文字・NaN・無限大は 400。行は増えない(既存の数値・金額の列も同じ)
+    const cases: [string, Record<string, Scalar>][] = [
+      ['scaled', { name: '文字', price: '12.34' }],
+      ['scaled', { name: 'NaN', price: NaN }],
+      ['scaled', { name: '無限大', free: Infinity }],
+      ['scaled', { name: '割合に文字', rate: '12.34' }],
+      ['accounts', { name: '従業員数に文字', employees: '12.34' }],
+      ['accounts', { name: '従業員数に NaN', employees: NaN }],
+      ['opportunities', { name: '金額に文字', account_id: table('accounts')[0].id, amount: '12.34' }],
+    ]
+    for (const [object, values] of cases) {
+      const before = table(object).length
+      expect(statusOf(() => insert(object, values, null)), String(values.name)).toBe(400)
+      expect(table(object), String(values.name)).toHaveLength(before)
+    }
+
+    // 数値なら scale の桁で丸める(返り値も保存された行も)。scale の無い列は丸めない
+    const got = insert('scaled', { name: '数値', price: 12.3456, units: 7.6, rate: 33.333, free: 1.23456789 }, null).record
+    const expected = { price: 12.35, units: 8, rate: 33.3, free: 1.23456789 }
+    expect(got).toMatchObject(expected)
+    expect(find('scaled', got.id as string)!.record).toMatchObject(expected)
+  })
+})
