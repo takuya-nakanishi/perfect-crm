@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Condition, FieldMeta, Filter, ObjectMeta, ViewMeta } from '@/api/types'
-import { flatten, newViewInput, unflatten, uniqueName } from './viewModel'
+import type { Condition, FieldMeta, Filter, MetaResponse, ObjectMeta, ViewMeta } from '@/api/types'
+import { describe as describeCondition, flatten, newViewInput, unflatten, uniqueName } from './viewModel'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const a: Condition = { field: 'status', op: 'eq', value: 'open' }
@@ -114,5 +114,44 @@ describe('タブの名前の既定(lib/viewModel.ts uniqueName)', () => {
     expect(uniqueName('一覧', [view('一覧', 0), view('一覧 2', 1)])).toBe('一覧 3')
     // 空いている番号のうち最も小さいものを使う(「一覧 3」だけがあるなら「一覧 2」)
     expect(uniqueName('一覧', [view('一覧', 0), view('一覧 3', 1)])).toBe('一覧 2')
+  })
+})
+
+describe('フィルタのチップの言い方(lib/viewModel.ts describe)', () => {
+  const meta: MetaResponse = {
+    workspace: { id: 'w1', name: '架空の会社', timezone: 'Asia/Tokyo' },
+    objects: [],
+    views: [],
+    users: [
+      { id: 'u1', name: '山田 太郎', email: 'yamada@example.com', avatar_color: 'blue' },
+      { id: 'u2', name: '佐藤 花子', email: 'sato@example.com', avatar_color: 'green' },
+    ],
+  }
+  const industry = field('industry', 'select', {
+    options: [
+      { value: 'medical', label: '医療・福祉', color: 'green' },
+      { value: 'retail', label: '小売', color: 'blue' },
+    ],
+  })
+
+  it('META-058 describe は選択肢をラベル、利用者を名前($me は「自分」)、金額を ¥5,000,000、日付のマクロを「7 日後」で見せる', () => {
+    // 選択肢は値ではなくラベル。複数は「, 」で並べる
+    expect(describeCondition(meta, industry, { field: 'industry', op: 'eq', value: 'medical' })).toEqual({ op: 'が', value: '医療・福祉' })
+    expect(describeCondition(meta, industry, { field: 'industry', op: 'in', value: ['medical', 'retail'] })).toEqual({ op: 'のどれか', value: '医療・福祉, 小売' })
+
+    // 利用者は ID ではなく名前。$me は「自分」
+    const owner = field('owner', 'user')
+    expect(describeCondition(meta, owner, { field: 'owner', op: 'eq', value: 'u1' })).toEqual({ op: 'が', value: '山田 太郎' })
+    expect(describeCondition(meta, owner, { field: 'owner', op: 'eq', value: '$me' })).toEqual({ op: 'が', value: '自分' })
+    expect(describeCondition(meta, owner, { field: 'owner', op: 'in', value: ['$me', 'u2'] })).toEqual({ op: 'のどれか', value: '自分, 佐藤 花子' })
+
+    // 金額は円記号と桁区切り。演算子は数値の言い方
+    const amount = field('amount', 'currency')
+    expect(describeCondition(meta, amount, { field: 'amount', op: 'gte', value: 5000000 })).toEqual({ op: '以上', value: '¥5,000,000' })
+
+    // 日付のマクロは言葉、日付そのものは / 区切り
+    const due = field('due', 'date')
+    expect(describeCondition(meta, due, { field: 'due', op: 'lte', value: '$today+7' })).toEqual({ op: '以前', value: '7 日後' })
+    expect(describeCondition(meta, due, { field: 'due', op: 'lte', value: '2026-09-22' })).toEqual({ op: '以前', value: '2026/09/22' })
   })
 })

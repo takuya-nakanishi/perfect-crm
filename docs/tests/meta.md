@@ -63,7 +63,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-055 | 利用者 | ビュー | 整合 | L1 | `flatten` / `unflatten`: 1 段の and → 条件の配列、1 条件だけの and → 単体の条件、入れ子(and の中の or)→ `advanced` に保つ。往復しても、条件の集合と高度な条件の中身と join が保たれる(形は正規化される) | `viewModel.test.ts` |
 | META-056 | 利用者 | ビュー | 整合 | L1 | `newViewInput`: 選択肢の無いテーブルでカンバン → null。base 無しの一覧は、readonly と複数行の文字を除いた候補の先頭 6 項目(表示名を含む)を列にする。base が一覧なら base の列をそのまま写す | `viewModel.test.ts` |
 | META-057 | 利用者 | ビュー | 表記 | L1 | `uniqueName`: 「一覧」があれば「一覧 2」、「一覧 2」もあれば「一覧 3」 | `viewModel.test.ts` |
-| META-058 | 利用者 | ビュー | 整合 | L1 | `describe`: 選択肢はラベル、利用者は名前(`$me` は「自分」)、金額は `¥5,000,000`、日付のマクロは「7 日後」 | — |
+| META-058 | 利用者 | ビュー | 整合 | L1 | `describe`: 選択肢はラベル、利用者は名前(`$me` は「自分」)、金額は `¥5,000,000`、日付のマクロは「7 日後」 | `viewModel.test.ts` |
 | META-059 | 利用者 | ビュー | 整合 | L3 | 利用者: 条件を続けて 2 回変える → 先に送った保存の応答が後から返っても、画面は最後の変更のまま(古い応答で戻らない。08 §1 の 9) | — |
 
 ## 3. 削除と復元
