@@ -130,6 +130,39 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     }
   })
 
+  it('SET-042 createWebForm は 名前が空 / テーブルが無い / 項目が 0 / readonly・関連先・ドライブの項目 / redirect_url が http(s) でない ならそれぞれ 400 で、フォームは増えない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    const objects = getMeta().objects
+    const object = objects[0]
+    const field = object.fields.find((f) => !f.readonly && f.type === 'text')!
+    const ok: WebFormInput = { name: '試しのフォーム', object: object.key, fields: [field.key], defaults: {}, enabled: true, redirect_url: null }
+    // 受け付けられない項目は、それを持つテーブルをメタデータから探す
+    const withField = (pick: (f: (typeof object.fields)[number]) => boolean) => {
+      const o = objects.find((x) => x.fields.some(pick))!
+      const text = o.fields.find((f) => !f.readonly && f.type === 'text')!
+      return { ...ok, object: o.key, fields: [text.key, o.fields.find(pick)!.key] }
+    }
+    const before = listForms()
+
+    expect(await statusOf(() => api.createWebForm({ ...ok, name: '' })), '名前が空').toBe(400)
+    expect(await statusOf(() => api.createWebForm({ ...ok, name: '   ' })), '名前が空白だけ').toBe(400)
+    expect(await statusOf(() => api.createWebForm({ ...ok, object: 'no_such_table' })), 'テーブルが無い').toBe(400)
+    expect(await statusOf(() => api.createWebForm({ ...ok, fields: [] })), '項目が 0').toBe(400)
+    expect(await statusOf(() => api.createWebForm(withField((f) => !!f.readonly))), 'readonly の項目').toBe(400)
+    expect(await statusOf(() => api.createWebForm(withField((f) => f.type === 'polymorphic'))), '関連先の項目').toBe(400)
+    expect(await statusOf(() => api.createWebForm(withField((f) => f.type === 'drive_files'))), 'ドライブの項目').toBe(400)
+    expect(await statusOf(() => api.createWebForm({ ...ok, redirect_url: 'ftp://example.com/thanks' })), 'redirect_url が ftp').toBe(400)
+    expect(await statusOf(() => api.createWebForm({ ...ok, redirect_url: 'javascript:alert(1)' })), 'redirect_url が javascript:').toBe(400)
+    expect(listForms(), '失敗した作成でフォームは増えない').toEqual(before)
+
+    // 対照: 正しい入力なら通る(400 は各欄の中身で決まっている)
+    expect(await statusOf(() => api.createWebForm(ok)), '正しい入力').toBeNull()
+    expect(await statusOf(() => api.createWebForm({ ...ok, redirect_url: 'https://example.com/thanks' })), 'redirect_url が https').toBeNull()
+    expect(await statusOf(() => api.createWebForm({ ...ok, redirect_url: 'http://example.com/thanks' })), 'redirect_url が http').toBeNull()
+    expect(listForms()).toHaveLength(before.length + 3)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
