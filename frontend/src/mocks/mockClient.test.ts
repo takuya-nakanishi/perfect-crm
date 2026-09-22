@@ -99,4 +99,23 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(await statusOf(() => api.deleteView(created!.id)), 'deleteView').toBeNull()
     expect(getMeta().views.map((v) => v.id)).toEqual(idsBefore)
   })
+
+  it('SET-005 未ログインの getMeta / listRecords は 401 で、ログインすれば同じ呼び出しが通る', async () => {
+    const api = createMockClient()
+    const object = getMeta().objects[0]
+
+    expect(await api.getSession(), 'セッションが無い').toBeNull()
+    expect(await statusOf(() => api.getMeta()), 'getMeta').toBe(401)
+    expect(await statusOf(() => api.listRecords(object.key)), 'listRecords').toBe(401)
+
+    // 対照: ログインすれば同じ呼び出しが通る(401 はログインの有無で決まっている)
+    await api.login(member.email, 'x')
+    expect(await statusOf(() => api.getMeta()), 'getMeta(ログイン後)').toBeNull()
+    expect(await statusOf(() => api.listRecords(object.key)), 'listRecords(ログイン後)').toBeNull()
+
+    // ログアウトすれば再び 401
+    await api.logout()
+    expect(await statusOf(() => api.getMeta()), 'getMeta(ログアウト後)').toBe(401)
+    expect(await statusOf(() => api.listRecords(object.key)), 'listRecords(ログアウト後)').toBe(401)
+  })
 })

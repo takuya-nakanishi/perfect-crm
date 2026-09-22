@@ -15,7 +15,7 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 | SET-002 | 利用者 | 管理者 | 権限 | L2 | 管理者でない利用者: `createObject` / `updateObject` / `deleteObject` / `reorderObjects` → 403 | `mockClient.test.ts` |
 | SET-003 | 利用者 | 管理者 | 権限 | L2 | 管理者でない利用者: `listMcpTokens` / `createMcpToken` / `listWebForms` / `createWebForm` → 403 | `mockClient.test.ts` |
 | SET-004 | 利用者 | 管理者 | 権限 | L2 | 管理者でない利用者: `createView` / `updateView` / `deleteView` → 通る(ビューは誰でも。Q-045) | `mockClient.test.ts` |
-| SET-005 | システム | 管理者 | 権限 | L2 | 未ログイン: `getMeta` / `listRecords` → 401 | — |
+| SET-005 | システム | 管理者 | 権限 | L2 | 未ログイン: `getMeta` / `listRecords` → 401 | `mockClient.test.ts` |
 
 ## 2. MCP
 
