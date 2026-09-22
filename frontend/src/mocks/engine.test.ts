@@ -2093,4 +2093,29 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-024 timeline(contacts, Y) には contact_id(relation)が Y の完了したタスクも出る', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const y = insert('contacts', { name: '時系列 確かめ' }, TAKUYA).record.id as string
+      const other = insert('contacts', { name: '別の 責任者' }, TAKUYA).record.id as string
+      const account = insert('accounts', { name: '関連先の取引先' }, TAKUYA).record.id as string
+      const task = (title: string, status: string, extra: Record<string, Scalar>) =>
+        insert('tasks', { title, status, ...extra }, TAKUYA).record.id as string
+      // 関連先(polymorphic)は取引先のまま、contact_id だけが Y を指す
+      const withAccount = task('見積の説明', 'done', { related_object: 'accounts', related_id: account, contact_id: y, completed_at: '2026-09-15T12:00:00.000Z' })
+      const onlyContact = task('お礼の電話', 'done', { contact_id: y, completed_at: '2026-09-18T12:00:00.000Z' })
+      task('まだ開いている', 'open', { contact_id: y })
+      task('別の責任者の完了', 'done', { contact_id: other, completed_at: '2026-09-20T12:00:00.000Z' })
+      task('取引先だけの完了', 'done', { related_object: 'accounts', related_id: account, completed_at: '2026-09-21T12:00:00.000Z' })
+
+      const entries = timeline('contacts', y)
+      expect(entries.map((e) => e.id)).toEqual([onlyContact, withAccount])
+      expect(entries[0]).toMatchObject({ kind: 'completion', object: 'tasks', date: '2026-09-18', subject: 'お礼の電話' })
+      expect(entries[1]).toMatchObject({ kind: 'completion', object: 'tasks', date: '2026-09-15', subject: '見積の説明' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
