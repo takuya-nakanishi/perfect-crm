@@ -1957,4 +1957,30 @@ describe('活動の記録(mocks/engine.ts の insert)', () => {
     expect(statusOf(() => insert('activities', { subject: '先方へ電話', type: null }, TAKUYA))).toBe(400)
     expect(table('activities').length).toBe(before + 2)
   })
+
+  it('ACT-004 内容に <script> や onclick を入れても、保存される HTML は許した要素だけに洗われる(書式と安全なリンクは残る)', () => {
+    const body = getMeta().objects.find((o) => o.key === 'activities')!.fields.find((f) => f.key === 'body')!
+    expect(body.type).toBe('richtext')
+
+    const raw =
+      '<p onclick="alert(1)">冒頭<strong onmouseover="x()">太字</strong><script>alert(2)</script></p>' +
+      '<img onerror="alert(3)"><iframe srcdoc="悪い中身"></iframe>' +
+      '<a href="javascript:alert(4)" onclick="y()">悪いリンク</a><a href="https://example.com/" style="color:red">良いリンク</a>'
+    const { record } = insert('activities', { subject: '先方へ電話', body: raw }, TAKUYA)
+    const saved = find('activities', record.id as string)!.record.body as string
+
+    // 返り値と保存された行は同じ洗浄済みの HTML
+    expect(record.body).toBe(saved)
+    // 許した要素(p・strong・a)と文字は残る。スクリプトの中身は実行されない文字になり、javascript: のリンクは href を落とす
+    expect(saved).toBe(
+      '<p>冒頭<strong>太字</strong>alert(2)</p><a>悪いリンク</a><a href="https://example.com/" target="_blank" rel="noreferrer">良いリンク</a>',
+    )
+    // 許していない要素・イベント属性・javascript: のリンク・style は一つも残らない
+    const doc = new DOMParser().parseFromString(saved, 'text/html')
+    expect(doc.querySelectorAll('script, img, iframe').length).toBe(0)
+    for (const el of Array.from(doc.body.querySelectorAll('*'))) {
+      expect(el.getAttributeNames().filter((n) => n.startsWith('on') || n === 'style'), el.outerHTML).toEqual([])
+    }
+    expect(saved).not.toMatch(/javascript:/i)
+  })
 })

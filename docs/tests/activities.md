@@ -14,7 +14,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`timeline`、`applyRules` の活�
 | ACT-001 | 利用者 | 記録 | 整合 | L3 | 利用者: パネルの記録欄で件名と内容を書き Ctrl+Enter → その場の時系列に出て、書式(太字)が残り、トーストが出る | `smoke.mjs「活動を記録すると、その場の時系列に出る」` / `smoke.mjs「内容の書式(太字)が残る」` / `smoke.mjs「記録のトーストが出る」` |
 | ACT-002 | システム | 記録 | 整合 | L2 | `insert`(activities)で日付を省く → 今日が入る(必須の検証より先に既定値が効く) | `engine.test.ts` |
 | ACT-003 | システム | 記録 | 整合 | L2 | `insert`(activities)で種別を省く → 先頭の選択肢(電話)。記録者は自分 | `engine.test.ts` |
-| ACT-004 | システム | 記録 | 安全弁 | L2 | `insert`(activities)の内容に `<script>` や `onclick` → 保存される HTML は洗浄済み(許した要素だけ) | — |
+| ACT-004 | システム | 記録 | 安全弁 | L2 | `insert`(activities)の内容に `<script>` や `onclick` → 保存される HTML は洗浄済み(許した要素だけ) | `engine.test.ts` |
 | ACT-005 | システム | 記録 | 整合 | L2 | `insert` / `update` の内容に言及 → `mentions` 列に `テーブル名:ID` の JSON。言及を消せば null。言及した側のレコードだけが変わる(言及先の行は変わらない) | — |
 | ACT-006 | 利用者 | 記録 | 可逆 | L3 | 利用者: 活動テーブルに必須の項目を足したあと、記録欄でそれを空のまま記録 → 400 で弾かれるが、書いた件名と内容は消えずに欄が開き直る(08 §1 の 12) | — |
 
