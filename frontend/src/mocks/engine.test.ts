@@ -62,4 +62,21 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(made?.fields.find((f) => f.key === 'title')?.required).toBe(true)
     expect(made?.fields.find((f) => f.key === 'memo')?.required).toBeFalsy()
   })
+
+  it('META-007 項目の列名が id・created_at・updated_at なら 400。同じ列名が 2 つでも 400', () => {
+    for (const key of ['id', 'created_at', 'updated_at']) {
+      const table = `sys_${key}`
+      const body = { ...input(table), fields: [{ key: 'name', label: '名前', type: 'text' as const }, { key, label: '予約', type: 'text' as const }] }
+      expect(statusOf(() => createObject(body)), key).toBe(400)
+      expect(getMeta().objects.some((o) => o.key === table), key).toBe(false)
+    }
+    // 同じ列名が 2 つ(型が違っても)
+    const dup = { ...input('dup_fields'), fields: [{ key: 'name', label: '名前', type: 'text' as const }, { key: 'memo', label: 'メモ', type: 'text' as const }, { key: 'memo', label: 'メモ 2', type: 'textarea' as const }] }
+    expect(statusOf(() => createObject(dup))).toBe(400)
+    expect(getMeta().objects.some((o) => o.key === 'dup_fields')).toBe(false)
+    // 予約語を含むだけの列名や、別々の列名なら作れる
+    const ok = { ...input('ok_fields'), fields: [{ key: 'name', label: '名前', type: 'text' as const }, { key: 'external_id', label: '外部 ID', type: 'text' as const }, { key: 'created_at_origin', label: '元の作成日', type: 'date' as const }] }
+    expect(statusOf(() => createObject(ok))).toBeNull()
+    expect(getMeta().objects.some((o) => o.key === 'ok_fields')).toBe(true)
+  })
 })
