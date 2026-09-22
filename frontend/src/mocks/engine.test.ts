@@ -2226,4 +2226,22 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-043 関連先が Z で、内容でも Z に言及した活動は timeline(accounts, Z) に kind: activity で 1 件だけ出る(重複しない)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const z = insert('accounts', { name: '二重の確かめ' }, TAKUYA).record.id as string
+      const mention = (o: string, i: string, label: string) => `<span data-type="mention" data-id="${o}:${i}" data-label="${label}">@${label}</span>`
+      // 関連先が Z で、本文でも Z に言及する(同じ言及を 2 回書いても 1 件)
+      const both = insert('activities', { subject: 'Z で Z の話', occurred_on: '2026-09-20', body: `<p>${mention('accounts', z, '二重の確かめ')}と${mention('accounts', z, '二重の確かめ')}の件</p>`, related_object: 'accounts', related_id: z }, TAKUYA).record.id as string
+      expect(find('activities', both)!.record.mentions).toContain(`"accounts:${z}"`)
+
+      const entries = timeline('accounts', z)
+      expect(entries.map((e) => [e.kind, e.id])).toEqual([['activity', both]])
+      expect(entries[0]).toMatchObject({ object: 'activities', date: '2026-09-20', subject: 'Z で Z の話', related: { object: 'accounts', id: z, name: '二重の確かめ' } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

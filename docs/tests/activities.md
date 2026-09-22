@@ -38,5 +38,5 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`timeline`、`applyRules` の活�
 | ACT-040 | 利用者 | 言及 | キー | L3 | 利用者: 内容で「@北浜」と打つ → 候補が出て Enter で言及になる | `smoke.mjs「@ に続けて打つとレコードを探して言及できる」` |
 | ACT-041 | 利用者 | 言及 | 整合 | L3 | 利用者: 言及先の時系列に「〜の活動で言及」として残り、押すとその先が開く | `smoke.mjs「言及先の時系列に「〜の活動で言及」として残り、押すとその先が開く」` |
 | ACT-042 | システム | 言及 | 整合 | L2 | `timeline(accounts, Z)`: 関連先が別のレコードで、`mentions` に Z を含む活動 → `kind: mention`、`related` にその活動の本来の関連先(名前付き) | `engine.test.ts` |
-| ACT-043 | システム | 言及 | 整合 | L2 | 関連先が Z で、内容でも Z に言及 → `activity` 1 件だけ(重複しない) | — |
+| ACT-043 | システム | 言及 | 整合 | L2 | 関連先が Z で、内容でも Z に言及 → `activity` 1 件だけ(重複しない) | `engine.test.ts` |
 | ACT-044 | システム | 言及 | 整合 | L2 | 種データの活動(`mentions` 列あり)も言及先の時系列に出る(gen-fixtures が写している) | — |
