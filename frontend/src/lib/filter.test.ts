@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Condition, Row } from '@/api/types'
 import { matchFilter } from './filter'
 
@@ -62,6 +62,30 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     for (const v of [row({ tags: 'a' }), row({ tags: '["vip"]' }), row({ tags: 0 }), row({ tags: false })]) {
       expect(matchFilter(v, empty, ctx)).toBe(false)
       expect(matchFilter(v, notEmpty, ctx)).toBe(true)
+    }
+  })
+  it('IO-007 日時の列を日付と比べるときは、文脈の時刻帯(ctx.timezone)での日付に直してから比べる', () => {
+    // UTC 23:30 の完了。Asia/Tokyo では翌日の 08:30、UTC では当日
+    const done = row({ completed_at: '2026-09-22T23:30:00.000Z' })
+    const on = (value: string): Condition => ({ field: 'completed_at', op: 'eq', value })
+    const tokyo = { ...ctx, timezone: 'Asia/Tokyo' }
+    const utc = { ...ctx, timezone: 'UTC' }
+    expect(matchFilter(done, on('2026-09-23'), tokyo)).toBe(true)
+    expect(matchFilter(done, on('2026-09-22'), tokyo)).toBe(false)
+    expect(matchFilter(done, on('2026-09-22'), utc)).toBe(true)
+    expect(matchFilter(done, on('2026-09-23'), utc)).toBe(false)
+    // 大小比較も日付に直してから。マクロ($today)も同じく日付として比べる
+    expect(matchFilter(done, { field: 'completed_at', op: 'gt', value: '$today' }, tokyo)).toBe(true)
+    expect(matchFilter(done, { field: 'completed_at', op: 'lte', value: '$today' }, utc)).toBe(true)
+    // 時刻帯が文脈で決まるので、端末の時刻帯(TZ)を変えても結果は同じ
+    try {
+      for (const tz of ['America/Los_Angeles', 'Asia/Tokyo', 'UTC']) {
+        vi.stubEnv('TZ', tz)
+        expect(matchFilter(done, on('2026-09-23'), tokyo)).toBe(true)
+        expect(matchFilter(done, on('2026-09-22'), utc)).toBe(true)
+      }
+    } finally {
+      vi.unstubAllEnvs()
     }
   })
 })
