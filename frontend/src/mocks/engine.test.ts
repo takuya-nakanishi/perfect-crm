@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, reorderViews, resetTables, restoreView, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, insert, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, table, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -679,5 +679,32 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createObject(input('plain')))).toBeNull()
     expect(statusOf(() => deleteObject('plain'))).toBeNull()
     expect(getMeta().objects.some((o) => o.key === 'plain')).toBe(false)
+  })
+
+  it('META-072 deleteObject で GET /meta から消えるがレコードとビューは残り、restoreObject でテーブル・ビュー・レコードが全部戻る', () => {
+    createObject(input('plain'))
+    createView('plain', { name: '試しのビュー', type: 'list', config: { columns: [{ field: 'name' }] } })
+    insert('plain', { name: '一件目' }, null)
+    insert('plain', { name: '二件目' }, null)
+    const before = getMeta()
+    const object = before.objects.find((o) => o.key === 'plain')
+    const views = before.views.filter((v) => v.object === 'plain')
+    const rows = structuredClone(table('plain'))
+    expect(views.map((v) => v.name)).toContain('試しのビュー')
+    expect(rows).toHaveLength(2)
+
+    deleteObject('plain')
+    const trashed = getMeta()
+    expect(trashed.objects.some((o) => o.key === 'plain')).toBe(false)
+    expect(trashed.views.some((v) => v.object === 'plain')).toBe(false)
+    // レコードは捨てない
+    expect(table('plain')).toEqual(rows)
+
+    restoreObject('plain')
+    const after = getMeta()
+    expect(after.objects.find((o) => o.key === 'plain')).toEqual(object)
+    // ビューは消した間も残っていた(同じ ID・同じ定義で戻る)
+    expect(after.views.filter((v) => v.object === 'plain')).toEqual(views)
+    expect(table('plain')).toEqual(rows)
   })
 })
