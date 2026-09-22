@@ -2312,3 +2312,33 @@ describe('1 件の読み取り(mocks/engine.ts の find)', () => {
     expect(Object.keys(t.references)).not.toContain('related_object')
   })
 })
+
+describe('商談の作成と確度(mocks/engine.ts の insert)', () => {
+  beforeEach(() => resetTables())
+
+  /** 商談の stage の選択肢の確度の既定値(定義から引く) */
+  const stageProbability = (value: string) => {
+    const stage = getMeta().objects.find((o) => o.key === 'opportunities')!.fields.find((f) => f.key === 'stage')!
+    return stage.options!.find((o) => o.value === value)!.probability
+  }
+
+  it('REC-063 insert(商談): フェーズを指定すれば確度はそのフェーズの既定値、確度も同時に指定すればそちらを尊重する', () => {
+    const account_id = table('accounts')[0].id
+    // フェーズごとに既定値が入る(提案 50・交渉 85・失注 0)
+    for (const stage of ['proposal', 'negotiation', 'lost']) {
+      const got = insert('opportunities', { name: `確度の試し ${stage}`, account_id, stage }, null)
+      expect(stageProbability(stage), stage).toBeTypeOf('number')
+      expect(got.record.probability, stage).toBe(stageProbability(stage))
+      expect(find('opportunities', got.record.id)!.record.probability, stage).toBe(stageProbability(stage))
+    }
+    // 確度も同時に指定すれば、既定値で上書きしない(0 も尊重する)
+    const given = insert('opportunities', { name: '確度を指定', account_id, stage: 'proposal', probability: 30 }, null)
+    expect(given.record.probability).toBe(30)
+    const zero = insert('opportunities', { name: '確度 0 を指定', account_id, stage: 'won', probability: 0 }, null)
+    expect(zero.record.probability).toBe(0)
+    // フェーズを省けば先頭の選択肢(見込み)になり、確度もその既定値
+    const omitted = insert('opportunities', { name: 'フェーズを省く', account_id }, null)
+    expect(omitted.record.stage).toBe('lead')
+    expect(omitted.record.probability).toBe(stageProbability('lead'))
+  })
+})
