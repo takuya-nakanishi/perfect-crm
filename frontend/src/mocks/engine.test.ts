@@ -1983,4 +1983,45 @@ describe('活動の記録(mocks/engine.ts の insert)', () => {
     }
     expect(saved).not.toMatch(/javascript:/i)
   })
+
+  it('ACT-005 内容の言及は mentions 列に テーブル名:ID の JSON で写り、言及を消せば null。言及先の行は変わらない', () => {
+    const ACCOUNT = '01000000-0000-7000-8000-000000000001'
+    const CONTACT = '02000000-0000-7000-8000-000000000001'
+    const mention = (object: string, id: string, label: string) =>
+      `<span data-type="mention" data-id="${object}:${id}" data-label="${label}">@${label}</span>`
+    const account = structuredClone(find('accounts', ACCOUNT)!.record)
+    const contact = structuredClone(find('contacts', CONTACT)!.record)
+    const others = { accounts: structuredClone(table('accounts')), contacts: structuredClone(table('contacts')) }
+
+    // insert: 言及した順に、同じレコードは 1 回だけ写る。返り値と保存された行は同じ
+    const body = `<p>${mention('accounts', ACCOUNT, 'アオバ精機')}の${mention('contacts', CONTACT, '佐伯')}さんと話した。${mention('accounts', ACCOUNT, 'アオバ精機')}</p>`
+    const { record } = insert('activities', { subject: '先方へ電話', body }, TAKUYA)
+    const id = record.id as string
+    const expected = JSON.stringify([`accounts:${ACCOUNT}`, `contacts:${CONTACT}`])
+    expect(record.mentions).toBe(expected)
+    expect(find('activities', id)!.record.mentions).toBe(expected)
+
+    // 内容に触れない update では mentions は変わらない
+    update('activities', id, { subject: '先方へ電話(折り返し)' }, TAKUYA)
+    expect(find('activities', id)!.record.mentions).toBe(expected)
+
+    // update で言及を差し替えると、mentions も差し替わる
+    update('activities', id, { body: `<p>${mention('contacts', CONTACT, '佐伯')}さんだけ</p>` }, TAKUYA)
+    expect(find('activities', id)!.record.mentions).toBe(JSON.stringify([`contacts:${CONTACT}`]))
+
+    // 言及を消せば null(空の配列ではない)。内容を空にしても null
+    update('activities', id, { body: '<p>言及なし</p>' }, TAKUYA)
+    expect(find('activities', id)!.record.mentions).toBeNull()
+    update('activities', id, { body: `<p>${mention('accounts', ACCOUNT, 'アオバ精機')}</p>` }, TAKUYA)
+    update('activities', id, { body: null }, TAKUYA)
+    expect(find('activities', id)!.record.mentions).toBeNull()
+    // 言及の無い内容で insert しても null
+    expect(insert('activities', { subject: '訪問', body: '<p>言及なし</p>' }, TAKUYA).record.mentions).toBeNull()
+
+    // 言及された側のレコードには何も書かない(updated_at も含めて、行もテーブルも元のまま)
+    expect(find('accounts', ACCOUNT)!.record).toEqual(account)
+    expect(find('contacts', CONTACT)!.record).toEqual(contact)
+    expect(table('accounts')).toEqual(others.accounts)
+    expect(table('contacts')).toEqual(others.contacts)
+  })
 })
