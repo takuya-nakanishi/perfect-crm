@@ -724,4 +724,47 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(getMeta().objects.find((o) => o.key === 'plain')).toEqual(object)
     expect(table('plain')).toEqual(rows)
   })
+
+  it('META-074 項目を外して保存しても列の値は行に残り、同じ列名・同じ型で戻すと型・参照先・semantic などは保管していた定義から、選択肢は本文から復活する', () => {
+    const deals = () => getMeta().objects.find((o) => o.key === 'opportunities')!
+    const fieldOf = (key: string) => deals().fields.find((f) => f.key === key)
+    const before = deals()
+    const kept = { close_date: fieldOf('close_date')!, primary_contact_id: fieldOf('primary_contact_id')!, type: fieldOf('type')! }
+    expect(kept.close_date.semantic).toBe('deadline')
+    expect(kept.primary_contact_id.target).toBe('contacts')
+    expect(kept.type.in_create_form).toBe(false)
+    const rows = structuredClone(table('opportunities'))
+    expect(rows.some((r) => r.close_date != null && r.primary_contact_id != null && r.type != null)).toBe(true)
+    // 本文に書ける属性だけを送る(画面・MCP の形)
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const removedKeys = Object.keys(kept)
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'opportunities', label: before.label, icon: before.icon, color: before.color, fields })
+
+    // 外して保存 → GET /meta から消えるが、列の値は行に残る
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields.filter((f) => !removedKeys.includes(f.key)))))).toBeNull()
+    for (const key of removedKeys) expect(fieldOf(key), key).toBeUndefined()
+    expect(table('opportunities')).toEqual(rows)
+
+    // 同じ列名・同じ型で戻す。ラベルは変え、参照先は別のテーブルを送り、semantic・in_create_form は送らない。選択肢は減らして名前を変える
+    const options: SelectOption[] = [
+      { value: 'new', label: '新しい案件', color: 'violet' },
+      { value: 'renewal', label: '更新', color: 'teal' },
+    ]
+    const back = body([
+      ...bodyFields.filter((f) => !removedKeys.includes(f.key)),
+      { key: 'close_date', label: '締め日', type: 'date' },
+      { key: 'primary_contact_id', label: '窓口', type: 'relation', target: 'accounts' },
+      { key: 'type', label: '区分', type: 'select', options },
+    ])
+    expect(statusOf(() => updateObject('opportunities', back))).toBeNull()
+    // 型・参照先・画面から決められない属性は保管していた定義から、ラベルは本文から
+    expect(fieldOf('close_date')).toEqual({ ...kept.close_date, label: '締め日' })
+    expect(fieldOf('primary_contact_id')).toEqual({ ...kept.primary_contact_id, label: '窓口' })
+    // 選択肢は本文のもの(本文に無い expansion は戻らない)
+    expect(fieldOf('type')).toEqual({ ...kept.type, label: '区分', options })
+    // 列の値はそのまま読める
+    expect(table('opportunities')).toEqual(rows)
+  })
 })
