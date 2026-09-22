@@ -79,4 +79,28 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createObject(ok))).toBeNull()
     expect(getMeta().objects.some((o) => o.key === 'ok_fields')).toBe(true)
   })
+
+  it('META-008 作ったテーブルに created_at・updated_at(readonly)が付き、position は末尾、in_sidebar は既定 true', () => {
+    const before = Math.max(...getMeta().objects.map((o) => o.position))
+    const body = { ...input('stamped'), fields: [{ key: 'name', label: '名前', type: 'text' as const }, { key: 'memo', label: 'メモ', type: 'textarea' as const }] }
+    expect(statusOf(() => createObject(body))).toBeNull()
+    const made = getMeta().objects.find((o) => o.key === 'stamped')
+    // 入れた項目の後ろに、システムの列が readonly で付く
+    expect(made?.fields.map((f) => f.key)).toEqual(['name', 'memo', 'created_at', 'updated_at'])
+    for (const key of ['created_at', 'updated_at']) {
+      const f = made?.fields.find((x) => x.key === key)
+      expect(f?.type, key).toBe('datetime')
+      expect(f?.readonly, key).toBe(true)
+    }
+    expect(made?.fields.find((f) => f.key === 'memo')?.readonly).toBeFalsy()
+    // サイドバーの末尾に並び、既定で出る
+    expect(made?.position).toBeGreaterThan(before)
+    expect(made?.in_sidebar).toBe(true)
+    // 続けて作ると、さらに後ろ。in_sidebar: false を渡せば出さない
+    expect(statusOf(() => createObject({ ...input('hidden_one'), in_sidebar: false }))).toBeNull()
+    const next = getMeta().objects.find((o) => o.key === 'hidden_one')
+    expect(next?.position).toBeGreaterThan(made!.position)
+    expect(next?.in_sidebar).toBe(false)
+    expect(next?.fields.filter((f) => f.readonly).map((f) => f.key)).toEqual(['created_at', 'updated_at'])
+  })
 })

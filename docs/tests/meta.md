@@ -18,7 +18,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-005 | 管理者 | 定義 | 整合 | L2 | 管理者: 列名 `users` / `meta` / `session` / `search` のテーブル → 400(予約) | `engine.test.ts` |
 | META-006 | 管理者 | 定義 | 整合 | L2 | 管理者: 先頭の項目が文字(1 行)でないテーブル → 400。文字なら `name_field` になり必須が付く | `engine.test.ts` |
 | META-007 | 管理者 | 定義 | 整合 | L2 | 管理者: 項目の列名が `id` / `created_at` / `updated_at` → 400。同じ列名が 2 つ → 400 | `engine.test.ts` |
-| META-008 | 管理者 | 定義 | 整合 | L2 | 管理者: 作ったテーブルに `created_at` と `updated_at`(readonly)が自動で付き、`position` は末尾、`in_sidebar` は既定 true | — |
+| META-008 | 管理者 | 定義 | 整合 | L2 | 管理者: 作ったテーブルに `created_at` と `updated_at`(readonly)が自動で付き、`position` は末尾、`in_sidebar` は既定 true | `engine.test.ts` |
 | META-009 | 管理者 | 定義 | 整合 | L2 | 管理者: 選択肢の項目を options 無しで作る → 400。値が重なる options → 400。色が 9 色の外 → 400 | — |
 | META-010 | 管理者 | 定義 | 整合 | L2 | 管理者: 参照の項目に参照先が無い、または削除中のテーブル → 400 | — |
 | META-011 | 管理者 | 定義 | 整合 | L2 | 管理者: 文字の項目の `max_length` が 0 や 100001 → 400。数値の `scale` が 7 → 400。1〜6 は保存される | — |
