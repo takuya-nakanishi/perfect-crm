@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { parseCsv } from './csv'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { importCsv, parseCsv } from './csv'
+import { resetTables, table, users } from './engine'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 describe('CSV の読み取り(mocks/csv.ts)', () => {
@@ -43,5 +44,37 @@ describe('CSV の読み取り(mocks/csv.ts)', () => {
     ])
     // 1 行目にカンマもタブも無ければカンマ区切り(1 列)
     expect(parseCsv('名前\n丸山商事')).toEqual([['名前'], ['丸山商事']])
+  })
+})
+
+describe('CSV の取り込み(mocks/csv.ts)', () => {
+  beforeEach(() => resetTables())
+
+  it('IO-062 mapping を省くと見出しを項目名(正規化)と列名から推測し、同じ項目に 2 列は当てない(先の列が勝つ)', () => {
+    const csv = [
+      ' 取引先名 ,ＷＥＢ　サイト,ふりがな,PHONE,employees,電話,業種,industry,created_at,備考',
+      '丸山商事,https://example.com,マルヤマショウジ,03-1111-2222,12,06-9999-0000,製造,IT,2026-01-01,x',
+    ].join('\n')
+    const res = importCsv('accounts', { csv }, users[0].id)
+    expect(res.mapping).toEqual({
+      // 項目名は NFKC・小文字・ひらがな→カタカナ・空白除去で比べる
+      ' 取引先名 ': 'name',
+      'ＷＥＢ　サイト': 'website',
+      'ふりがな': 'name_kana',
+      // 列名(大文字小文字は問わない)
+      PHONE: 'phone',
+      employees: 'employees',
+      // 先に phone・industry へ当たった列が勝ち、後の列は当てない
+      電話: null,
+      業種: 'industry',
+      industry: null,
+      // 読み取り専用の項目と、知らない見出しは当てない
+      created_at: null,
+      備考: null,
+    })
+    // 作った行も、先の列の値を持つ(後の列の値で上書きしない)
+    expect(res.errors).toEqual([])
+    const created = table('accounts').find((r) => r.id === res.created_ids[0])
+    expect(created).toMatchObject({ name: '丸山商事', website: 'https://example.com', name_kana: 'マルヤマショウジ', phone: '03-1111-2222', employees: 12 })
   })
 })
