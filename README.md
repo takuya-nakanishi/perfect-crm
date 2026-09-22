@@ -25,7 +25,8 @@ docker compose up -d --build                     # http://127.0.0.1:8610
 docker compose --profile public up -d --build    # + Cloudflare Tunnel(公開 URL)
 ```
 
-確かめる: `cd frontend && npm run build && npm run lint && npm run e2e`。手順の全体と落とし穴は `docs/runbook/01-operations.md`。
+確かめる: `scripts/verify.sh`(ビルド + lint + Vitest + テストケース表の整合)と `cd frontend && npm run e2e`。手順の全体と落とし穴は `docs/runbook/01-operations.md`。
+テストケース表(`docs/tests/`)の空いた行は無人ループ(`scripts/loop-run.sh`。`docs/runbook/02-loop.md`)が Vitest で埋める。
 
 ## 中身
 
@@ -35,9 +36,11 @@ docker compose --profile public up -d --build    # + Cloudflare Tunnel(公開 UR
 | `docker-compose.yml` | `web`(Caddy で画面を配る)/ `tunnel`(cloudflared)/ `db`(PostgreSQL。まだ使っていない) |
 | `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認 |
 | `docs/design/` | 設計の正本(01 要件と決定 → 07 移行) |
-| `docs/runbook/` | 運用の手順と落とし穴 |
+| `docs/runbook/` | 運用の手順と落とし穴(`02-loop.md` は無人ループ) |
+| `docs/tests/` | テストケース表(4 軸 × 6 領域。`—` の行がまだ無いテスト) |
 | `docs/dns/` | sanei-clover.com の DNS の棚卸し(2026-09-19、Cloudflare へ移す前) |
-| `backlog/` | 問い(`QUESTIONS.md`)と作業(`JOBS.md`) |
+| `backlog/` | 問い(`QUESTIONS.md`)と作業(`JOBS.md`)。人のもの |
+| `loops/` | 無人ループの記録(`tests/<ID>.md`)。機械のもの。`backlog/` とは混ぜない |
 
 このリポジトリは公開。**個人情報と秘密の値は入れない**(`.env` は Git の外、実データは `~/backups/perfect-crm/`)。
 

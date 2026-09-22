@@ -24,9 +24,10 @@ Claude Code / Codex ──MCP(これから)────────────�
 | `frontend/Dockerfile` / `Caddyfile` | Node でビルドし、Caddy で配る。SPA の戻し、キャッシュ、CSP などのヘッダ、`/healthz` |
 | `backend/`(これから) | Python の JSON API。`/api/v1`(04) |
 | `docker-compose.yml` | `web` / `tunnel`(profile `public`)/ `db`(profile `backend`) |
-| `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認 |
-| `docs/` | 設計(`design/`)と運用手順(`runbook/`) |
-| `backlog/` | 問いと作業 |
+| `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認。`verify.sh`(検証の関門)、無人ループ(`loop-run.sh`・`loop-next.mjs`)、worktree(`wt-new.sh`・`wt-land.sh`) |
+| `docs/` | 設計(`design/`)、運用手順(`runbook/`。`02-loop.md` が無人ループ)、テストケース表(`tests/`。4 軸で 6 領域) |
+| `backlog/` | 問いと作業(人と、人が起こしたセッションのもの) |
+| `loops/` | 無人ループの記録(`tests/<ID>.md`)。ループは `backlog/` を読まない・書かない |
 
 ### frontend/src の中
 
