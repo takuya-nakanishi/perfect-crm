@@ -74,4 +74,23 @@ describe('parseQuickAdd', () => {
     expect(twice.title).toBe('毎月の振り返り 毎月')
     expect(twice.tokens).toEqual([{ text: '毎週', kind: 'repeat' }])
   })
+
+  it('IO-045 全角の「ｐ１」「９／３０」も読む(NFKC)', () => {
+    const parsed = parseQuickAdd('見積を送る ９／３０ ｐ１', today)
+    expect(parsed.title).toBe('見積を送る')
+    expect(parsed.due_date).toBe('2026-09-30')
+    expect(parsed.priority).toBe('p1')
+    // 読み取った単語は打ったままの字で見せる
+    expect(parsed.tokens).toEqual([
+      { text: '９／３０', kind: 'due' },
+      { text: 'ｐ１', kind: 'priority' },
+    ])
+
+    // 大文字の全角、全角の空白での区切り、全角数字の日付・日数も同じに読む
+    const upper = parseQuickAdd('見積を送る　Ｐ２　３日後', today)
+    expect(upper.title).toBe('見積を送る')
+    expect(upper.priority).toBe('p2')
+    expect(upper.due_date).toBe('2026-09-25')
+    expect(parseQuickAdd('見積を送る １０月１日', today).due_date).toBe('2026-10-01')
+  })
 })
