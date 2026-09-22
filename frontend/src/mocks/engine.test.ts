@@ -284,4 +284,46 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(keys('tasks')).not.toContain('description')
     expect(keys('tasks')).toContain('completed_at')
   })
+
+  it('META-016 updateObject でタスクの状況の選択肢から done や open を消すと 400 で弾き、選択肢が元のまま残る', () => {
+    const tasks = () => getMeta().objects.find((o) => o.key === 'tasks')!
+    const values = () => tasks().fields.find((f) => f.key === 'status')!.options!.map((o) => o.value)
+    // 画面が送るのと同じ全量の本文で、状況の選択肢から 1 つだけ消す
+    const bodyWithout = (value: string): ObjectInput => {
+      const before = tasks()
+      return {
+        key: 'tasks',
+        label: '変えた名前',
+        icon: before.icon,
+        color: before.color,
+        fields: before.fields
+          .filter((f) => !f.readonly)
+          .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({
+            key,
+            label,
+            type,
+            required,
+            options: key === 'status' ? options?.filter((o) => o.value !== value) : options,
+            target,
+            max_length,
+            scale,
+            placeholder,
+          })),
+      }
+    }
+    expect(tasks().completion).toMatchObject({ field: 'status', done_value: 'done', open_value: 'open' })
+    const before = values()
+    expect(before).toEqual(expect.arrayContaining(['done', 'open']))
+    for (const value of ['done', 'open']) {
+      expect(statusOf(() => updateObject('tasks', bodyWithout(value))), value).toBe(400)
+      // 弾いた更新は、選択肢も他の変更(テーブル名)も残さない
+      expect(values(), value).toEqual(before)
+      expect(tasks().label, value).toBe('タスク')
+    }
+    // 完了の仕組みが使わない選択肢なら消せる
+    const other = before.find((v) => v !== 'done' && v !== 'open')
+    expect(other).toBeDefined()
+    expect(statusOf(() => updateObject('tasks', bodyWithout(other!)))).toBeNull()
+    expect(values()).toEqual(before.filter((v) => v !== other))
+  })
 })
