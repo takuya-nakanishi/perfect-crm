@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { aggregate, createObject, createView, deleteObject, deleteView, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -1443,5 +1443,29 @@ describe('集計(mocks/engine.ts の aggregate)', () => {
     expect(rows.map((r) => ({ key: r.key, label: r.label, value: r.value }))).toEqual(expected)
     for (const r of rows) if (r.key !== null) expect(r.label).not.toBe(r.key)
     expect(rows.at(-1)).toMatchObject({ key: null, label: '関連先なし' })
+  })
+})
+
+describe('タスクの追加(mocks/engine.ts の insert)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+  const MISAKI = '09000000-0000-7000-8000-000000000002'
+
+  it('TASK-004 優先度を省くと P4、担当は自分、状況は先頭の選択肢(未着手)になる', () => {
+    const status = getMeta().objects.find((o) => o.key === 'tasks')!.fields.find((f) => f.key === 'status')!.options!
+    expect(status[0]).toMatchObject({ value: 'open', label: '未着手' })
+
+    // 件名だけで作る。担当は呼んだ人(Takuya でも Misaki でも、その人になる)
+    for (const me of [TAKUYA, MISAKI]) {
+      const { record } = insert('tasks', { title: '見積もりを送る' }, me)
+      expect(record, me).toMatchObject({ priority: 'p4', assignee_id: me, status: 'open', completed_at: null })
+      // 保存された行も同じ(返り値だけでなく)
+      expect(find('tasks', record.id as string)!.record).toMatchObject({ priority: 'p4', assignee_id: me, status: 'open' })
+    }
+
+    // 送った値は既定値より勝つ
+    const { record } = insert('tasks', { title: '電話する', priority: 'p1', status: 'in_progress', assignee_id: MISAKI }, TAKUYA)
+    expect(record).toMatchObject({ priority: 'p1', status: 'in_progress', assignee_id: MISAKI })
   })
 })
