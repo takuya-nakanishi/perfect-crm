@@ -2512,6 +2512,50 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
     const task = insert('tasks', { title: '有る参照', contact_id, assignee_id: me, repeat_from_completion: true }, me).record
     expect(task).toMatchObject({ contact_id, assignee_id: me, repeat_from_completion: true })
   })
+
+  it('REC-083 insert: 選択肢に無い値は 400。文字の列は max_length ちょうどなら通り、+1 文字は 400(richtext は書式を落とした長さ)', () => {
+    // max_length 付きの text・richtext の列を持つテーブルを用意する(初めからあるテーブルに richtext の桁数は無い)
+    const body: ObjectInput = {
+      ...input('limited'),
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'code', label: 'コード', type: 'text', max_length: 5 },
+        { key: 'note', label: 'メモ', type: 'richtext', max_length: 5 },
+        { key: 'size', label: '大きさ', type: 'select', options: [{ value: 's', label: '小', color: 'gray' }, { value: 'l', label: '大', color: 'blue' }] },
+      ],
+    }
+    expect(statusOf(() => createObject(body))).toBeNull()
+    const me = usersJson[0].id
+    const occurred_on = '2026-09-22'
+
+    const cases: [string, Record<string, Scalar>][] = [
+      // 選択肢に無い値(値ではなく表示名を渡した場合も)
+      ['limited', { name: '無い選択肢', size: 'm' }],
+      ['limited', { name: '表示名を渡す', size: '小' }],
+      ['accounts', { name: '種別が無い', type: 'unknown' }],
+      ['activities', { subject: '種別が無い', type: 'fax', occurred_on }],
+      ['tasks', { title: 'ラベルが無い', labels: JSON.stringify(['sales', 'unknown']) }],
+      // 文字の列: max_length + 1 文字(文字数は符号位置で数える)
+      ['limited', { name: '6 文字', code: 'abcdef' }],
+      ['limited', { name: '6 文字(和文)', code: 'あいうえお𠮷' }],
+      ['activities', { subject: 'あ'.repeat(201), type: 'call', occurred_on }],
+      // richtext: 書式を落として 6 文字
+      ['limited', { name: '書式付き 6 文字', note: '<p><strong>あいう</strong>えおか</p>' }],
+    ]
+    for (const [object, values] of cases) {
+      const label = String(values.name ?? values.subject ?? values.title).slice(0, 20)
+      const before = table(object).length
+      expect(statusOf(() => insert(object, values, me)), label).toBe(400)
+      expect(table(object), label).toHaveLength(before)
+    }
+
+    // ちょうどなら通る。richtext は HTML としては 5 文字を超えていても、書式を落として 5 文字なら通る
+    const got = insert('limited', { name: 'ちょうど', code: 'あいうえ𠮷', note: '<p><strong>あいう</strong><em>えお</em></p>', size: 's' }, me).record
+    expect(got).toMatchObject({ code: 'あいうえ𠮷', size: 's' })
+    expect(find('limited', got.id as string)!.record.note).toContain('あいう')
+    expect(insert('limited', { name: '英字 5 文字', code: 'abcde', size: 'l' }, me).record).toMatchObject({ code: 'abcde', size: 'l' })
+    expect(insert('activities', { subject: 'あ'.repeat(200), type: 'call', occurred_on }, me).record.subject).toBe('あ'.repeat(200))
+  })
 })
 
 describe('作成の既定値と定義に無い列(mocks/engine.ts の insert / update)', () => {
