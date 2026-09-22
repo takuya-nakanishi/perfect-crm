@@ -211,4 +211,33 @@ describe('テーブル設定(mocks/engine.ts)', () => {
       expect(getMeta().objects.find((o) => o.key === 'ref_fixed')?.label, target).toBe(label)
     }
   })
+
+  it('META-014 updateObject で表示名の項目や locked の項目(商談のフェーズ)を本文から外すと 400 になり、定義は元のまま', () => {
+    const deals = () => getMeta().objects.find((o) => o.key === 'opportunities')!
+    const before = deals()
+    expect(before.name_field).toBe('name')
+    expect(before.fields.find((f) => f.key === 'stage')?.locked).toBe(true)
+    const keys = () => deals().fields.map((f) => f.key)
+    const beforeKeys = keys()
+    // 画面が送るのと同じ全量の本文(システムが埋める列は含めない)から、1 つだけ外す
+    const bodyWithout = (omit: string): ObjectInput => ({
+      key: 'opportunities',
+      label: '変えた名前',
+      icon: before.icon,
+      color: before.color,
+      fields: before.fields
+        .filter((f) => !f.readonly && f.key !== omit)
+        .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder })),
+    })
+    for (const omit of ['name', 'stage']) {
+      expect(statusOf(() => updateObject('opportunities', bodyWithout(omit))), omit).toBe(400)
+      // 弾いた更新は、項目も他の変更(テーブル名)も残さない
+      expect(keys(), omit).toEqual(beforeKeys)
+      expect(deals().label, omit).toBe('商談')
+    }
+    // 守られていない項目(金額)なら同じ形の本文で外せる
+    expect(statusOf(() => updateObject('opportunities', bodyWithout('amount')))).toBeNull()
+    expect(keys()).not.toContain('amount')
+    expect(deals().label).toBe('変えた名前')
+  })
 })
