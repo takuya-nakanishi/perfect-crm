@@ -40,7 +40,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` の既定値、`applyRul
 | TASK-043 | 利用者 | 繰り返し | 可逆 | L3 | 利用者: 完了を戻す → 自動で作った次回が消える(残るのは戻した 1 件) | `smoke.mjs「完了を戻すと、自動で作った次回が消える(残るのは戻した 1 件)」` |
 | TASK-044 | システム | 繰り返し | 整合 | L2 | `update`(repeat=weekly, due=9/22 を done)→ その行は done のまま残り、新しい行が 1 つ: due=9/29、status=open、`repeat_of`=元の id、件名・優先度・関連先・責任者・担当・ラベル・繰り返しが写る | `engine.test.ts` |
 | TASK-045 | システム | 繰り返し | 整合 | L2 | `repeat_from_completion` が真 → 次回は完了した日(今日)から数える(期限が過去でも今日 +7) | `engine.test.ts` |
-| TASK-046 | システム | 繰り返し | 冪等 | L2 | 同じ行に done を 2 回送る → 次回は 1 つだけ(二重に作らない) | — |
+| TASK-046 | システム | 繰り返し | 冪等 | L2 | 同じ行に done を 2 回送る → 次回は 1 つだけ(二重に作らない) | `engine.test.ts` |
 | TASK-047 | システム | 繰り返し | 可逆 | L2 | done を open に戻す → `repeat_of` がその行で status=open の次回は消える。次回を既に完了していれば消さない | — |
 | TASK-048 | システム | 繰り返し | 整合 | L2 | repeat があるが期限が空 → 次回は作らない。repeat が空 → 作らない | — |
 | TASK-049 | システム | 繰り返し | 整合 | L2 | 次回の行は `insert` と同じ経路を通る(`created_at` は今、検証も効く。`completed_at` は null) | — |

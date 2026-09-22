@@ -1714,3 +1714,33 @@ describe('繰り返しを完了した日から数える(mocks/engine.ts の upda
     }
   })
 })
+
+describe('繰り返しの完了を二重に送る(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-046 同じ行に done を 2 回送っても、次回は 1 つだけ(二重に作らない)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-22T03:00:00Z'))
+      const { record } = insert('tasks', { title: '週報を書く', due_date: '2026-09-22', repeat: 'weekly' }, TAKUYA)
+      const id = record.id as string
+      const before = table('tasks').length
+
+      update('tasks', id, { status: 'done' }, TAKUYA)
+      const first = table('tasks').filter((r) => r.repeat_of === id)
+      expect(first).toHaveLength(1)
+
+      // もう一度 done を送る(再送・二重クリック)
+      update('tasks', id, { status: 'done' }, TAKUYA)
+
+      const next = table('tasks').filter((r) => r.repeat_of === id)
+      expect(next).toHaveLength(1)
+      expect(next[0].id).toBe(first[0].id)
+      expect(table('tasks').length).toBe(before + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
