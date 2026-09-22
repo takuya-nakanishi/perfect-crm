@@ -34,7 +34,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-021 | 管理者 | 定義 | 整合 | L2 | 管理者: `label` を変えて保存 → 項目の定義(`semantic`・`in_create_form`・選択肢の `kind`)は保たれる(本文に無い属性を落とさない) | `engine.test.ts` |
 | META-022 | 管理者 | 定義 | 整合 | L2 | 管理者: `in_sidebar: false` で保存 → `GET /meta` の `in_sidebar` が false。本文に無ければ変わらない | `engine.test.ts` |
 | META-023 | 管理者 | 定義 | 整合 | L2 | 管理者: 新しいテーブルを作る → 活動の関連先(`all_targets`)の `targets` にそのテーブルが加わる | `engine.test.ts` |
-| META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `reorderObjects` にサイドバーの 3 件だけ渡す → その順が先頭、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400 | — |
+| META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `reorderObjects` にサイドバーの 3 件だけ渡す → その順が先頭、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400 | `engine.test.ts` |
 | META-025 | 管理者 | 定義 | 整合 | L1 | `autoFieldKey`: 英字の名前 `Lead Source` → `lead_source`。和文 `見積番号` → `field_1`、2 つめは `field_2`。既にある列名は避ける | — |
 | META-026 | 管理者 | 定義 | 整合 | L1 | `validateDraft`: 列名の重複・予約語・選択肢の無い選択肢型・参照先の無い参照型を、それぞれ 1 件ずつ数える。名前の無い新しい行は数えない | — |
 | META-027 | 管理者 | 定義 | 整合 | L1 | `toInput`: 名前の無い新しい行を落とし、表示名の項目は必須にし、文字型以外の `max_length` を送らない | — |

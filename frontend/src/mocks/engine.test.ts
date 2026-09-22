@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor } from '@/api/types'
-import { createObject, deleteObject, getMeta, resetTables, updateObject } from './engine'
+import { createObject, deleteObject, getMeta, reorderObjects, resetTables, updateObject } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -451,5 +451,28 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(targets('activities')).toEqual([...before, 'trial'])
     // all_targets の無い関連先(タスク)には加わらない
     expect(targets('tasks')).toEqual(['accounts', 'opportunities'])
+  })
+
+  it('META-024 reorderObjects にサイドバーの 3 件だけ渡すと、その順が先頭で、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400', () => {
+    // サイドバーに出していないテーブルを 2 つ足す(並びの末尾に付く)
+    expect(statusOf(() => createObject({ ...input('hidden_a'), in_sidebar: false }))).toBeNull()
+    expect(statusOf(() => createObject({ ...input('hidden_b'), in_sidebar: false }))).toBeNull()
+    const ordered = () => [...getMeta().objects].sort((a, b) => a.position - b.position)
+    const before = ordered().map((o) => o.key)
+    const sidebar = ordered().filter((o) => o.in_sidebar).map((o) => o.key)
+    expect(sidebar.length).toBeGreaterThanOrEqual(3)
+    // サイドバーの 3 件を逆順にして渡す
+    const picked = sidebar.slice(0, 3).reverse()
+    expect(statusOf(() => reorderObjects(picked))).toBeNull()
+    const after = ordered()
+    expect(after.map((o) => o.key)).toEqual([...picked, ...before.filter((k) => !picked.includes(k))])
+    // position は 1 から詰めて振り直す
+    expect(after.map((o) => o.position)).toEqual(after.map((_, i) => i + 1))
+    // 無いテーブル・削除したテーブルを含めれば 400 で、並びは変わらない
+    const current = after.map((o) => o.key)
+    expect(statusOf(() => reorderObjects([sidebar[0], 'no_such_table']))).toBe(400)
+    expect(statusOf(() => deleteObject('hidden_b'))).toBeNull()
+    expect(statusOf(() => reorderObjects(['hidden_b', sidebar[1]]))).toBe(400)
+    expect(ordered().map((o) => o.key)).toEqual(current.filter((k) => k !== 'hidden_b'))
   })
 })
