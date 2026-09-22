@@ -154,8 +154,12 @@ export function submitForm(key: string, values: Record<string, Scalar>): RecordR
   // テーブルが削除中なら受けない(定義の画面でも「停止」として見せる)
   const meta = liveObjects().find((o) => o.key === form.object)
   if (!meta) throw new ApiError(404, 'not_found', 'このフォームの先のテーブルがありません')
-  // bot 避け: 人には見えない欄が埋まっていたら、成功に見せて何もしない
-  if (typeof values._gotcha === 'string' && values._gotcha) throw new ApiError(404, 'not_found', 'このフォームは受け付けていません')
+  // bot 避け: 人には見えない欄が埋まっていたら、成功に見せて何もしない(04 §10 の 3)。
+  // レコードも submissions も増やさず、id だけの空の応答を返す(弾かれたと bot に気づかせない)
+  if (typeof values._gotcha === 'string' && values._gotcha) {
+    const now = new Date().toISOString()
+    return { record: { id: crypto.randomUUID(), created_at: now, updated_at: now }, references: {} }
+  }
   const accepted: Record<string, Scalar> = { ...form.defaults }
   for (const k of form.fields) {
     if (!(k in values)) continue

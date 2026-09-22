@@ -145,7 +145,7 @@
 **Web フォーム** — `WebForm` は「どのテーブルに、どの列を受け付け、どの既定値を足すか」。受け口 `POST /forms/{key}` は認証なしで、
 1. `enabled` でなければ 404
 2. `fields` に無い列は捨て、`defaults` を足す
-3. `_gotcha`(人には見えない欄)が埋まっていたら、200 を返して何もしない(bot)
+3. `_gotcha`(人には見えない欄)が埋まっていたら、200 を返して何もしない(bot)。レコードも `submissions` も増やさない。JSON なら `id`・`created_at`・`updated_at` だけの空の `RecordResponse` を返し、弾かれたと bot に気づかせない(2026-09-22 決定。SET-046)
 4. 受け口ごとに送信を間引く(例: 同じ IP から 1 分に 10 件まで。バックエンドで決める。J-039)
 5. 画面からの作成と同じ経路(既定値・検証・業務ルール)でレコードを作る。担当は空(`defaults` で入れられる)
 6. `Accept` が HTML なら `redirect_url` へ 303、無ければ小さな「受け付けました」の画面。JSON なら `RecordResponse`
