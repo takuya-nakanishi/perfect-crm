@@ -329,8 +329,28 @@ function validate(meta: ObjectMeta, row: Row, keys: string[] | null) {
   }
 }
 
+/**
+ * 定義に無い列が本文にあれば 400(04 §11)。黙って捨てると、MCP や AI チャットが項目名を間違えたときに
+ * 値が消えたことに気づけない。DB(PostgreSQL)も無い列への INSERT は弾くので、モックも同じにする。
+ * readonly の列(`completed_at` など)は本文にあってよい(移行で元の日時を保つ)。`id` はサーバが付ける
+ */
+function rejectUnknownColumns(meta: ObjectMeta, values: Record<string, Scalar>) {
+  const known = new Set<string>()
+  for (const field of meta.fields) {
+    if (field.type === 'polymorphic' && field.columns) {
+      known.add(field.columns.object)
+      known.add(field.columns.id)
+    } else {
+      known.add(field.key)
+    }
+  }
+  const bad = Object.keys(values).find((k) => !known.has(k))
+  if (bad !== undefined) throw new ApiError(400, 'invalid', `定義に無い列です: ${bad}`)
+}
+
 export function insert(object: string, values: Record<string, Scalar>, me: string | null) {
   const meta = objectMeta(object)
+  rejectUnknownColumns(meta, values)
   const now = new Date().toISOString()
   const row: Row = { id: crypto.randomUUID() }
   const defaults: Record<string, Scalar> = {}
@@ -363,6 +383,7 @@ export function update(object: string, id: string, patch: Record<string, Scalar>
   const rows = table(object)
   const index = rows.findIndex((r) => r.id === id)
   if (index < 0) return null
+  rejectUnknownColumns(meta, patch)
   const next = { ...rows[index], ...patch, id }
   validate(meta, next, Object.keys(patch))
   applyRules(meta, rows[index], next, patch, me)
