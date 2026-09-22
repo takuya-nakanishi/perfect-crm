@@ -987,4 +987,32 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     if (kanban.type !== 'kanban') throw new Error('カンバンのビューがありません')
     expect(kanban.config.card_fields).toEqual(['amount'])
   })
+  it('META-093 カンバンの group_by の項目を外すとそのビューは GET /meta に出ず、戻すと同じ定義で出る', () => {
+    const before = getMeta().objects.find((o) => o.key === 'opportunities')!
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'opportunities', label: before.label, icon: before.icon, color: before.color, fields })
+    // 選択肢の項目「確度」を足し、それで分けるカンバンを作る
+    const withRank = [...bodyFields, { key: 'rank', label: '確度', type: 'select' as const, options: [{ value: 'a', label: 'A', color: 'green' as TagColor }, { value: 'b', label: 'B', color: 'gray' as TagColor }] }]
+    expect(statusOf(() => updateObject('opportunities', body(withRank)))).toBeNull()
+    const kanbanId = createView('opportunities', {
+      name: '確度で分ける',
+      type: 'kanban',
+      config: { group_by: 'rank', card_fields: ['amount'] },
+    }).views.find((v) => v.name === '確度で分ける')!.id
+    const views = () => getMeta().views.filter((v) => v.object === 'opportunities')
+    const shown = views()
+    const kanban = shown.find((v) => v.id === kanbanId)!
+    expect(kanban.type).toBe('kanban')
+
+    // 分ける項目を外す → そのカンバンだけが GET /meta に出なくなる(ほかのビューはそのまま)
+    expect(statusOf(() => updateObject('opportunities', body(bodyFields)))).toBeNull()
+    expect(views().find((v) => v.id === kanbanId)).toBeUndefined()
+    expect(views().map((v) => v.id)).toEqual(shown.filter((v) => v.id !== kanbanId).map((v) => v.id))
+
+    // 同じ列名・同じ型で戻す → 同じ定義で出る
+    expect(statusOf(() => updateObject('opportunities', body(withRank)))).toBeNull()
+    expect(views().find((v) => v.id === kanbanId)).toEqual(kanban)
+  })
 })

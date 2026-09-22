@@ -87,6 +87,6 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-090 | システム | 整合 | 整合 | L2 | 項目を外す → その項目を指す一覧の列・並びは `GET /meta` で外れ、保存してある定義には残る(戻せば列も戻る) | `engine.test.ts` |
 | META-091 | システム | 整合 | 整合 | L2 | 項目を外す → その項目を指すビューの条件も外れる。and の中の 1 条件なら他は残り、全部無くなれば条件ごと無くなる | `engine.test.ts` |
 | META-092 | システム | 整合 | 整合 | L2 | 項目を外したあと、そのビューを `updateView`(改名だけ)→ 400 にならない | `engine.test.ts` |
-| META-093 | システム | 整合 | 整合 | L2 | カンバンの `group_by` の項目を外す → そのビューは `GET /meta` に出ない。戻せば出る | — |
+| META-093 | システム | 整合 | 整合 | L2 | カンバンの `group_by` の項目を外す → そのビューは `GET /meta` に出ない。戻せば出る | `engine.test.ts` |
 | META-094 | システム | 整合 | 整合 | L2 | レポートの部品が指す項目を外す → その部品だけ外れ、全部無くなればビューが出ない。関連先の `related_object` の列を指す部品は残る | — |
 | META-095 | システム | 整合 | 整合 | L2 | `subtitle_field` の項目を外す → `subtitle_field` が消える(無い項目を指さない) | — |
