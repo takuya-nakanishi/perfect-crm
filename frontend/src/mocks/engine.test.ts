@@ -36,4 +36,14 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createObject(input(ok)))).toBeNull()
     expect(getMeta().objects.some((o) => o.key === ok)).toBe(true)
   })
+
+  it('META-005 列名が予約語(users・meta・session・search)のテーブルは 400', () => {
+    for (const key of ['users', 'meta', 'session', 'search']) {
+      const before = getMeta().objects.length
+      expect(statusOf(() => createObject(input(key))), key).toBe(400)
+      expect(getMeta().objects.length, key).toBe(before)
+    }
+    // 予約語を含むだけの列名は作れる(完全一致だけを弾く)
+    expect(statusOf(() => createObject(input('users_extra')))).toBeNull()
+  })
 })
