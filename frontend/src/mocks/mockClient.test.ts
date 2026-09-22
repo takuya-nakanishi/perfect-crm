@@ -3,7 +3,7 @@ import { ApiError } from '@/api/client'
 import type { ObjectInput, ViewInput, WebFormInput } from '@/api/types'
 import { parseDriveFiles } from '@/lib/drive'
 import usersJson from './fixtures/users.json'
-import { resetDrive } from './drive'
+import { createDocument, listFiles, resetDrive } from './drive'
 import { getMeta, resetTables } from './engine'
 import { createMockClient } from './mockClient'
 import { listForms, listTokens, resetSettings } from './settings'
@@ -459,5 +459,34 @@ describe('Google ドライブの擬似(mocks/drive.ts)', () => {
     expect(await api.listDriveFiles(''), 'ドライブにファイルが増えない').toEqual(filesBefore)
     const saved = await api.getRecord(meta.key, record.id)
     expect(saved.record, 'レコードは変わらない').toEqual(record)
+  })
+
+  it('SET-063 listFiles("テンプレ"): 名前の部分一致(正規化)。空なら全部、20 件まで', async () => {
+    const api = createMockClient()
+    await api.login(member.email, 'x')
+    const names = async (q: string) => (await api.listDriveFiles(q)).map((f) => f.name)
+    const templates = ['提案書テンプレート', '見積書テンプレート', '議事録テンプレート']
+
+    // 名前の部分一致。ひらがな・半角カナ・全角英数・空白の有無を揃えてから比べる
+    expect(await names('テンプレ'), '部分一致').toEqual(templates)
+    expect(await names('てんぷれ'), 'ひらがな').toEqual(templates)
+    expect(await names('ﾃﾝﾌﾟﾚ'), '半角カナ').toEqual(templates)
+    expect(await names(' テン プレ '), '空白は無視').toEqual(templates)
+    expect(await names('会社案内２０２６'), '全角数字・空白なし').toEqual(['会社案内 2026'])
+    expect(await names('該当なしの名前'), '当たらなければ空').toEqual([])
+
+    // 空なら全部
+    const all = await api.listDriveFiles('')
+    expect(all.length, '初めからあるファイルが全部出る').toBe(8)
+    expect(await api.listDriveFiles('  '), '空白だけも空と同じ').toEqual(all)
+
+    // ファイルを 21 件以上にすると、空の検索でも部分一致でも 20 件で切れる(遅延を避けて drive.ts を直に呼ぶ)
+    const meta = getMeta().objects.find((o) => o.name_field !== 'name' && o.fields.some((f) => f.type === 'drive_files'))!
+    const field = meta.fields.find((f) => f.type === 'drive_files')!.key
+    const { record } = await api.createRecord(meta.key, { [meta.name_field]: '架空商事 テンプレ控え' })
+    for (let i = 0; i < 20; i++) createDocument(meta.key, record.id, field, member.id)
+    expect(listFiles('').length, '空の検索は 20 件まで').toBe(20)
+    expect(listFiles('テンプレ').length, '一致が 23 件でも 20 件まで').toBe(20)
+    expect(listFiles('テンプレート').length, '20 件未満ならそのまま').toBe(3)
   })
 })
