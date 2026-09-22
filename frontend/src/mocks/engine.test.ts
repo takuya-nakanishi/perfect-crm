@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -1294,5 +1294,58 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     const subjects = table('activities').map((r) => r.subject as string)
     expect(subjects.indexOf('要件の確認と概算の説明')).toBeLessThan(subjects.indexOf('見積の質問に回答'))
     expect(names('見積', 'activities')).toEqual(['見積の質問に回答', '要件の確認と概算の説明'])
+  })
+})
+
+describe('集計(mocks/engine.ts の aggregate)', () => {
+  beforeEach(() => resetTables())
+
+  it('IO-027 aggregate の count は条件に合う全行数(値が空でも数える)、sum / avg は数値の行だけ(0 件なら 0)、weight_field は値 × 百分率 / 100 を足す', () => {
+    createObject({
+      key: 'deals',
+      label: '試しの案件',
+      icon: 'box',
+      color: 'blue',
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'kind', label: '区分', type: 'text' },
+        { key: 'amount', label: '金額', type: 'number' },
+        { key: 'rate', label: '確度', type: 'percent' },
+      ],
+    })
+    insert('deals', { name: 'A', kind: 'x', amount: 1000, rate: 50 }, null)
+    insert('deals', { name: 'B', kind: 'x', amount: 300, rate: 10 }, null)
+    insert('deals', { name: 'C', kind: 'x', amount: null, rate: 80 }, null)
+    insert('deals', { name: 'D', kind: 'x', amount: 200, rate: null }, null)
+    insert('deals', { name: 'E', kind: 'y', amount: null, rate: null }, null)
+    insert('deals', { name: 'F', kind: 'z', amount: 999, rate: 100 }, null)
+    const x = { field: 'kind', op: 'eq' as const, value: 'x' }
+    const y = { field: 'kind', op: 'eq' as const, value: 'y' }
+    const value = (params: Parameters<typeof aggregate>[1]) => {
+      const rows = aggregate('deals', params, null)
+      expect(rows).toHaveLength(1)
+      return rows[0]!.value
+    }
+
+    // count: 条件に合う 4 行。金額が空の C も数える。項目を指定しても空の行を落とさない
+    expect(value({ filter: x, measure: { op: 'count' } })).toBe(4)
+    expect(value({ filter: x, measure: { op: 'count', field: 'amount' } })).toBe(4)
+    expect(value({ measure: { op: 'count' } })).toBe(6)
+
+    // sum / avg: 数値の行(A・B・D)だけ。avg は 3 行で割る(空の C を分母に入れると 375 になる)
+    expect(value({ filter: x, measure: { op: 'sum', field: 'amount' } })).toBe(1500)
+    expect(value({ filter: x, measure: { op: 'avg', field: 'amount' } })).toBe(500)
+
+    // 数値の行が 0 件なら sum も avg も 0
+    expect(value({ filter: y, measure: { op: 'sum', field: 'amount' } })).toBe(0)
+    expect(value({ filter: y, measure: { op: 'avg', field: 'amount' } })).toBe(0)
+    expect(value({ filter: y, measure: { op: 'count' } })).toBe(1)
+
+    // weight_field: A は 1000 × 50 / 100 = 500、B は 300 × 10 / 100 = 30。金額が空の C は足さない
+    // (確度が空の行の扱いは定義に無いので、D は含めない)
+    const weighted = (filter: Parameters<typeof aggregate>[1]['filter']) => value({ filter, measure: { op: 'sum', field: 'amount', weight_field: 'rate' } })
+    expect(weighted({ field: 'name', op: 'in', value: ['A', 'B'] })).toBe(530)
+    expect(weighted({ field: 'name', op: 'in', value: ['A', 'B', 'C'] })).toBe(530)
+    expect(weighted({ field: 'name', op: 'eq', value: 'F' })).toBe(999)
   })
 })
