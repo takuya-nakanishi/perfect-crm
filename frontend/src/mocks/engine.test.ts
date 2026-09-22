@@ -46,4 +46,20 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     // 予約語を含むだけの列名は作れる(完全一致だけを弾く)
     expect(statusOf(() => createObject(input('users_extra')))).toBeNull()
   })
+
+  it('META-006 先頭の項目が文字(1 行)でないテーブルは 400。文字なら name_field になり必須が付く', () => {
+    for (const type of ['textarea', 'richtext', 'number', 'email', 'date'] as const) {
+      const key = `first_${type}`
+      const body = { ...input(key), fields: [{ key: 'body', label: '本文', type }, { key: 'name', label: '名前', type: 'text' as const }] }
+      expect(statusOf(() => createObject(body)), type).toBe(400)
+      expect(getMeta().objects.some((o) => o.key === key), type).toBe(false)
+    }
+    // 文字なら作れて、先頭の項目が表示名になり、required を付けずに送っても必須になる
+    const body = { ...input('first_text'), fields: [{ key: 'title', label: '件名', type: 'text' as const }, { key: 'memo', label: 'メモ', type: 'textarea' as const }] }
+    expect(statusOf(() => createObject(body))).toBeNull()
+    const made = getMeta().objects.find((o) => o.key === 'first_text')
+    expect(made?.name_field).toBe('title')
+    expect(made?.fields.find((f) => f.key === 'title')?.required).toBe(true)
+    expect(made?.fields.find((f) => f.key === 'memo')?.required).toBeFalsy()
+  })
 })
