@@ -2144,4 +2144,32 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-026 100 件を超えたら、活動と完了を合わせて新しい順に並べた先頭の 100 件だけを返す', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const x = insert('accounts', { name: '100 件の確かめ' }, TAKUYA).record.id as string
+      const day = (offset: number) => new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10)
+      // 活動 101 件(日付は 1 日ずつ新しくなる)+ 最も新しい完了 1 件 + 最も古い完了 1 件 = 103 件
+      const acts: string[] = []
+      for (let i = 0; i <= 100; i++) {
+        acts.push(insert('activities', { subject: `活動 ${i}`, occurred_on: day(i), related_object: 'accounts', related_id: x }, TAKUYA).record.id as string)
+      }
+      const task = (title: string, completed_at: string) =>
+        insert('tasks', { title, status: 'done', related_object: 'accounts', related_id: x, completed_at }, TAKUYA).record.id as string
+      const newest = task('最も新しい完了', '2026-09-01T12:00:00.000Z')
+      const oldest = task('最も古い完了', '2025-12-01T12:00:00.000Z')
+
+      const entries = timeline('accounts', x)
+      expect(entries).toHaveLength(100)
+      // 新しい完了 → 活動 100 … 活動 2。古い側の 3 件(活動 0・活動 1・最も古い完了)が落ちる
+      expect(entries.map((e) => e.id)).toEqual([newest, ...acts.slice(2).reverse()])
+      expect(entries.map((e) => e.id)).not.toContain(oldest)
+      expect(entries[0]).toMatchObject({ kind: 'completion', date: '2026-09-01' })
+      expect(entries[99]).toMatchObject({ kind: 'activity', subject: '活動 2', date: day(2) })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

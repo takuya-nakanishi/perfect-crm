@@ -28,7 +28,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`timeline`、`applyRules` の活�
 | ACT-023 | システム | 時系列 | 整合 | L2 | `timeline(accounts, X)`: 関連先が X で status=done のタスク → `kind: completion`、`date` は `completed_at` の日付、`body` は詳細を段落にしたもの。open のタスクは出ない | `engine.test.ts` |
 | ACT-024 | システム | 時系列 | 整合 | L2 | `timeline(contacts, Y)`: `contact_id` が Y の完了したタスクも出る(relation でも拾う) | `engine.test.ts` |
 | ACT-025 | システム | 時系列 | 整合 | L2 | `timeline(tasks, T)`: タスク自身を開いたとき、そのタスクの完了は出ない(自分自身は除く)。関連先が T の活動は出る | `engine.test.ts` |
-| ACT-026 | システム | 時系列 | 整合 | L2 | `timeline`: 100 件を超えたら新しい 100 件 | — |
+| ACT-026 | システム | 時系列 | 整合 | L2 | `timeline`: 100 件を超えたら新しい 100 件 | `engine.test.ts` |
 | ACT-027 | システム | 時系列 | 整合 | L2 | 画面から足したテーブル T のレコード R を関連先にし、取引先 A に言及した活動がある。T を論理削除 → A の `timeline` にその活動が `mention` として残り、`related.name` は R の名前を引ける(参照は保つ。02 §4)。T を戻しても変わらない | — |
 
 ## 3. 言及
