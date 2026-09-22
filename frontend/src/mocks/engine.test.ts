@@ -1819,3 +1819,43 @@ describe('繰り返しの規則か期限が空のタスクの完了(mocks/engine
     }
   })
 })
+
+describe('繰り返しの次回は作成と同じ経路(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-049 次回の行は insert と同じ経路を通る(created_at は完了した今、completed_at は null、検証も効く)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-15T03:00:00Z'))
+      const id = insert('tasks', { title: '週報を書く', due_date: '2026-09-22', repeat: 'weekly' }, TAKUYA).record.id as string
+
+      // 完了は作った日より後
+      const doneAt = '2026-09-22T03:00:00.000Z'
+      vi.setSystemTime(new Date(doneAt))
+      update('tasks', id, { status: 'done' }, TAKUYA)
+
+      const done = find('tasks', id)!.record
+      expect(done.completed_at).toBe(doneAt)
+      expect(done.created_at).toBe('2026-09-15T03:00:00.000Z')
+      const next = table('tasks').filter((r) => r.repeat_of === id)
+      expect(next).toHaveLength(1)
+      // 元の行の作成日時・完了日時は写さず、作成の経路で入れ直す
+      expect(next[0]).toMatchObject({ created_at: doneAt, updated_at: doneAt, completed_at: null, status: 'open' })
+      expect(next[0].id).not.toBe(id)
+
+      // 検証も効く: 写す値(取引先責任者)の参照先が消えていれば、次回は 400 で作らない
+      const contactId = table('contacts')[0].id as string
+      const stale = insert('tasks', { title: '先方へ連絡', due_date: '2026-09-22', repeat: 'weekly', contact_id: contactId }, TAKUYA).record.id as string
+      const contacts = table('contacts')
+      contacts.splice(contacts.findIndex((r) => r.id === contactId), 1)
+      const before = table('tasks').length
+      expect(statusOf(() => update('tasks', stale, { status: 'done' }, TAKUYA))).toBe(400)
+      expect(table('tasks').filter((r) => r.repeat_of === stale)).toHaveLength(0)
+      expect(table('tasks').length).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
