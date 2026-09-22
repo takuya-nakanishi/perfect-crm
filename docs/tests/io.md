@@ -33,7 +33,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-023 | システム | 検索 | 表記 | L2 | `query` の `q`: ひらがなで打ってもカタカナの名前に当たる。全角半角・大文字小文字も区別しない | `engine.test.ts` |
 | IO-024 | システム | 検索 | 整合 | L2 | `query` の `q` は文字の列だけを見る。richtext は書式(タグ)を落とした文字で当てる(`<strong>` の中の語も当たる) | `engine.test.ts` |
 | IO-025 | システム | 検索 | 整合 | L2 | `query` の `references` に、参照・利用者・関連先(polymorphic)の表示名が、必要な ID の分だけ入る | `engine.test.ts` |
-| IO-026 | システム | 検索 | 整合 | L2 | `searchAll`: 名前に当たったレコードが先。1 テーブル 6 件まで。サイドバーに出していないテーブル(活動)も対象 | — |
+| IO-026 | システム | 検索 | 整合 | L2 | `searchAll`: 名前に当たったレコードが先。1 テーブル 6 件まで。サイドバーに出していないテーブル(活動)も対象 | `engine.test.ts` |
 | IO-027 | システム | 集計 | 整合 | L2 | `aggregate`: `count` は条件に合う全行数(値が空でも数える)。`sum` / `avg` は値が数値の行だけ(数値の行が 0 件なら 0)。`weight_field` は値 × 百分率 / 100 を足す | — |
 | IO-028 | システム | 集計 | 整合 | L2 | `aggregate` の `group_by` が選択肢 → 定義順。`order: value_desc` → 値の大きい順。値が空のグループは `key: null`・「未設定」で末尾 | — |
 | IO-029 | システム | 集計 | 整合 | L2 | `aggregate` の `bucket: month` + `range` → 範囲内の月を全部、空の月も 0 で返す。ラベルは区間の先頭と 1 月だけ年付き(`2026年8月`・`9月`・年をまたげば `2027年1月`) | — |

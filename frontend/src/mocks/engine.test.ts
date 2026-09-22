@@ -1269,4 +1269,30 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     expect(actual(tasks.references)).toEqual(expected(tasks.records, taskPick))
     expectNames(tasks.references)
   })
+
+  it('IO-026 searchAll は名前に当たったレコードを先に出し、1 テーブル 6 件までに切り、サイドバーに出していない活動も探す', () => {
+    const names = (q: string, object: string) => searchAll(q).filter((h) => h.object === object).map((h) => h.name)
+
+    // 取引先の「の」: 当たる 13 件のうち、名前に「ノ」を含む 3 件が先。表の順では名前以外で当たる行が前にある
+    expect(query('accounts', { q: 'の' }, null).total).toBe(13)
+    const accounts = names('の', 'accounts')
+    expect(accounts).toHaveLength(6)
+    expect(new Set(accounts.slice(0, 3))).toEqual(new Set(['株式会社ミドリノ不動産', '株式会社コトノハ出版', '株式会社ツキノワフーズ']))
+    expect(accounts.slice(3).every((n) => !/[のノ]/.test(n))).toBe(true)
+    const tableOrder = table('accounts').map((r) => r.name as string)
+    expect(tableOrder.indexOf('株式会社アオバ精機')).toBeLessThan(tableOrder.indexOf('株式会社ミドリノ不動産'))
+
+    // どのテーブルも、出るのは当たった件数と 6 の小さい方(タスクは 32 件当たって 6 件)
+    for (const object of ['accounts', 'contacts', 'opportunities', 'tasks', 'activities']) {
+      const total = query(object, { q: 'の' }, null).total
+      expect(names('の', object), object).toHaveLength(Math.min(6, total))
+    }
+    expect(query('tasks', { q: 'の' }, null).total).toBe(32)
+
+    // 活動はサイドバーに出していないが、検索の対象。本文だけで当たる行は、件名で当たる行の後
+    expect(getMeta().objects.find((o) => o.key === 'activities')!.in_sidebar).toBe(false)
+    const subjects = table('activities').map((r) => r.subject as string)
+    expect(subjects.indexOf('要件の確認と概算の説明')).toBeLessThan(subjects.indexOf('見積の質問に回答'))
+    expect(names('見積', 'activities')).toEqual(['見積の質問に回答', '要件の確認と概算の説明'])
+  })
 })
