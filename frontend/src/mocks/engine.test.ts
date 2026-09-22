@@ -2172,4 +2172,33 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-027 足したテーブル T のレコード R を関連先にして取引先 A に言及した活動は、T を論理削除しても A の時系列に mention で残り、related.name は R の名前を引ける。T を戻しても変わらない', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const a = insert('accounts', { name: '言及された取引先' }, TAKUYA).record.id as string
+      createObject({ ...input('projects'), label: '案件' })
+      const r = insert('projects', { name: '倉庫の移転' }, TAKUYA).record.id as string
+      const body = `<p><span data-type="mention" data-id="accounts:${a}" data-label="言及された取引先">@言及された取引先</span>に相談した</p>`
+      const act = insert('activities', { subject: '移転の打ち合わせ', occurred_on: '2026-09-20', body, related_object: 'projects', related_id: r }, TAKUYA).record.id as string
+
+      const before = timeline('accounts', a)
+      expect(before.map((e) => [e.kind, e.id])).toEqual([['mention', act]])
+      expect(before[0]).toMatchObject({ subject: '移転の打ち合わせ', related: { object: 'projects', id: r, name: '倉庫の移転' } })
+
+      // T を論理削除: T はいま使えるテーブルから消えるが、活動の参照は保たれ、表示名も引ける
+      deleteObject('projects')
+      expect(getMeta().objects.some((o) => o.key === 'projects')).toBe(false)
+      expect(find('activities', act)!.record).toMatchObject({ related_object: 'projects', related_id: r })
+      const deleted = timeline('accounts', a)
+      expect(deleted).toEqual(before)
+
+      // T を戻しても変わらない
+      restoreObject('projects')
+      expect(timeline('accounts', a)).toEqual(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
