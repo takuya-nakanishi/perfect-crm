@@ -29,7 +29,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 |---|---|---|---|---|---|---|
 | IO-020 | システム | 並び | 整合 | L2 | `query` を選択肢の列で並べる → 定義順(P1 → P4、見込み → 失注)。文字順ではない | `engine.test.ts` |
 | IO-021 | システム | 並び | 整合 | L2 | `query` を参照・利用者の列で並べる → 参照先の表示名の順 | `engine.test.ts` |
-| IO-022 | システム | 並び | 整合 | L2 | `query` に `limit: 0` → `records` は空で `total` は件数。`offset` で続きが取れる | — |
+| IO-022 | システム | 並び | 整合 | L2 | `query` に `limit: 0` → `records` は空で `total` は件数。`offset` で続きが取れる | `engine.test.ts` |
 | IO-023 | システム | 検索 | 表記 | L2 | `query` の `q`: ひらがなで打ってもカタカナの名前に当たる。全角半角・大文字小文字も区別しない | — |
 | IO-024 | システム | 検索 | 整合 | L2 | `query` の `q` は文字の列だけを見る。richtext は書式(タグ)を落とした文字で当てる(`<strong>` の中の語も当たる) | — |
 | IO-025 | システム | 検索 | 整合 | L2 | `query` の `references` に、参照・利用者・関連先(polymorphic)の表示名が、必要な ID の分だけ入る | — |

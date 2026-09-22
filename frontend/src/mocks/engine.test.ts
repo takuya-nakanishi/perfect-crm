@@ -1141,4 +1141,38 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     const oDesc = query('opportunities', { sort: [{ field: 'owner_id', dir: 'desc' }] }, null).records.map((r) => r.owner_id)
     expect([...new Set(oDesc)]).toEqual([takuya, misaki])
   })
+
+  it('IO-022 limit: 0 は records が空で total は件数になり、offset で続きを取れる', () => {
+    const sort = [{ field: 'name', dir: 'asc' as const }]
+    const all = query('opportunities', { sort }, null)
+    const n = table('opportunities').length
+    expect(n).toBeGreaterThan(3)
+    expect(all.total).toBe(n)
+
+    // 件数だけ(サイドバーの件数): 行も参照も返さない
+    const count = query('opportunities', { sort, limit: 0 }, null)
+    expect(count.records).toEqual([])
+    expect(count.total).toBe(n)
+    expect(count.references).toEqual({})
+
+    // 絞り込み後の件数を返す
+    const filter = { field: 'stage', op: 'eq' as const, value: all.records[0]!.stage }
+    const filtered = query('opportunities', { filter }, null).records.length
+    expect(filtered).toBeLessThan(n)
+    expect(query('opportunities', { filter, limit: 0 }, null).total).toBe(filtered)
+
+    // offset で続きが取れ、つなげると全件の並びと一致する
+    const ids = all.records.map((r) => r.id)
+    const pages: unknown[] = []
+    for (let offset = 0; offset < n; offset += 3) {
+      const page = query('opportunities', { sort, limit: 3, offset }, null)
+      expect(page.total).toBe(n)
+      expect(page.records.length).toBe(Math.min(3, n - offset))
+      pages.push(...page.records.map((r) => r.id))
+    }
+    expect(pages).toEqual(ids)
+    // limit を省けば offset から最後まで。末尾を越えた offset は空
+    expect(query('opportunities', { sort, offset: 2 }, null).records.map((r) => r.id)).toEqual(ids.slice(2))
+    expect(query('opportunities', { sort, offset: n, limit: 3 }, null)).toMatchObject({ records: [], total: n })
+  })
 })
