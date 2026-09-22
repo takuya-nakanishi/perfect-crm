@@ -2480,3 +2480,54 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
     expect(find('scaled', got.id as string)!.record).toMatchObject(expected)
   })
 })
+
+describe('作成の既定値と定義に無い列(mocks/engine.ts の insert / update)', () => {
+  beforeEach(() => resetTables())
+
+  /** テーブルの列の定義(定義から引く) */
+  const fieldOf = (object: string, key: string) => getMeta().objects.find((o) => o.key === object)!.fields.find((f) => f.key === key)!
+
+  it('REC-062 insert: 必須の選択肢は先頭・user 型は自分・created_at と updated_at は今。定義に無い列は insert も update も 400 で何も変えない(readonly の列は通す)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const at = '2026-10-01T01:23:45.000Z'
+      vi.setSystemTime(new Date(at))
+      const me = usersJson[1].id
+      const account_id = table('accounts')[0].id
+
+      // 商談: 必須の選択肢(フェーズ)は先頭、担当は自分、作成日時と更新日時は今(返り値も保存された行も)
+      const stage = fieldOf('opportunities', 'stage')
+      expect(stage.required).toBe(true)
+      const opp = insert('opportunities', { name: '既定値の試し', account_id }, me).record
+      const expected = { stage: stage.options![0].value, owner_id: me, created_at: at, updated_at: at }
+      expect(opp).toMatchObject(expected)
+      expect(find('opportunities', opp.id as string)!.record).toMatchObject(expected)
+
+      // タスク: 必須の選択肢(状態)は先頭、担当者は自分
+      const task = insert('tasks', { title: '既定値の試し' }, me).record
+      expect(task).toMatchObject({ status: fieldOf('tasks', 'status').options![0].value, assignee_id: me, created_at: at, updated_at: at })
+
+      // 定義に無い列 → 400。行は増えず、その列もどこにも入らない
+      const count = table('opportunities').length
+      expect(statusOf(() => insert('opportunities', { name: '未知の列', account_id, bogus: 'x' }, me))).toBe(400)
+      expect(table('opportunities')).toHaveLength(count)
+      expect(table('opportunities').some((r) => 'bogus' in r || r.name === '未知の列')).toBe(false)
+
+      // update も同じく 400。行は変わらない(渡した他の列も入らない)
+      const id = opp.id as string
+      const snapshot = structuredClone(table('opportunities'))
+      vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'))
+      expect(statusOf(() => update('opportunities', id, { name: '変えない', bogus: 'x' }, me))).toBe(400)
+      expect(table('opportunities')).toEqual(snapshot)
+
+      // readonly の列(完了日時)は本文にあってよい
+      const done = '2026-01-02T03:04:05.000Z'
+      const kept = insert('tasks', { title: '移行した完了済み', status: 'done', completed_at: done }, me).record
+      expect(kept).toMatchObject({ status: 'done', completed_at: done })
+      const completed = update('tasks', task.id as string, { status: 'done', completed_at: done }, me)!.record
+      expect(completed).toMatchObject({ status: 'done', completed_at: done })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
