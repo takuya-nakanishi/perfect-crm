@@ -1175,4 +1175,26 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     expect(query('opportunities', { sort, offset: 2 }, null).records.map((r) => r.id)).toEqual(ids.slice(2))
     expect(query('opportunities', { sort, offset: n, limit: 3 }, null)).toMatchObject({ records: [], total: n })
   })
+
+  it('IO-023 q はひらがな・カタカナ、全角・半角、大文字・小文字を区別せずに当たる', () => {
+    const names = (q: string) => query('opportunities', { q }, null).records.map((r) => r.name as string)
+
+    // カタカナの名前に、ひらがな・半角カタカナで打っても当たる
+    const cloud = names('クラウド')
+    expect(cloud).toContain('配車管理のクラウド移行')
+    expect(cloud.length).toBeLessThan(table('opportunities').length)
+    expect(names('くらうど')).toEqual(cloud)
+    expect(names('ｸﾗｳﾄﾞ')).toEqual(cloud)
+
+    // 英字: 大文字・小文字、全角・半角を問わない
+    const saas = names('SaaS')
+    expect(saas).toContain('共同開発: 予約管理 SaaS')
+    for (const q of ['saas', 'SAAS', 'ｓａａｓ', 'ＳａａＳ']) expect(names(q)).toEqual(saas)
+    const wifi = names('Wi-Fi')
+    expect(wifi).toContain('工場 Wi-Fi 更改')
+    expect(names('ｗｉ－ｆｉ')).toEqual(wifi)
+
+    // 当たらない語は空(正規化で何にでも当たるようになってはいない)
+    expect(names('くらうどさーす')).toEqual([])
+  })
 })
