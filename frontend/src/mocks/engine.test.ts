@@ -2118,4 +2118,30 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-025 timeline(tasks, T) にはタスク T 自身の完了は出ず、関連先が T の活動は出る', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const account = insert('accounts', { name: '時系列 タスクの確かめ' }, TAKUYA).record.id as string
+      // T は完了していて、関連先は取引先。取引先の時系列には完了として出る
+      const t = insert('tasks', { title: '契約書を送る', status: 'done', related_object: 'accounts', related_id: account, completed_at: '2026-09-15T12:00:00.000Z' }, TAKUYA).record.id as string
+      expect(timeline('accounts', account).map((e) => [e.kind, e.id])).toEqual([['completion', t]])
+      // T が relation(前回 repeat_of)で自分自身を指していても、T の時系列に T 自身の完了は出さない
+      update('tasks', t, { repeat_of: t }, TAKUYA)
+      expect(find('tasks', t)!.record.repeat_of).toBe(t)
+      const other = insert('tasks', { title: '別のタスク', status: 'open' }, TAKUYA).record.id as string
+      const act = (subject: string, occurred_on: string, related_id: string) =>
+        insert('activities', { subject, occurred_on, related_object: 'tasks', related_id }, TAKUYA).record.id as string
+      const onT = act('送付の前に電話', '2026-09-14', t)
+      act('別のタスクの活動', '2026-09-16', other)
+
+      const entries = timeline('tasks', t)
+      // T 自身の完了(kind: completion)は出ず、関連先が T の活動だけが出る
+      expect(entries.map((e) => e.id)).toEqual([onT])
+      expect(entries[0]).toMatchObject({ kind: 'activity', object: 'activities', date: '2026-09-14', related: { object: 'tasks', id: t, name: '契約書を送る' } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
