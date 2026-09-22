@@ -441,4 +441,15 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => updateObject('trial', input('trial')))).toBeNull()
     expect(sidebar()).toBe(true)
   })
+
+  it('META-023 新しいテーブルを作ると、活動の関連先(all_targets)の targets にそのテーブルが加わる', () => {
+    const targets = (object: string) => getMeta().objects.find((o) => o.key === object)!.fields.find((f) => f.key === 'related')!.targets
+    const before = [...targets('activities')!]
+    expect(before).not.toContain('trial')
+    expect(statusOf(() => createObject(input('trial')))).toBeNull()
+    // 活動の関連先: 元の関連先を保ったまま、末尾に 1 回だけ加わる
+    expect(targets('activities')).toEqual([...before, 'trial'])
+    // all_targets の無い関連先(タスク)には加わらない
+    expect(targets('tasks')).toEqual(['accounts', 'opportunities'])
+  })
 })
