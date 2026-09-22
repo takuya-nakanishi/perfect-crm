@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput, WebFormInput } from '@/api/types'
+import type { ObjectInput, ViewInput, WebFormInput } from '@/api/types'
 import usersJson from './fixtures/users.json'
 import { getMeta, resetTables } from './engine'
 import { createMockClient } from './mockClient'
@@ -79,5 +79,24 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(await statusOf(() => api.createMcpToken('試しのトークン', 'claude-code')), 'createMcpToken(管理者)').toBeNull()
     expect(await statusOf(() => api.listWebForms()), 'listWebForms(管理者)').toBeNull()
     expect(await statusOf(() => api.createWebForm(form)), 'createWebForm(管理者)').toBeNull()
+  })
+
+  it('SET-004 管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
+    const api = createMockClient()
+    await api.login(member.email, 'x')
+    const object = getMeta().objects[0]
+    const field = object.fields.find((f) => f.type === 'text')!
+    const view: ViewInput = { name: '試しのビュー', type: 'list', config: { columns: [{ field: field.key }] } }
+    const idsBefore = getMeta().views.map((v) => v.id)
+
+    expect(await statusOf(() => api.createView(object.key, view)), 'createView').toBeNull()
+    const created = getMeta().views.find((v) => !idsBefore.includes(v.id))
+    expect(created, '作ったビューが定義に入る').toMatchObject({ object: object.key, name: '試しのビュー' })
+
+    expect(await statusOf(() => api.updateView(created!.id, { ...view, name: '書き換えたビュー' })), 'updateView').toBeNull()
+    expect(getMeta().views.find((v) => v.id === created!.id)?.name).toBe('書き換えたビュー')
+
+    expect(await statusOf(() => api.deleteView(created!.id)), 'deleteView').toBeNull()
+    expect(getMeta().views.map((v) => v.id)).toEqual(idsBefore)
   })
 })
