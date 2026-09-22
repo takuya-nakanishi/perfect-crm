@@ -1859,3 +1859,29 @@ describe('繰り返しの次回は作成と同じ経路(mocks/engine.ts の upda
     }
   })
 })
+
+describe('ラベルの保存(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-062 labels に ["follow_up","sales"] を送ると定義順 ["sales","follow_up"] で保存し、重複は除く。無い値は 400、空の配列は null', () => {
+    const id = insert('tasks', { title: '先方へ連絡' }, TAKUYA).record.id as string
+
+    // 定義順(sales → … → follow_up)に揃える
+    update('tasks', id, { labels: '["follow_up","sales"]' }, TAKUYA)
+    expect(find('tasks', id)!.record.labels).toBe('["sales","follow_up"]')
+
+    // 重複は 1 つにする
+    update('tasks', id, { labels: '["follow_up","sales","follow_up","sales"]' }, TAKUYA)
+    expect(find('tasks', id)!.record.labels).toBe('["sales","follow_up"]')
+
+    // 選択肢に無い値は 400 で、保存済みの値は変わらない
+    expect(statusOf(() => update('tasks', id, { labels: '["sales","vip"]' }, TAKUYA))).toBe(400)
+    expect(find('tasks', id)!.record.labels).toBe('["sales","follow_up"]')
+
+    // 空の配列は null(ラベルなし)
+    update('tasks', id, { labels: '[]' }, TAKUYA)
+    expect(find('tasks', id)!.record.labels).toBeNull()
+  })
+})

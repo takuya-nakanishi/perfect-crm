@@ -51,5 +51,5 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` の既定値、`applyRul
 |---|---|---|---|---|---|---|
 | TASK-060 | 利用者 | ラベル | 整合 | L3 | 利用者: パネルの「ラベル」で営業と要連絡を押す → 2 つ付く | `smoke.mjs「複数選択で 2 つのラベルを付けられる」` |
 | TASK-061 | 利用者 | ラベル | 整合 | L3 | 利用者: 条件「ラベル のどれかを含む 営業」→ 絞れる | `smoke.mjs「条件「ラベル のどれかを含む 営業」で絞れる」` |
-| TASK-062 | システム | ラベル | 整合 | L2 | `update`(labels に `["follow_up","sales"]`)→ 保存は定義順(`["sales","follow_up"]`)、重複は除く。無い値 → 400。空の配列 → null | — |
+| TASK-062 | システム | ラベル | 整合 | L2 | `update`(labels に `["follow_up","sales"]`)→ 保存は定義順(`["sales","follow_up"]`)、重複は除く。無い値 → 400。空の配列 → null | `engine.test.ts` |
 | TASK-063 | システム | ラベル | 整合 | L2 | `update`(labels に配列でない文字)→ 400 | — |
