@@ -184,7 +184,11 @@ function buildField(input: FieldInput, existing: FieldMeta | undefined): FieldMe
     if (options.length === 0) invalid(`「${label}」に選択肢を 1 つ以上入れてください`)
     if (new Set(options.map((o) => o.value)).size !== options.length) invalid(`「${label}」の選択肢が重なっています`)
     for (const o of options) if (!TAG_COLORS.includes(o.color)) invalid(`「${label}」の選択肢の色が正しくありません`)
-    field.options = options
+    // 画面から決められない属性(kind・probability)は、同じ value の既存の選択肢から引き継ぐ(本文に無ければ元のまま。04 §6)
+    field.options = options.map((o) => {
+      const prev = existing?.options?.find((e) => e.value === o.value)
+      return prev ? { ...prev, ...o } : o
+    })
   }
   if (input.type === 'relation') {
     if (existing) field.target = existing.target
