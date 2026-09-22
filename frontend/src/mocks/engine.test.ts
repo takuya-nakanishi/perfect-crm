@@ -944,4 +944,47 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(view(mixedId).config).toEqual(list('', mixed).config)
     expect(view(onlyId).config).toEqual(list('', only).config)
   })
+
+  it('META-092 項目を外したあと、そのビューを GET /meta の定義のまま改名だけして updateView しても 400 にならない', () => {
+    const before = getMeta().objects.find((o) => o.key === 'opportunities')!
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    // close_date を列・並び・条件・カードの項目で指す一覧とカンバン
+    const listId = createView('opportunities', {
+      name: '期日順',
+      type: 'list',
+      config: {
+        columns: [{ field: 'name' }, { field: 'close_date', width: 120 }, { field: 'stage' }],
+        sort: [{ field: 'close_date', dir: 'asc' }],
+        filter: { and: [{ field: 'close_date', op: 'is_not_empty' }, { field: 'amount', op: 'gte', value: 1000000 }] },
+      },
+    }).views.find((v) => v.name === '期日順')!.id
+    const kanbanId = createView('opportunities', {
+      name: '期日つきカンバン',
+      type: 'kanban',
+      config: { group_by: 'stage', card_fields: ['amount', 'close_date'], sort: [{ field: 'close_date', dir: 'desc' }], filter: { field: 'close_date', op: 'is_not_empty' } },
+    }).views.find((v) => v.name === '期日つきカンバン')!.id
+    const view = (id: string) => getMeta().views.find((v) => v.id === id)!
+
+    expect(statusOf(() => updateObject('opportunities', { key: 'opportunities', label: before.label, icon: before.icon, color: before.color, fields: bodyFields.filter((f) => f.key !== 'close_date') }))).toBeNull()
+
+    // 画面と同じく、GET /meta で受け取った定義(外れた項目は見えない)に名前だけ変えて送る
+    for (const [id, name] of [
+      [listId, '期日順(改)'],
+      [kanbanId, '期日つきカンバン(改)'],
+    ] as const) {
+      const { id: _id, object: _object, position: _position, ...rest } = view(id)
+      const shown = rest.config
+      expect(statusOf(() => updateView(id, { ...rest, name } as ViewInput))).toBeNull()
+      expect(view(id).name).toBe(name)
+      expect(view(id).config).toEqual(shown)
+    }
+    const list = view(listId)
+    if (list.type !== 'list') throw new Error('一覧のビューがありません')
+    expect(list.config.columns).toEqual([{ field: 'name' }, { field: 'stage' }])
+    const kanban = view(kanbanId)
+    if (kanban.type !== 'kanban') throw new Error('カンバンのビューがありません')
+    expect(kanban.config.card_fields).toEqual(['amount'])
+  })
 })
