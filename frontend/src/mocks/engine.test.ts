@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor } from '@/api/types'
-import { createObject, getMeta, resetTables } from './engine'
+import { createObject, deleteObject, getMeta, resetTables } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -129,5 +129,23 @@ describe('テーブル設定(mocks/engine.ts)', () => {
       expect(statusOf(() => createObject(body(table, type, colors.map((color, i) => ({ value: `v${i}`, label: `選択肢 ${i}`, color })))))).toBeNull()
       expect(getMeta().objects.find((o) => o.key === table)?.fields.find((f) => f.key === 'stage')?.options?.map((o) => o.color)).toEqual(colors)
     }
+  })
+
+  it('META-010 参照の項目に参照先が無い、または削除中のテーブルなら 400', () => {
+    const body = (table: string, target?: string): ObjectInput => ({
+      ...input(table),
+      fields: [{ key: 'name', label: '名前', type: 'text' }, { key: 'ref', label: '参照', type: 'relation', ...(target !== undefined ? { target } : {}) }],
+    })
+    // 削除中のテーブルを用意する(初めから入っているテーブルは削除できないので、作ってから消す)
+    expect(statusOf(() => createObject(input('gone')))).toBeNull()
+    deleteObject('gone')
+    for (const [name, target] of [['none', undefined], ['empty', ''], ['missing', 'no_such_table'], ['trashed', 'gone']] as const) {
+      const table = `rel_${name}`
+      expect(statusOf(() => createObject(body(table, target))), table).toBe(400)
+      expect(getMeta().objects.some((o) => o.key === table), table).toBe(false)
+    }
+    // 生きているテーブルを指せば作れて、参照先が残る
+    expect(statusOf(() => createObject(body('rel_ok', 'accounts')))).toBeNull()
+    expect(getMeta().objects.find((o) => o.key === 'rel_ok')?.fields.find((f) => f.key === 'ref')?.target).toBe('accounts')
   })
 })
