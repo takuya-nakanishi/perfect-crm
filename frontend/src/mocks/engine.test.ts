@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -1499,5 +1499,38 @@ describe('タスクの追加(mocks/engine.ts の insert)', () => {
     }
     expect(statusOf(() => insert('tasks', { title: '電話する' }, TAKUYA))).toBeNull()
     expect(table('tasks').length).toBe(before + 3)
+  })
+})
+
+describe('タスクの完了(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-023 done にすると completed_at と updated_at が今になり、open に戻すと completed_at は null', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      // 未着手のタスクを作ってから、時計を進めて完了にする(作った時刻と区別できるように)
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+      const { record } = insert('tasks', { title: '見積もりを送る' }, TAKUYA)
+      const id = record.id as string
+      expect(record).toMatchObject({ status: 'open', completed_at: null })
+
+      const doneAt = '2026-10-02T01:23:45.000Z'
+      vi.setSystemTime(new Date(doneAt))
+      const done = update('tasks', id, { status: 'done' }, TAKUYA)!.record
+      expect(done).toMatchObject({ status: 'done', completed_at: doneAt, updated_at: doneAt })
+      // 保存された行も同じ(返り値だけでなく)
+      expect(find('tasks', id)!.record).toMatchObject({ completed_at: doneAt, updated_at: doneAt })
+
+      // 戻す: completed_at は消え、updated_at はその時刻になる
+      const reopenAt = '2026-10-03T04:56:07.000Z'
+      vi.setSystemTime(new Date(reopenAt))
+      const reopened = update('tasks', id, { status: 'open' }, TAKUYA)!.record
+      expect(reopened).toMatchObject({ status: 'open', completed_at: null, updated_at: reopenAt })
+      expect(find('tasks', id)!.record).toMatchObject({ completed_at: null, updated_at: reopenAt })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
