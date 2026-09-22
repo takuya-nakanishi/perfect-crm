@@ -240,4 +240,48 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(keys()).not.toContain('amount')
     expect(deals().label).toBe('変えた名前')
   })
+
+  it('META-015 updateObject で完了の仕組みが使う列(タスクの状況)や活動の件名・種別・日付・内容を本文から外すと 400、完了日時は外れない', () => {
+    const find = (key: string) => getMeta().objects.find((o) => o.key === key)!
+    const keys = (key: string) => find(key).fields.map((f) => f.key)
+    // 画面が送るのと同じ全量の本文(システムが埋める列は含めない)から、1 つだけ外す
+    const bodyWithout = (key: string, omit: string): ObjectInput => {
+      const before = find(key)
+      return {
+        key,
+        label: '変えた名前',
+        icon: before.icon,
+        color: before.color,
+        fields: before.fields
+          .filter((f) => !f.readonly && f.key !== omit)
+          .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder })),
+      }
+    }
+    const tasks = find('tasks')
+    expect(tasks.completion?.field).toBe('status')
+    expect(tasks.completion?.completed_at_field).toBe('completed_at')
+    expect(find('activities').timeline).toEqual({ subject: 'subject', type: 'type', date: 'occurred_on', body: 'body' })
+    const cases: [string, string, string][] = [
+      ['tasks', 'status', 'タスク'],
+      ['activities', 'subject', '活動'],
+      ['activities', 'type', '活動'],
+      ['activities', 'occurred_on', '活動'],
+      ['activities', 'body', '活動'],
+    ]
+    for (const [key, omit, label] of cases) {
+      const beforeKeys = keys(key)
+      expect(beforeKeys, omit).toContain(omit)
+      expect(statusOf(() => updateObject(key, bodyWithout(key, omit))), omit).toBe(400)
+      // 弾いた更新は、項目も他の変更(テーブル名)も残さない
+      expect(keys(key), omit).toEqual(beforeKeys)
+      expect(find(key).label, omit).toBe(label)
+    }
+    // 完了日時はシステムが埋める列で本文に入らない。無い本文を送っても外れない
+    expect(statusOf(() => updateObject('tasks', bodyWithout('tasks', 'completed_at')))).toBeNull()
+    expect(keys('tasks')).toContain('completed_at')
+    // 守られていない項目(タスクの詳細)なら同じ形の本文で外せる
+    expect(statusOf(() => updateObject('tasks', bodyWithout('tasks', 'description')))).toBeNull()
+    expect(keys('tasks')).not.toContain('description')
+    expect(keys('tasks')).toContain('completed_at')
+  })
 })
