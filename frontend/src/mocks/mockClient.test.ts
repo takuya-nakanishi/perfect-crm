@@ -95,6 +95,26 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(JSON.stringify(await api.listMcpTokens()), '一覧のどこにも全文が無い').not.toContain(secret)
   })
 
+  it('SET-022 createMcpToken の名前が空なら 400 でトークンは増えず、revokeMcpToken で一覧から消え、無い id なら 404', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    const before = listTokens()
+
+    expect(await statusOf(() => api.createMcpToken('', 'claude-code')), '名前が空').toBe(400)
+    expect(await statusOf(() => api.createMcpToken('   ', 'claude-code')), '名前が空白だけ').toBe(400)
+    expect(listTokens(), '失敗した発行でトークンは増えない').toEqual(before)
+
+    const { token } = await api.createMcpToken('消すトークン', 'claude-code')
+    expect((await api.listMcpTokens()).map((t) => t.id)).toContain(token.id)
+
+    await api.revokeMcpToken(token.id)
+    expect((await api.listMcpTokens()).map((t) => t.id), '失効したトークンは一覧から消える').not.toContain(token.id)
+
+    expect(await statusOf(() => api.revokeMcpToken(token.id)), '失効済みの id').toBe(404)
+    expect(await statusOf(() => api.revokeMcpToken(crypto.randomUUID())), '無い id').toBe(404)
+    expect(listTokens(), '404 のあとも一覧は変わらない').toEqual(before)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')

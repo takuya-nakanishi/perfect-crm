@@ -23,7 +23,7 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 |---|---|---|---|---|---|---|
 | SET-020 | 管理者 | MCP | 証跡 | L3 | 管理者: トークンを発行 → 全文が 1 回見え、繋ぎ方の設定に入る。失効できる | `smoke.mjs「トークンを発行すると全文が 1 回見えて、繋ぎ方の設定に入る」` / `smoke.mjs「トークンを失効できる」` |
 | SET-021 | 管理者 | MCP | 安全弁 | L2 | `createMcpToken`: `secret` は `wks_` + 40 文字、`token.prefix` はその先頭 8 文字。一覧には `secret` が入らない | `mockClient.test.ts` |
-| SET-022 | 管理者 | MCP | 整合 | L2 | `createMcpToken` の名前が空 → 400。`revokeMcpToken` で消え、無い id → 404 | — |
+| SET-022 | 管理者 | MCP | 整合 | L2 | `createMcpToken` の名前が空 → 400。`revokeMcpToken` で消え、無い id → 404 | `mockClient.test.ts` |
 | SET-023 | 管理者 | MCP | 整合 | L2 | `createMcpToken` の `created_by` は自分、`last_used_at` は null | — |
 | SET-024 | 外部 | MCP | 権限 | L5 | AI アプリ(Claude Code): Access のサービストークン + アプリのトークンをヘッダで渡して `/mcp` へ → 門を通り、その利用者として読める(J-028 のあと) | — |
 
