@@ -1015,4 +1015,36 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => updateObject('opportunities', body(withRank)))).toBeNull()
     expect(views().find((v) => v.id === kanbanId)).toEqual(kanban)
   })
+  it('META-094 レポートの部品が指す項目を外すとその部品だけ外れ、全部無くなればビューが出ない。関連先の related_object を指す部品は残る', () => {
+    const before = getMeta().objects.find((o) => o.key === 'activities')!
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'activities', label: before.label, icon: before.icon, color: before.color, fields })
+    // 数値の項目「所要分」を足し、それを指す部品と関連先を指す部品を持つレポートを 2 つ作る
+    const withMinutes = [...bodyFields, { key: 'minutes', label: '所要分', type: 'number' as const }]
+    expect(statusOf(() => updateObject('activities', body(withMinutes)))).toBeNull()
+    const total = { id: 'w-total', type: 'stat' as const, title: '所要分の合計', measure: { op: 'sum' as const, field: 'minutes' }, format: 'number' as const }
+    const byOwner = { id: 'w-owner', type: 'bar' as const, title: '担当者ごとの所要分', group_by: { field: 'owner_id' }, measure: { op: 'sum' as const, field: 'minutes' }, format: 'number' as const, color: 'single' as const }
+    const byRelated = { id: 'w-related', type: 'column' as const, title: '関連先ごとの件数', group_by: { field: 'related_object' }, measure: { op: 'count' as const }, format: 'number' as const, color: 'single' as const }
+    const mixedId = createView('activities', { name: '混在', type: 'report', config: { widgets: [total, byOwner, byRelated] } }).views.find((v) => v.name === '混在')!.id
+    const onlyId = createView('activities', { name: '所要分だけ', type: 'report', config: { widgets: [total, byOwner] } }).views.find((v) => v.name === '所要分だけ')!.id
+    const views = () => getMeta().views.filter((v) => v.object === 'activities')
+    const shown = views()
+    const mixed = shown.find((v) => v.id === mixedId)!
+    const only = shown.find((v) => v.id === onlyId)!
+    expect(mixed.type === 'report' && mixed.config.widgets.map((w) => w.id)).toEqual(['w-total', 'w-owner', 'w-related'])
+
+    // 所要分を外す → 所要分を指す部品だけが外れ、関連先を指す部品は残る。部品が全部無くなったレポートは出ない
+    expect(statusOf(() => updateObject('activities', body(bodyFields)))).toBeNull()
+    const after = views().find((v) => v.id === mixedId)!
+    expect(after.type === 'report' && after.config.widgets).toEqual([byRelated])
+    expect(views().find((v) => v.id === onlyId)).toBeUndefined()
+    expect(views().map((v) => v.id)).toEqual(shown.filter((v) => v.id !== onlyId).map((v) => v.id))
+
+    // 同じ列名・同じ型で戻す → どちらのレポートも同じ定義で出る
+    expect(statusOf(() => updateObject('activities', body(withMinutes)))).toBeNull()
+    expect(views().find((v) => v.id === mixedId)).toEqual(mixed)
+    expect(views().find((v) => v.id === onlyId)).toEqual(only)
+  })
 })
