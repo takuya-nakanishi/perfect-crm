@@ -2201,4 +2201,29 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-042 関連先が別のレコードで、mentions に Z を含む活動は timeline(accounts, Z) に kind: mention で出て、related はその活動の本来の関連先(名前付き)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const z = insert('accounts', { name: '言及の確かめ' }, TAKUYA).record.id as string
+      const account = insert('accounts', { name: '本来の関連先' }, TAKUYA).record.id as string
+      const contact = insert('contacts', { name: '言及 無関係' }, TAKUYA).record.id as string
+      const mention = (o: string, i: string, label: string) => `<span data-type="mention" data-id="${o}:${i}" data-label="${label}">@${label}</span>`
+      // 関連先は別の取引先で、本文で Z に言及する
+      const onAccount = insert('activities', { subject: '別の取引先で Z の話', occurred_on: '2026-09-20', body: `<p>${mention('accounts', z, '言及の確かめ')}を紹介された</p>`, related_object: 'accounts', related_id: account }, TAKUYA).record.id as string
+      // 関連先は取引先責任者(別のテーブル)で、本文で Z に言及する
+      const onContact = insert('activities', { subject: '責任者との電話', occurred_on: '2026-09-22', body: `<p>${mention('accounts', z, '言及の確かめ')}の件</p>`, related_object: 'contacts', related_id: contact }, TAKUYA).record.id as string
+      // Z に言及しない活動は出ない
+      insert('activities', { subject: '言及なし', occurred_on: '2026-09-25', body: '<p>Z の名前は書いたが言及ではない</p>', related_object: 'accounts', related_id: account }, TAKUYA)
+      expect(find('activities', onAccount)!.record.mentions).toContain(`"accounts:${z}"`)
+
+      const entries = timeline('accounts', z)
+      expect(entries.map((e) => [e.kind, e.id])).toEqual([['mention', onContact], ['mention', onAccount]])
+      expect(entries[0]).toMatchObject({ object: 'activities', date: '2026-09-22', subject: '責任者との電話', related: { object: 'contacts', id: contact, name: '言及 無関係' } })
+      expect(entries[1]).toMatchObject({ object: 'activities', date: '2026-09-20', subject: '別の取引先で Z の話', related: { object: 'accounts', id: account, name: '本来の関連先' } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
