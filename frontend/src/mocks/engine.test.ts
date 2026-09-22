@@ -380,6 +380,50 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(after.type === 'kanban' && after.config.group_by).toBe('stage')
   })
 
+  it('META-021 label を変えて保存しても、本文に無い semantic・in_create_form・選択肢の kind と probability は保たれる', () => {
+    const deals = () => getMeta().objects.find((o) => o.key === 'opportunities')!
+    const fieldOf = (key: string) => deals().fields.find((f) => f.key === key)!
+    const before = deals()
+    const stageBefore = fieldOf('stage').options!
+    expect(fieldOf('close_date').semantic).toBe('deadline')
+    expect(fieldOf('type').in_create_form).toBe(false)
+    expect(fieldOf('probability').in_create_form).toBe(false)
+    expect(stageBefore.map((o) => o.kind)).toEqual(['open', 'open', 'open', 'open', 'open', 'won', 'lost'])
+    // 本文に書ける属性だけで全量を送る(MCP・AI チャットの形)。選択肢は value・label・color だけ。label だけを変える
+    const body: ObjectInput = {
+      key: 'opportunities',
+      label: '案件',
+      icon: before.icon,
+      color: before.color,
+      fields: before.fields
+        .filter((f) => !f.readonly)
+        .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({
+          key,
+          label: key === 'stage' ? '段階' : label,
+          type,
+          required,
+          options: options?.map(({ value, label, color }) => ({ value, label: value === 'won' ? '成約' : label, color })),
+          target,
+          max_length,
+          scale,
+          placeholder,
+        })),
+    }
+    expect(body.fields.flatMap((f) => f.options ?? []).some((o) => 'kind' in o || 'probability' in o)).toBe(false)
+    expect(statusOf(() => updateObject('opportunities', body))).toBeNull()
+    // label は変わる
+    expect(deals().label).toBe('案件')
+    expect(fieldOf('stage').label).toBe('段階')
+    expect(fieldOf('stage').options!.find((o) => o.value === 'won')?.label).toBe('成約')
+    // 本文に無い属性は元のまま
+    expect(fieldOf('close_date').semantic).toBe('deadline')
+    expect(fieldOf('type').in_create_form).toBe(false)
+    expect(fieldOf('probability').in_create_form).toBe(false)
+    expect(fieldOf('stage').options!.map(({ value, kind, probability }) => ({ value, kind, probability }))).toEqual(
+      stageBefore.map(({ value, kind, probability }) => ({ value, kind, probability })),
+    )
+  })
+
   it('META-022 in_sidebar: false で保存すると GET /meta の in_sidebar が false になり、本文に無ければ変わらない', () => {
     const sidebar = () => getMeta().objects.find((o) => o.key === 'trial')!.in_sidebar
     // 作るときに送らなければ、サイドバーに出る
