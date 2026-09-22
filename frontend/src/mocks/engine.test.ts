@@ -355,4 +355,28 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     // 既存の列の並びはそのまま、足した列が updated_at の手前に 1 つだけ入る
     expect(columns()).toEqual([...before.slice(0, -1), 'fiscal_month', 'updated_at'])
   })
+  it('META-020 選択肢の項目を初めて足したテーブルを保存すると、その項目で分けるカンバンが 1 枚でき、既にあれば増えない', () => {
+    const kanbans = () => getMeta().views.filter((v) => v.object === 'trial' && v.type === 'kanban')
+    const options: SelectOption[] = [
+      { value: 'a', label: 'A', color: 'blue' },
+      { value: 'b', label: 'B', color: 'green' },
+    ]
+    const name = { key: 'name', label: '名前', type: 'text' } as const
+    const stage = { key: 'stage', label: '段階', type: 'select', options } as const
+    const rank = { key: 'rank', label: '等級', type: 'select', options } as const
+    // 選択肢の項目が無いテーブルには、カンバンが無い
+    expect(statusOf(() => createObject({ ...input('trial'), fields: [name] }))).toBeNull()
+    expect(kanbans()).toHaveLength(0)
+    // 選択肢の項目を初めて足して保存 → その項目で分けるカンバンが 1 枚
+    expect(statusOf(() => updateObject('trial', { ...input('trial'), fields: [name, stage] }))).toBeNull()
+    expect(kanbans()).toHaveLength(1)
+    const [kanban] = kanbans()
+    expect(kanban.type === 'kanban' && kanban.config.group_by).toBe('stage')
+    // もう 1 つ選択肢の項目を足しても、カンバンは増えず、分け方も変わらない
+    expect(statusOf(() => updateObject('trial', { ...input('trial'), fields: [name, stage, rank] }))).toBeNull()
+    expect(kanbans()).toHaveLength(1)
+    const [after] = kanbans()
+    expect(after.id).toBe(kanban.id)
+    expect(after.type === 'kanban' && after.config.group_by).toBe('stage')
+  })
 })
