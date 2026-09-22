@@ -63,7 +63,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-064 | 外部 | CSV | 整合 | L2 | `coerce`: 数値は全角・カンマ・円記号を受ける。日付は `2026/9/30`・`2026年9月30日` も。選択肢はラベルでも値でも。利用者は名前かメール。チェックは「はい / true / 1 / ○」 | `csv.test.ts` |
 | IO-065 | 外部 | CSV | 安全弁 | L2 | `coerce` の参照: 表示名が一致するレコードが 1 件なら結ぶ。**同名が 2 件以上ならエラー**(黙って選ばない)。UUID ならそのまま | `csv.test.ts` |
 | IO-066 | 外部 | CSV | 整合 | L2 | `coerce` の複数選択: 「営業、事務」を配列に。無いラベルはエラー。重複は 1 つ | `csv.test.ts` |
-| IO-067 | 外部 | CSV | 整合 | L2 | `importCsv` の `created_ids` は CSV の並びと同じ順(一覧で上から同じ順に見える) | — |
+| IO-067 | 外部 | CSV | 整合 | L2 | `importCsv` の `created_ids` は CSV の並びと同じ順(一覧で上から同じ順に見える) | `csv.test.ts` |
 | IO-068 | 利用者 | CSV | 表記 | L2 | `exportCsv`: 先頭に BOM、見出しは項目名、選択肢はラベル、参照と利用者は表示名、複数選択は「営業、事務」、richtext は書式を落とした文字、ドライブは名前と URL | — |
 | IO-069 | 利用者 | CSV | 整合 | L2 | `importCsv`: `readonly`・関連先(polymorphic)・ドライブの列は受け付けない(mapping に当てても null) | — |
 | IO-070 | 利用者 | CSV | 整合 | L3 | 利用者: 歯車 → エクスポート → `見積_YYYY-MM-DD.csv` が落ちる | `smoke.mjs「エクスポートで CSV が落ちる」` |

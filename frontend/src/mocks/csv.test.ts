@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { FieldMeta } from '@/api/types'
 import { coerce, importCsv, parseCsv } from './csv'
-import { resetTables, table, users } from './engine'
+import { query, resetTables, table, users } from './engine'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 describe('CSV の読み取り(mocks/csv.ts)', () => {
@@ -112,6 +112,21 @@ describe('CSV の取り込み(mocks/csv.ts)', () => {
       { name: '森田物産', employees: 7 },
     ])
     for (const name of ['山田商店', '川口工業']) expect(table('accounts').some((r) => r.name === name)).toBe(false)
+  })
+
+  it('IO-067 created_ids は CSV の並びと同じ順で、一覧でも上から同じ順に見える', () => {
+    // 途中に読めない行を挟んでも、残りの並びは崩さない
+    const csv = ['取引先名,従業員数', '一番商事,1', '二番物産,2', '読めない,たくさん', '三番工業,3', '四番商店,4'].join('\n')
+    const res = importCsv('accounts', { csv }, users[0].id)
+    expect(res.errors).toHaveLength(1)
+    const names = res.created_ids.map((id) => table('accounts').find((r) => r.id === id)?.name)
+    expect(names).toEqual(['一番商事', '二番物産', '三番工業', '四番商店'])
+
+    // 並べ替えなしの一覧も、新しい順(作成日時の降順)の一覧も、上から CSV と同じ順
+    const plain = query('accounts', { limit: 4 }, users[0].id)
+    expect(plain.records.map((r) => r.id)).toEqual(res.created_ids)
+    const newest = query('accounts', { sort: [{ field: 'created_at', dir: 'desc' }], limit: 4 }, users[0].id)
+    expect(newest.records.map((r) => r.id)).toEqual(res.created_ids)
   })
 })
 
