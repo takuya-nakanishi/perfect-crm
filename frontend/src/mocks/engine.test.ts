@@ -2342,3 +2342,50 @@ describe('商談の作成と確度(mocks/engine.ts の insert)', () => {
     expect(omitted.record.probability).toBe(stageProbability('lead'))
   })
 })
+
+describe('商談のフェーズの変更と確度(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  /** 商談の stage の選択肢の確度の既定値(定義から引く) */
+  const stageProbability = (value: string) => {
+    const stage = getMeta().objects.find((o) => o.key === 'opportunities')!.fields.find((f) => f.key === 'stage')!
+    return stage.options!.find((o) => o.value === value)!.probability
+  }
+
+  it('REC-064 update(商談のフェーズを変える): 確度はそのフェーズの既定値、確度を同時に渡せばそちら、updated_at は今になる', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+      const account_id = table('accounts')[0].id
+      const { record } = insert('opportunities', { name: 'フェーズを変える試し', account_id, stage: 'lead' }, null)
+      const id = record.id as string
+      const createdAt = record.created_at
+
+      // フェーズだけを変える → 確度はそのフェーズの既定値(手で変えた確度も上書きする)
+      update('opportunities', id, { probability: 42 }, null)
+      for (const [i, stage] of ['proposal', 'negotiation', 'lost'].entries()) {
+        const at = `2026-10-0${i + 2}T01:23:45.000Z`
+        vi.setSystemTime(new Date(at))
+        expect(stageProbability(stage), stage).toBeTypeOf('number')
+        const got = update('opportunities', id, { stage }, null)!.record
+        expect(got, stage).toMatchObject({ stage, probability: stageProbability(stage), updated_at: at, created_at: createdAt })
+        // 保存された行も同じ(返り値だけでなく)
+        expect(find('opportunities', id)!.record, stage).toMatchObject({ stage, probability: stageProbability(stage), updated_at: at })
+      }
+
+      // 確度を同時に渡せば、既定値で上書きしない(0 も尊重する)
+      vi.setSystemTime(new Date('2026-10-06T00:00:00.000Z'))
+      const given = update('opportunities', id, { stage: 'proposal', probability: 30 }, null)!.record
+      expect(given).toMatchObject({ stage: 'proposal', probability: 30, updated_at: '2026-10-06T00:00:00.000Z' })
+      const zero = update('opportunities', id, { stage: 'negotiation', probability: 0 }, null)!.record
+      expect(zero).toMatchObject({ stage: 'negotiation', probability: 0 })
+
+      // フェーズを変えない更新では確度はそのまま(updated_at だけ進む)
+      vi.setSystemTime(new Date('2026-10-07T00:00:00.000Z'))
+      const other = update('opportunities', id, { name: '名前だけ変える' }, null)!.record
+      expect(other).toMatchObject({ stage: 'negotiation', probability: 0, updated_at: '2026-10-07T00:00:00.000Z' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
