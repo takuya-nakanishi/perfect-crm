@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, resetTables, restoreView, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, reorderViews, resetTables, restoreView, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -641,5 +641,30 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     const restored = restoreView(target.id)
     expect(restored.views.find((v) => v.id === target.id)).toEqual(target)
     expect(getMeta().views).toEqual(before)
+  })
+
+  it('META-054 reorderViews に全 id を渡す → その順に position(1 から)。足りない・他テーブルの id を混ぜる → 400 で並びは変わらない', () => {
+    const viewsOf = (object: string) =>
+      getMeta()
+        .views.filter((v) => v.object === object)
+        .map((v) => ({ id: v.id, position: v.position }))
+    const mine = viewsOf('accounts').map((v) => v.id)
+    const other = getMeta().views.find((v) => v.object !== 'accounts')!.id
+    expect(mine.length).toBeGreaterThanOrEqual(2)
+    // 逆順に並べ替える → 渡した順に 1, 2, 3 …
+    const reversed = [...mine].reverse()
+    const res = reorderViews('accounts', reversed)
+    for (const [i, id] of reversed.entries()) expect(res.views.find((v) => v.id === id)!.position).toBe(i + 1)
+    const sorted = () => [...viewsOf('accounts')].sort((a, b) => a.position - b.position).map((v) => v.id)
+    expect(sorted()).toEqual(reversed)
+    const snapshot = getMeta().views
+    // 1 つ足りない → 400
+    expect(statusOf(() => reorderViews('accounts', reversed.slice(1)))).toBe(400)
+    // 数は合っていても、1 つが他のテーブルのビュー → 400
+    expect(statusOf(() => reorderViews('accounts', [...reversed.slice(1), other]))).toBe(400)
+    // 他のテーブルのビューを足して数が多い → 400
+    expect(statusOf(() => reorderViews('accounts', [...reversed, other]))).toBe(400)
+    // どれも並びを変えない(他のテーブルも)
+    expect(getMeta().views).toEqual(snapshot)
   })
 })
