@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
+import usersJson from './fixtures/users.json'
 import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -2265,5 +2266,49 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
     }
     // 言及として出る(関連先とは別の)種データが少なくとも 1 件ある
     expect(mentionKinds).toBeGreaterThan(0)
+  })
+})
+
+describe('1 件の読み取り(mocks/engine.ts の find)', () => {
+  beforeEach(() => resetTables())
+
+  /** 参照先のテーブルの行から、表示名の列(name_field)を直接引く */
+  const nameIn = (object: string, id: string) => {
+    if (object === 'users') return usersJson.find((u) => u.id === id)!.name
+    const meta = getMeta().objects.find((o) => o.key === object)!
+    return String(table(object).find((r) => r.id === id)![meta.name_field])
+  }
+
+  it('REC-049 find: 無い ID → null。references にその行の参照先の表示名が入る', () => {
+    // 無い ID、別のテーブルの ID は null(投げない)
+    expect(find('opportunities', '00000000-0000-7000-8000-000000000000')).toBeNull()
+    const accountId = table('accounts')[0].id
+    expect(find('opportunities', accountId)).toBeNull()
+
+    // 商談: 参照(取引先・主担当の責任者)と利用者(担当者)が、その行の ID の分だけ入る
+    const opp = table('opportunities').find((r) => r.account_id && r.primary_contact_id && r.owner_id)!
+    const got = find('opportunities', opp.id)!
+    expect(got.record).toEqual(opp)
+    const pairs: [string, string][] = [
+      ['accounts', String(opp.account_id)],
+      ['contacts', String(opp.primary_contact_id)],
+      ['users', String(opp.owner_id)],
+    ]
+    expect(Object.keys(got.references).sort()).toEqual(pairs.map(([o]) => o).sort())
+    for (const [object, id] of pairs) {
+      // 他の行の参照先は入らない(この行が指す 1 件だけ)
+      expect(Object.keys(got.references[object]!), object).toEqual([id])
+      expect(got.references[object]![id]).toMatchObject({ id, name: nameIn(object, id) })
+      expect(got.references[object]![id].name).not.toBe('')
+    }
+
+    // タスク: 関連先(polymorphic)は related_object のテーブルに、related_id の表示名で入る
+    const task = table('tasks').find((r) => typeof r.related_object === 'string' && r.related_id)!
+    const t = find('tasks', task.id)!
+    const object = String(task.related_object)
+    const id = String(task.related_id)
+    expect(t.references[object]![id]).toMatchObject({ id, name: nameIn(object, id) })
+    // 関連先のテーブル名の列そのものは参照として扱わない
+    expect(Object.keys(t.references)).not.toContain('related_object')
   })
 })

@@ -41,7 +41,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 | REC-046 | 利用者 | パネル | 整合 | L3 | 利用者: 左端をつまむと幅が変わり、再読み込みしても残り、ダブルクリックで元の幅 | `smoke.mjs「パネルの左端をつまむと幅が変わる」` / `smoke.mjs「幅は再読み込みしても残る」` / `smoke.mjs「ダブルクリックで元の幅」` |
 | REC-047 | 利用者 | パネル | 整合 | L1 | `refFor`: relation は `target` と値、user は `users`、polymorphic は 2 列から。表示名が無ければ `…` で成立させる | `records.test.ts` |
 | REC-048 | 利用者 | パネル | 整合 | L1 | `isClosed`: 選択肢の `kind` が won / lost / done なら閉じている(期限切れの色を出さない)。`isEmptyValue` は polymorphic を ID 列で見る | `records.test.ts` |
-| REC-049 | 利用者 | パネル | 整合 | L2 | `find`: 無い ID → null。`references` にその行の参照先の表示名が入る | — |
+| REC-049 | 利用者 | パネル | 整合 | L2 | `find`: 無い ID → null。`references` にその行の参照先の表示名が入る | `engine.test.ts` |
 
 ## 4. 作成・編集・削除
 
