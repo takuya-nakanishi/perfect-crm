@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Condition, FieldMeta, Filter, ObjectMeta, ViewMeta } from '@/api/types'
-import { flatten, newViewInput, unflatten } from './viewModel'
+import { flatten, newViewInput, unflatten, uniqueName } from './viewModel'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const a: Condition = { field: 'status', op: 'eq', value: 'open' }
@@ -98,5 +98,21 @@ describe('新しいビューの初期値(lib/viewModel.ts newViewInput)', () => 
     const copied = newViewInput(plain, 'list', '写し', base)
     expect(copied).toEqual({ name: '写し', type: 'list', config: { columns: baseColumns, filter, sort: [{ field: 'due', dir: 'asc' }] } })
     expect(newViewInput(plain, 'kanban', 'ボード', base)).toBeNull()
+  })
+})
+
+describe('タブの名前の既定(lib/viewModel.ts uniqueName)', () => {
+  const view = (name: string, position: number): ViewMeta => ({ id: `v${position}`, object: 'things', name, position, type: 'list', config: { columns: [] } })
+
+  it('META-057 uniqueName は「一覧」があれば「一覧 2」、「一覧 2」もあれば「一覧 3」を返す', () => {
+    // 同じ名前が無ければそのまま
+    expect(uniqueName('一覧', [])).toBe('一覧')
+    expect(uniqueName('一覧', [view('カンバン', 0)])).toBe('一覧')
+    // 「一覧」があれば「一覧 2」(番号は 2 から、半角スペースで区切る)
+    expect(uniqueName('一覧', [view('一覧', 0)])).toBe('一覧 2')
+    // 「一覧 2」もあれば「一覧 3」
+    expect(uniqueName('一覧', [view('一覧', 0), view('一覧 2', 1)])).toBe('一覧 3')
+    // 空いている番号のうち最も小さいものを使う(「一覧 3」だけがあるなら「一覧 2」)
+    expect(uniqueName('一覧', [view('一覧', 0), view('一覧 3', 1)])).toBe('一覧 2')
   })
 })
