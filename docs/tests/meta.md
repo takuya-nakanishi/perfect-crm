@@ -32,7 +32,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-019 | 管理者 | 定義 | 可逆 | L3 | 管理者: 保存後のトーストの「元に戻す」→ 足した項目が外れる | `smoke.mjs「「元に戻す」で項目が外れる」` |
 | META-020 | 管理者 | 定義 | 整合 | L2 | 管理者: 選択肢の項目を初めて足したテーブル(カンバン無し)を保存 → その項目で分けるカンバンが 1 枚できる。既にカンバンがあれば増えない | `engine.test.ts` |
 | META-021 | 管理者 | 定義 | 整合 | L2 | 管理者: `label` を変えて保存 → 項目の定義(`semantic`・`in_create_form`・選択肢の `kind`)は保たれる(本文に無い属性を落とさない) | — |
-| META-022 | 管理者 | 定義 | 整合 | L2 | 管理者: `in_sidebar: false` で保存 → `GET /meta` の `in_sidebar` が false。本文に無ければ変わらない | — |
+| META-022 | 管理者 | 定義 | 整合 | L2 | 管理者: `in_sidebar: false` で保存 → `GET /meta` の `in_sidebar` が false。本文に無ければ変わらない | `engine.test.ts` |
 | META-023 | 管理者 | 定義 | 整合 | L2 | 管理者: 新しいテーブルを作る → 活動の関連先(`all_targets`)の `targets` にそのテーブルが加わる | — |
 | META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `reorderObjects` にサイドバーの 3 件だけ渡す → その順が先頭、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400 | — |
 | META-025 | 管理者 | 定義 | 整合 | L1 | `autoFieldKey`: 英字の名前 `Lead Source` → `lead_source`。和文 `見積番号` → `field_1`、2 つめは `field_2`。既にある列名は避ける | — |

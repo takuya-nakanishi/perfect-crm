@@ -379,4 +379,22 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(after.id).toBe(kanban.id)
     expect(after.type === 'kanban' && after.config.group_by).toBe('stage')
   })
+
+  it('META-022 in_sidebar: false で保存すると GET /meta の in_sidebar が false になり、本文に無ければ変わらない', () => {
+    const sidebar = () => getMeta().objects.find((o) => o.key === 'trial')!.in_sidebar
+    // 作るときに送らなければ、サイドバーに出る
+    expect(statusOf(() => createObject(input('trial')))).toBeNull()
+    expect(sidebar()).toBe(true)
+    // false で保存 → false
+    expect(statusOf(() => updateObject('trial', { ...input('trial'), in_sidebar: false }))).toBeNull()
+    expect(sidebar()).toBe(false)
+    // 本文に無ければ false のまま(既定の true に戻さない)
+    expect(statusOf(() => updateObject('trial', { ...input('trial'), label: '名前を変えた' }))).toBeNull()
+    expect(sidebar()).toBe(false)
+    // true で保存 → true。本文に無ければ true のまま
+    expect(statusOf(() => updateObject('trial', { ...input('trial'), in_sidebar: true }))).toBeNull()
+    expect(sidebar()).toBe(true)
+    expect(statusOf(() => updateObject('trial', input('trial')))).toBeNull()
+    expect(sidebar()).toBe(true)
+  })
 })
