@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
+import type { ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
 import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -1775,6 +1775,45 @@ describe('繰り返しの完了を戻す(mocks/engine.ts の update)', () => {
       expect(kept).toHaveLength(1)
       expect(kept[0].id).toBe(nextId)
       expect(kept[0].status).toBe('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('繰り返しの規則か期限が空のタスクの完了(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-048 repeat があっても期限が空なら次回は作らない。repeat が空でも作らない', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-22T03:00:00Z'))
+      const cases: Record<string, Scalar>[] = [
+        { title: '期限なしの繰り返し', due_date: null, repeat: 'weekly' },
+        { title: '期限なしの繰り返し(完了日から)', due_date: null, repeat: 'weekly', repeat_from_completion: true },
+        { title: '繰り返しなし', due_date: '2026-09-22', repeat: null },
+        { title: '繰り返しが空文字', due_date: '2026-09-22', repeat: '' },
+      ]
+      for (const values of cases) {
+        const id = insert('tasks', values, TAKUYA).record.id as string
+        const before = table('tasks').length
+
+        update('tasks', id, { status: 'done' }, TAKUYA)
+
+        const label = String(values.title)
+        // 完了そのものは効く
+        expect(find('tasks', id)!.record.status, label).toBe('done')
+        // 次回は作らない
+        expect(table('tasks').filter((r) => r.repeat_of === id), label).toHaveLength(0)
+        expect(table('tasks').length, label).toBe(before)
+      }
+
+      // 比べる相手: 期限と repeat が両方あれば次回ができる
+      const id = insert('tasks', { title: '両方ある', due_date: '2026-09-22', repeat: 'weekly' }, TAKUYA).record.id as string
+      update('tasks', id, { status: 'done' }, TAKUYA)
+      expect(table('tasks').filter((r) => r.repeat_of === id)).toHaveLength(1)
     } finally {
       vi.useRealTimers()
     }
