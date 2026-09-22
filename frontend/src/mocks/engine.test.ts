@@ -2244,4 +2244,26 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-044 種データの活動も mentions 列が内容の言及から写してあり、言及先の時系列に出る', () => {
+    // 種データは insert を通らない(gen-fixtures が mentions を写す)。内容に言及がある活動を全部見る
+    const seeded = table('activities').filter((row) => typeof row.body === 'string' && row.body.includes('data-type="mention"'))
+    expect(seeded.length).toBeGreaterThan(0)
+    let mentionKinds = 0
+    for (const row of seeded) {
+      const ids = [...String(row.body).matchAll(/data-id="([^"]+)"/g)].map((m) => m[1])
+      expect(row.mentions, String(row.id)).toBe(JSON.stringify(ids))
+      for (const target of ids) {
+        const [object, id] = target.split(':')
+        const hits = timeline(object, id).filter((e) => e.id === row.id)
+        const direct = row.related_object === object && row.related_id === id
+        expect(hits.map((e) => e.kind), target).toEqual([direct ? 'activity' : 'mention'])
+        if (!direct) mentionKinds++
+        expect(hits[0]).toMatchObject({ object: 'activities', subject: row.subject, related: { object: row.related_object, id: row.related_id, name: refOf(String(row.related_object), String(row.related_id))!.name } })
+        expect(hits[0].related!.name).not.toBe('')
+      }
+    }
+    // 言及として出る(関連先とは別の)種データが少なくとも 1 件ある
+    expect(mentionKinds).toBeGreaterThan(0)
+  })
 })
