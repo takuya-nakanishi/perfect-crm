@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, getMeta, reorderObjects, resetTables, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, reorderObjects, resetTables, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -613,5 +613,20 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     updateView(a, { ...inputOf(a), pin: { label: '試し A', position: aPin } })
     expect(viewOf(a).pin!.position).toBe(last + 1)
     expect(viewOf(b).pin!.position).toBe(aPin + 1)
+  })
+
+  it('META-052 そのテーブルの最後の 1 枚を deleteView → 400。ごみ箱にあるビューは数えず、他のテーブルのビューがあっても消せない', () => {
+    const viewsOf = (object: string) => getMeta().views.filter((v) => v.object === object).map((v) => v.id)
+    const mine = viewsOf('accounts')
+    const others = getMeta().views.filter((v) => v.object !== 'accounts').length
+    expect(mine.length).toBeGreaterThanOrEqual(2)
+    expect(others).toBeGreaterThan(0)
+    // 最後の 1 枚まではふつうに消せる(消したものはごみ箱へ)
+    for (const id of mine.slice(1)) expect(statusOf(() => deleteView(id))).toBeNull()
+    expect(viewsOf('accounts')).toEqual([mine[0]])
+    // 残った 1 枚は消せず、そのまま残る
+    expect(statusOf(() => deleteView(mine[0]))).toBe(400)
+    expect(viewsOf('accounts')).toEqual([mine[0]])
+    expect(getMeta().views.filter((v) => v.object !== 'accounts').length).toBe(others)
   })
 })
