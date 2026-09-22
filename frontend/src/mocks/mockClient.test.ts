@@ -239,6 +239,40 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '400 は送信に数えない').toBe(1)
   })
 
+  it('SET-045 submitWebForm は止めたフォーム・無い鍵・削除中のテーブルを先に持つフォームなら 404 で、レコードも送信の数も増えない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    await api.createObject(input('set_form_gate'))
+    const formInput: WebFormInput = { name: '関門のフォーム', object: 'set_form_gate', fields: ['name'], defaults: {}, enabled: true, redirect_url: null }
+    const form = await api.createWebForm(formInput)
+    const submit = (key: string, name: string) => statusOf(() => api.submitWebForm(key, { name }))
+
+    // 対照: 受け付けている間は通る(404 は下の条件で決まっている)
+    expect(await submit(form.key, '通る 1'), '受け付け中').toBeNull()
+
+    // 止めたフォーム
+    await api.updateWebForm(form.id, { ...formInput, enabled: false })
+    expect(await submit(form.key, '止めた'), 'enabled: false').toBe(404)
+    await api.updateWebForm(form.id, { ...formInput, enabled: true })
+    expect(await submit(form.key, '通る 2'), '受け付けに戻す').toBeNull()
+
+    // 無い鍵(作り直す前の鍵も含む)
+    expect(await submit('no-such-key', '無い鍵'), '無い鍵').toBe(404)
+    const rotated = await api.rotateWebFormKey(form.id)
+    expect(await submit(form.key, '古い鍵'), '作り直す前の鍵').toBe(404)
+    expect(await submit(rotated.key, '通る 3'), '新しい鍵').toBeNull()
+
+    // 先のテーブルが削除中
+    await api.deleteObject('set_form_gate')
+    expect(await submit(rotated.key, '削除中'), '先のテーブルが削除中').toBe(404)
+    await api.restoreObject('set_form_gate')
+    expect(await submit(rotated.key, '通る 4'), 'テーブルを戻す').toBeNull()
+
+    const { records } = await api.listRecords('set_form_gate')
+    expect(records.map((r) => r.name).sort(), '404 のときはレコードができない').toEqual(['通る 1', '通る 2', '通る 3', '通る 4'])
+    expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '404 は送信に数えない').toBe(4)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
