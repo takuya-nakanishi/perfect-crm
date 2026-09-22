@@ -707,4 +707,21 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(after.views.filter((v) => v.object === 'plain')).toEqual(views)
     expect(table('plain')).toEqual(rows)
   })
+
+  it('META-073 削除中のテーブルと同じ列名で createObject → 400 で、復元対象(定義・レコード)は捨てない', () => {
+    createObject(input('plain'))
+    insert('plain', { name: '残す一件' }, null)
+    const object = getMeta().objects.find((o) => o.key === 'plain')
+    const rows = structuredClone(table('plain'))
+    deleteObject('plain')
+
+    expect(statusOf(() => createObject({ ...input('plain'), label: '別のテーブル', fields: [{ key: 'title', label: '件名', type: 'text' }] }))).toBe(400)
+    // 作られていない(GET /meta に出ない)し、レコードも上書きされていない
+    expect(getMeta().objects.some((o) => o.key === 'plain')).toBe(false)
+    expect(table('plain')).toEqual(rows)
+
+    restoreObject('plain')
+    expect(getMeta().objects.find((o) => o.key === 'plain')).toEqual(object)
+    expect(table('plain')).toEqual(rows)
+  })
 })
