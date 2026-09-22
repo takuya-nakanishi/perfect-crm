@@ -53,7 +53,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 | REC-063 | システム | 作成 | 整合 | L2 | `insert`(商談): フェーズを指定して作る → 確度がそのフェーズの既定値。確度も同時に指定すれば尊重 | `engine.test.ts` |
 | REC-064 | システム | 編集 | 整合 | L2 | `update`(商談のフェーズを変える)→ 確度が既定値に。確度を同時に渡せばそちら。`updated_at` が更新される | `engine.test.ts` |
 | REC-065 | システム | 編集 | 整合 | L2 | `update`: 渡した列だけが変わる(他の列はそのまま)。無い ID → null | `engine.test.ts` |
-| REC-066 | 利用者 | 削除 | 可逆 | L2 | `remove` → 行が消え `find` は null。`restore`(消した行)→ 同じ id で戻る。2 回 restore しても 1 行 | — |
+| REC-066 | 利用者 | 削除 | 可逆 | L2 | `remove` → 行が消え `find` は null。`restore`(消した行)→ 同じ id で戻る。2 回 restore しても 1 行 | `engine.test.ts` |
 | REC-067 | 利用者 | 削除 | 可逆 | L3 | 利用者: パネルの削除 → 一覧から消え、トーストの「元に戻す」で戻る。ぱんくずの途中なら 1 つ前へ戻る | — |
 
 ## 5. 検証(サーバの型と参照整合。04 §11)

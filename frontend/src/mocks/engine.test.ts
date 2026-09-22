@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
 import usersJson from './fixtures/users.json'
-import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, remove, reorderObjects, reorderViews, resetTables, restore, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -2417,5 +2417,25 @@ describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('REC-066 remove で行が消えて find は null。restore(消した行)で同じ id のまま戻り、2 回 restore しても 1 行', () => {
+    const id = table('accounts')[0].id as string
+    const removed = structuredClone(find('accounts', id)!.record)
+    const count = table('accounts').length
+
+    expect(remove('accounts', id)).toBe(true)
+    expect(find('accounts', id)).toBeNull()
+    expect(table('accounts')).toHaveLength(count - 1)
+
+    // 消した行をそのまま戻す → 同じ id・同じ中身で戻る
+    expect(restore('accounts', removed).record).toEqual(removed)
+    expect(find('accounts', id)!.record).toEqual(removed)
+    expect(table('accounts')).toHaveLength(count)
+
+    // 2 回目の restore は重ねない
+    restore('accounts', removed)
+    expect(table('accounts').filter((r) => r.id === id)).toHaveLength(1)
+    expect(table('accounts')).toHaveLength(count)
   })
 })
