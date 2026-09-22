@@ -31,7 +31,8 @@ export function ListView({
   const [userSort, setUserSort] = useState<Sort | null>(null)
   const sort = useMemo(() => (userSort ? [userSort] : config.sort), [userSort, config.sort])
   const { data, isPending } = useRecords(object.key, { filter: config.filter, sort, q: q || undefined })
-  const { peek, openPeek } = usePeek()
+  // 行の強調と J/K は、経路の起点(この一覧から開いたレコード)で見る。パネルの中で先へ進んでも、行の選択は動かない
+  const { root: peek, openPeek } = usePeek()
   const { leaving, complete, isChecked } = useCompletion(object, config.filter)
   const [selected, setSelected] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)

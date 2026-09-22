@@ -3,7 +3,8 @@
     "id": "09000000-0000-7000-8000-000000000001",
     "name": "Takuya",
     "email": "takuya@example.jp",
-    "avatar_color": "green"
+    "avatar_color": "green",
+    "admin": true
   },
   {
     "id": "09000000-0000-7000-8000-000000000002",

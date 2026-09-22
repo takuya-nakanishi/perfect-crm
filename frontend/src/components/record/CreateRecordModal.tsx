@@ -48,7 +48,8 @@ export function CreateRecordModal({
   const valuesRef = useRef(values)
   if (!object) return null
 
-  const fields = object.fields.filter((f) => !f.readonly && f.in_create_form !== false)
+  // ドライブのファイルは、レコードができてから付ける(ドキュメントの名前にレコード名を使うため)
+  const fields = object.fields.filter((f) => !f.readonly && f.in_create_form !== false && f.type !== 'drive_files')
   const draft: Row = { id: 'draft', ...values }
   const missingIn = (v: Record<string, Scalar>) =>
     fields.filter((f) => f.required && f.type !== 'select' && isEmptyValue(f, { id: 'draft', ...v }))
@@ -61,13 +62,12 @@ export function CreateRecordModal({
       setShowErrors(true)
       return
     }
-    create.mutate(
-      { object: object.key, values: latest },
-      {
-        onSuccess: (res) =>
-          toast({ message: `${object.label}を作成しました`, action: { label: '開く', run: () => openPeek(object.key, res.record.id) } }),
-      },
-    )
+    // mutate に渡す onSuccess は、この画面を閉じた(unmount した)あとには呼ばれない。閉じたあとに知らせたいので Promise で受ける。
+    // 失敗はフック側(useCreateRecord)が知らせる
+    create
+      .mutateAsync({ object: object.key, values: latest })
+      .then((res) => toast({ message: `${object.label}を作成しました`, action: { label: '開く', run: () => openPeek(object.key, res.record.id) } }))
+      .catch(() => {})
     close()
   }
 

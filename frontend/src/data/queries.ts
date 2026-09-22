@@ -11,6 +11,7 @@ export const keys = {
   aggregate: (object: string, params?: AggregateParams) =>
     params ? (['aggregate', object, params] as const) : (['aggregate', object] as const),
   search: (q: string) => ['search', q] as const,
+  timeline: (object: string, id: string) => ['timeline', object, id] as const,
 }
 
 export function useSession() {
@@ -61,6 +62,10 @@ export function useAggregate(object: string, params: AggregateParams, enabled = 
     placeholderData: keepPreviousData,
     enabled,
   })
+}
+
+export function useTimeline(object: string, id: string) {
+  return useQuery({ queryKey: keys.timeline(object, id), queryFn: () => api.getTimeline(object, id), placeholderData: keepPreviousData })
 }
 
 export function useSearch(q: string) {

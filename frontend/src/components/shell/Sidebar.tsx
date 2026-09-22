@@ -1,18 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronsUpDown, Keyboard, LogOut, Monitor, Moon, PanelLeftClose, Plus, RotateCcw, Search, Sun } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronsUpDown, Keyboard, LogOut, Monitor, Moon, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sun } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { api, API_MODE } from '@/api/client'
 import type { MetaResponse, Session, ViewMeta } from '@/api/types'
-import { Avatar, IconButton, Kbd, ObjectIcon } from '@/components/ui/basics'
+import { Avatar, IconButton, Kbd } from '@/components/ui/basics'
 import { Popover } from '@/components/ui/overlay'
-import { useRecords, viewsOf } from '@/data/queries'
+import { keys, useRecords, viewsOf } from '@/data/queries'
 import { cx } from '@/lib/cx'
 import { VIEW_ICONS } from '@/lib/icons'
 import { useUI, type Theme } from '@/state/ui'
 import { CloverMark } from './CloverMark'
+import { ObjectLink, rowCls } from './ObjectLink'
 
-const rowCls = 'flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-base transition-colors duration-100'
+const SortableObjectList = lazy(() => import('./SortableObjectList').then((m) => ({ default: m.SortableObjectList })))
 
 function PinnedLink({ view, active, onNavigate }: { view: ViewMeta; active: boolean; onNavigate: () => void }) {
   const Icon = VIEW_ICONS[view.type]
@@ -147,7 +148,27 @@ export function Sidebar({ meta, session }: { meta: MetaResponse; session: Sessio
   const openQuickAdd = useUI((s) => s.openQuickAdd)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
   const setMobileNav = useUI((s) => s.setMobileNav)
+  const qc = useQueryClient()
+  const admin = Boolean(session.user.admin)
   const closeMobile = () => setMobileNav(false)
+
+  /** 並びは先に画面へ当て(楽観更新)、サーバの応答で確定する。失敗したら戻す */
+  const reorder = (from: number, to: number) => {
+    const before = qc.getQueryData<MetaResponse>(keys.meta)
+    const order = [...objects]
+    order.splice(to, 0, ...order.splice(from, 1))
+    const positions = new Map(order.map((o, i) => [o.key, i + 1]))
+    qc.setQueryData<MetaResponse>(keys.meta, (old) =>
+      old ? { ...old, objects: old.objects.map((o) => ({ ...o, position: positions.get(o.key) ?? o.position })) } : old,
+    )
+    api
+      .reorderObjects(order.map((o) => o.key))
+      .then((next) => qc.setQueryData(keys.meta, next))
+      .catch(() => {
+        if (before) qc.setQueryData(keys.meta, before)
+        useUI.getState().toast({ message: '並びを保存できませんでした。もう一度試してください', tone: 'danger' })
+      })
+  }
 
   const objects = meta.objects.filter((o) => o.in_sidebar).sort((a, b) => a.position - b.position)
   const pinned = meta.views.filter((v) => v.pin).sort((a, b) => (a.pin?.position ?? 0) - (b.pin?.position ?? 0))
@@ -185,24 +206,40 @@ export function Sidebar({ meta, session }: { meta: MetaResponse; session: Sessio
           <PinnedLink key={view.id} view={view} active={view.id === currentView} onNavigate={closeMobile} />
         ))}
 
-        <h2 className="mt-3 px-2 pt-2 pb-1 text-sm text-ink-3">テーブル</h2>
-        {objects.map((o, i) => {
-          const active = currentObject === o.key && !onPinnedView
-          return (
+        <div className="group/tables mt-3 flex items-center pt-1 pr-0.5">
+          <h2 className="flex-1 px-2 py-1 text-sm text-ink-3">テーブル</h2>
+          {/* ふだんは隠し、この見出しに触れたときだけ出す(キーボードのフォーカスと、ホバーの無い端末では常に出す) */}
+          {admin && (
             <Link
-              key={o.key}
-              to={`/o/${o.key}`}
+              to="/settings/tables?new"
+              aria-label="テーブルを追加"
+              title="テーブルを追加(環境設定)"
               onClick={closeMobile}
-              aria-current={active ? 'page' : undefined}
-              title={`G → ${i + 1}`}
-              className={cx(rowCls, active ? 'bg-accent-wash font-bold text-accent-ink' : 'text-ink-2 hover:bg-sunken hover:text-ink')}
+              className="inline-grid size-6 place-items-center rounded-md text-ink-2 opacity-0 group-hover/tables:opacity-100 hover:bg-sunken hover:text-ink focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
             >
-              <ObjectIcon icon={o.icon} color={o.color} size={14} />
-              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+              <Plus size={15} />
             </Link>
-          )
-        })}
+          )}
+        </div>
+        {/* 並べ替えの部品(dnd-kit)は最初の表示に要らないので別ファイル。届くまでは同じ見た目の行を出す */}
+        <Suspense fallback={objects.map((o, i) => <ObjectLink key={o.key} object={o} index={i} active={currentObject === o.key && !onPinnedView} onNavigate={closeMobile} />)}>
+          <SortableObjectList objects={objects} activeKey={onPinnedView ? undefined : currentObject} onNavigate={closeMobile} onReorder={reorder} />
+        </Suspense>
       </div>
+
+      {admin && (
+        <div className="flex-none border-t border-line p-2">
+          <Link
+            to="/settings"
+            onClick={closeMobile}
+            aria-current={location.pathname.startsWith('/settings') ? 'page' : undefined}
+            className={cx(rowCls, location.pathname.startsWith('/settings') ? 'bg-accent-wash font-bold text-accent-ink' : 'text-ink-2 hover:bg-sunken hover:text-ink')}
+          >
+            <Settings size={16} className="flex-none" aria-hidden />
+            <span className="flex-1">環境設定</span>
+          </Link>
+        </div>
+      )}
     </nav>
   )
 }

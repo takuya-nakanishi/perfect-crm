@@ -1,4 +1,4 @@
-import { CalendarDays, CornerDownLeft, Flag } from 'lucide-react'
+import { CalendarDays, CornerDownLeft, Flag, Repeat } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { FieldMeta, MetaResponse, References, Row, Scalar } from '@/api/types'
 import { FieldEditor } from '@/components/record/FieldEditor'
@@ -42,6 +42,7 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
   const fields = {
     due: object.fields.find((f) => f.semantic === 'deadline'),
     priority: object.fields.find((f) => f.key === 'priority'),
+    repeat: object.completion?.repeat_field ? object.fields.find((f) => f.key === object.completion!.repeat_field) : undefined,
     related: object.fields.find((f) => f.type === 'polymorphic'),
     contact: object.fields.find((f) => f.type === 'relation'),
   }
@@ -51,6 +52,7 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
     id: 'draft',
     ...(fields.due && parsed.due_date ? { [fields.due.key]: parsed.due_date } : {}),
     ...(fields.priority && parsed.priority ? { [fields.priority.key]: parsed.priority } : {}),
+    ...(fields.repeat && parsed.repeat ? { [fields.repeat.key]: parsed.repeat } : {}),
     ...manual,
   }
 
@@ -64,13 +66,12 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
     if (!canSubmit) return
     const values: Record<string, Scalar> = { ...draft, [object.name_field]: parsed.title.trim(), description: description.trim() || null }
     delete values.id
-    create.mutate(
-      { object: object.key, values },
-      {
-        onSuccess: (res) =>
-          toast({ message: 'タスクを追加しました', action: { label: '開く', run: () => openPeek(object.key, res.record.id) } }),
-      },
-    )
+    // mutate に渡す onSuccess は、この画面を閉じた(unmount した)あとには呼ばれない。閉じたあとに知らせたいので Promise で受ける。
+    // 失敗はフック側(useCreateRecord)が知らせる
+    create
+      .mutateAsync({ object: object.key, values })
+      .then((res) => toast({ message: 'タスクを追加しました', action: { label: '開く', run: () => openPeek(object.key, res.record.id) } }))
+      .catch(() => {})
     close()
   }
 
@@ -82,6 +83,7 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
     )
   const dueFromText = fields.due && parsed.due_date && !(fields.due.key in manual) ? parsed.due_date : null
   const priorityFromText = fields.priority && parsed.priority && !(fields.priority.key in manual) ? parsed.priority : null
+  const repeatFromText = fields.repeat && parsed.repeat && !(fields.repeat.key in manual) ? fields.repeat.options?.find((o) => o.value === parsed.repeat) : null
 
   return (
     <Modal label="タスクを追加" onClose={close} position="top" className="max-w-[640px]">
@@ -119,7 +121,7 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
             aria-label="詳細"
             className="h-7 w-full bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
           />
-          {(dueFromText || priorityFromText) && (
+          {(dueFromText || priorityFromText || repeatFromText) && (
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-accent-ink" aria-live="polite">
               {dueFromText && (
                 <span className="inline-flex items-center gap-1">
@@ -133,12 +135,19 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
                   優先度を {priorityFromText.toUpperCase()} にします
                 </span>
               )}
+              {repeatFromText && (
+                <span className="inline-flex items-center gap-1">
+                  <Repeat size={13} aria-hidden />
+                  {repeatFromText.label}繰り返します(完了すると次回ができます)
+                </span>
+              )}
             </p>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-4">
           {chip(fields.due, 'w-[152px] flex-none')}
+          {chip(fields.repeat, 'w-[120px] flex-none')}
           {chip(fields.priority, 'w-[92px] flex-none')}
           {chip(fields.related, 'min-w-[180px] flex-1')}
           {chip(fields.contact, 'min-w-[150px] flex-1')}

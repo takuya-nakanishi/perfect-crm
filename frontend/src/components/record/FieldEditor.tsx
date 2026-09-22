@@ -1,15 +1,20 @@
 import { useQueries } from '@tanstack/react-query'
-import { Check, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ArrowUpRight, Check, X } from 'lucide-react'
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { api } from '@/api/client'
 import type { FieldMeta, MetaResponse, ObjectMeta, References, RefRecord, Row, Scalar } from '@/api/types'
 import { Avatar, ObjectIcon, Tag } from '@/components/ui/basics'
+import { ChoiceList, type Choice } from '@/components/ui/ChoiceList'
 import { Popover } from '@/components/ui/overlay'
 import { keys } from '@/data/queries'
 import { cx } from '@/lib/cx'
-import { isEmptyValue } from '@/lib/records'
+import { formatNumber, formatPercent, formatYen } from '@/lib/format'
+import { isEmptyValue, refFor } from '@/lib/records'
 import { useDebounced } from '@/lib/useDebounced'
+import { usePeek } from '@/lib/usePeek'
 import { FieldValue } from './FieldValue'
+import { DriveFilesEditor } from './DriveFilesEditor'
+import { RichTextEditorLazy, RichTextView } from './RichText'
 
 export type Commit = (patch: Record<string, Scalar>, refs?: References) => void
 
@@ -45,11 +50,21 @@ function parseNumber(text: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** 数値は、触っていないあいだは桁区切り(と ¥ / %)で見せ、触ると素の数字にする */
+function formatNumeric(field: FieldMeta, text: string): string {
+  const n = Number(text)
+  if (text === '' || !Number.isFinite(n)) return text
+  if (field.type === 'currency') return formatYen(n)
+  if (field.type === 'percent') return formatPercent(n, field.scale)
+  return formatNumber(n, field.scale)
+}
+
 function TextEditor({ field, row, onCommit, variant = 'inline', autoFocus }: EditorProps) {
   const numeric = NUMERIC.has(field.type)
   const initial = row[field.key] === null || row[field.key] === undefined ? '' : String(row[field.key])
   const [draft, setDraft] = useState(initial)
   const [synced, setSynced] = useState(initial)
+  const [editing, setEditing] = useState(false)
   if (synced !== initial) {
     // 外から値が変わった(楽観更新の確定、別の場所での編集)ら、入力中でなければ追従する
     setSynced(initial)
@@ -81,6 +96,7 @@ function TextEditor({ field, row, onCommit, variant = 'inline', autoFocus }: Edi
         value={draft}
         autoFocus={autoFocus}
         rows={2}
+        maxLength={field.max_length}
         placeholder={field.placeholder ?? (variant === 'inline' ? '未入力' : undefined)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -91,15 +107,59 @@ function TextEditor({ field, row, onCommit, variant = 'inline', autoFocus }: Edi
   }
   return (
     <input
-      value={draft}
+      value={numeric && !editing ? formatNumeric(field, draft) : draft}
       autoFocus={autoFocus}
       type={field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'phone' ? 'tel' : 'text'}
-      inputMode={numeric ? 'numeric' : undefined}
+      inputMode={numeric ? (field.scale ? 'decimal' : 'numeric') : undefined}
+      maxLength={numeric ? undefined : field.max_length}
       placeholder={field.placeholder ?? (variant === 'inline' ? '未入力' : undefined)}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onFocus={() => setEditing(true)}
+      onBlur={() => {
+        setEditing(false)
+        commit()
+      }}
       onKeyDown={onKeyDown}
       className={cx(controlCls(variant), 'h-8', numeric && 'tabular-nums')}
+    />
+  )
+}
+
+/** 書式付きの文字。パネルでは、押すまで文字として見せる(エディタは重いので、要るときだけ読む) */
+function RichTextField({ field, row, onCommit, variant = 'inline', autoFocus }: EditorProps) {
+  const value = typeof row[field.key] === 'string' ? String(row[field.key]) : null
+  const [open, setOpen] = useState(variant === 'form')
+  const draft = useRef<string | null>(value)
+  const commit = () => {
+    if (draft.current !== value) onCommit({ [field.key]: draft.current })
+    if (variant === 'inline') setOpen(false)
+  }
+  if (!open) {
+    return (
+      <button
+        type="button"
+        aria-label={field.label}
+        onClick={() => setOpen(true)}
+        className={cx(controlCls('inline'), 'min-h-8 py-1.5 text-left', !value && 'text-ink-3')}
+      >
+        {value ? <RichTextView html={value} /> : (field.placeholder ?? '未入力')}
+      </button>
+    )
+  }
+  return (
+    <RichTextEditorLazy
+      value={value}
+      variant={variant}
+      autoFocus={autoFocus || variant === 'inline'}
+      placeholder={field.placeholder}
+      minHeight={variant === 'form' ? '5.5rem' : '3rem'}
+      onChange={(html) => (draft.current = html)}
+      onBlur={commit}
+      onSubmit={commit}
+      onCancel={() => {
+        draft.current = value
+        if (variant === 'inline') setOpen(false)
+      }}
     />
   )
 }
@@ -132,118 +192,6 @@ function DateEditor({ field, row, onCommit, variant = 'inline', autoFocus }: Edi
 // ---------------------------------------------------------------------------
 // 選ぶ系(選択肢・利用者・関連レコード)。ボタンを押すとポップオーバーが開く
 // ---------------------------------------------------------------------------
-
-interface Choice {
-  id: string
-  node: ReactNode
-  searchText: string
-  selected: boolean
-  commit: () => void
-}
-
-/** 矢印キーで動かして Enter で決める一覧。候補が多いときは上に絞り込み欄を出す */
-function ChoiceList({
-  choices,
-  query,
-  onQuery,
-  placeholder,
-  loading,
-  clear,
-}: {
-  choices: Choice[]
-  query?: string
-  onQuery?: (q: string) => void
-  placeholder?: string
-  loading?: boolean
-  clear?: () => void
-}) {
-  const [active, setActive] = useState(() => Math.max(0, choices.findIndex((c) => c.selected)))
-  const listRef = useRef<HTMLDivElement>(null)
-  const index = Math.min(active, Math.max(0, choices.length - 1))
-
-  useEffect(() => {
-    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [index])
-
-  // 絞り込み欄が無いときは一覧そのものにフォーカスを当て、矢印キーを受ける
-  const hasQuery = Boolean(onQuery)
-  useEffect(() => {
-    if (!hasQuery) listRef.current?.focus({ preventScroll: true })
-  }, [hasQuery])
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.nativeEvent.isComposing) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActive((index + 1) % Math.max(1, choices.length))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActive((index - 1 + choices.length) % Math.max(1, choices.length))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      choices[index]?.commit()
-    }
-  }
-
-  return (
-    <div className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
-      {onQuery ? (
-        <label className="flex flex-none items-center gap-2 border-b border-line px-3">
-          <Search size={14} className="flex-none text-ink-3" aria-hidden />
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => {
-              onQuery(e.target.value)
-              setActive(0)
-            }}
-            placeholder={placeholder}
-            className="h-9 w-full bg-transparent text-base outline-none placeholder:text-ink-3"
-          />
-        </label>
-      ) : null}
-      <div
-        ref={listRef}
-        role="listbox"
-        tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto p-1 outline-none"
-      >
-        {choices.map((c, i) => (
-          <button
-            key={c.id}
-            type="button"
-            role="option"
-            aria-selected={c.selected}
-            data-active={i === index}
-            tabIndex={-1}
-            onPointerMove={() => setActive(i)}
-            onClick={c.commit}
-            className={cx(
-              'flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left',
-              i === index && 'bg-sunken',
-            )}
-          >
-            <span className="flex min-w-0 flex-1 items-center gap-2">{c.node}</span>
-            {c.selected && <Check size={14} className="flex-none text-accent" aria-hidden />}
-          </button>
-        ))}
-        {choices.length === 0 && (
-          <p className="px-2 py-3 text-sm text-ink-3">{loading ? '探しています…' : '当てはまるものがありません'}</p>
-        )}
-      </div>
-      {clear && (
-        <button
-          type="button"
-          onClick={clear}
-          className="flex h-9 flex-none items-center gap-2 border-t border-line px-3 text-left text-sm text-ink-2 hover:bg-sunken"
-        >
-          <X size={13} aria-hidden />
-          空にする
-        </button>
-      )}
-    </div>
-  )
-}
 
 function PickerButton({
   variant,
@@ -315,6 +263,53 @@ function SelectEditor(props: EditorProps) {
                 : undefined
             }
           />
+        </Popover>
+      )}
+    </>
+  )
+}
+
+/** 複数選択。押すたびに付け外し、一覧は開いたまま。値は選択肢の value の配列(JSON) */
+function MultiSelectEditor(props: EditorProps) {
+  const { field, row, onCommit, variant = 'inline' } = props
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [query, setQuery] = useState('')
+  const options = field.options ?? []
+  const current = ((): Scalar[] => {
+    try {
+      const parsed = JSON.parse(String(row[field.key] ?? '[]')) as unknown
+      return Array.isArray(parsed) ? (parsed as Scalar[]) : []
+    } catch {
+      return []
+    }
+  })()
+  const write = (next: Scalar[]) => onCommit({ [field.key]: next.length ? JSON.stringify(next) : null })
+  const filterable = options.length > 7
+  const visible = options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+  return (
+    <>
+      <PickerButton variant={variant} empty={current.length === 0} label={field.label} autoFocus={props.autoFocus} onOpen={setAnchor}>
+        <FieldValue {...props} />
+      </PickerButton>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => {
+            setAnchor(null)
+            setQuery('')
+          }} width={Math.max(220, anchor.offsetWidth)}>
+          <ChoiceList
+            query={filterable ? query : undefined}
+            onQuery={filterable ? setQuery : undefined}
+            placeholder={`${field.label}を探す`}
+            choices={visible.map((o) => ({
+              id: o.value,
+              node: <Tag color={o.color}>{o.label}</Tag>,
+              searchText: o.label,
+              selected: current.includes(o.value),
+              commit: () => write(current.includes(o.value) ? current.filter((v) => v !== o.value) : [...current, o.value]),
+            }))}
+            clear={current.length > 0 ? () => write([]) : undefined}
+          />
+          <p className="border-t border-line px-3 py-2 text-xs text-ink-3">押すたびに付け外し。Esc で閉じる</p>
         </Popover>
       )}
     </>
@@ -421,11 +416,29 @@ function RelationEditor(props: EditorProps) {
   })
 
   const targetLabels = targets.map((t) => meta.objects.find((o) => o.key === t)?.label ?? t).join('・')
+  // パネルの中では、指しているレコードへ進める(押すと選び直し、右端の矢印で開く)
+  const { openPeek } = usePeek()
+  const linked = variant === 'inline' ? refFor(field, row, props.references) : null
   return (
     <>
-      <PickerButton variant={variant} empty={isEmptyValue(field, row)} label={field.label} autoFocus={props.autoFocus} onOpen={setAnchor}>
-        <FieldValue {...props} onOpenRecord={undefined} />
-      </PickerButton>
+      <div className="group/rel relative">
+        <PickerButton variant={variant} empty={isEmptyValue(field, row)} label={field.label} autoFocus={props.autoFocus} onOpen={setAnchor}>
+          <span className={cx('flex min-w-0', linked && 'pr-7')}>
+            <FieldValue {...props} onOpenRecord={undefined} />
+          </span>
+        </PickerButton>
+        {linked && linked.object !== 'users' && (
+          <button
+            type="button"
+            aria-label={`「${linked.ref.name}」を開く`}
+            title={`「${linked.ref.name}」を開く`}
+            onClick={() => openPeek(linked.object, linked.ref.id)}
+            className="absolute top-1 right-1 grid size-6 place-items-center rounded text-ink-3 opacity-0 group-focus-within/rel:opacity-100 group-hover/rel:opacity-100 hover:bg-paper hover:text-ink [@media(hover:none)]:opacity-100"
+          >
+            <ArrowUpRight size={14} aria-hidden />
+          </button>
+        )}
+      </div>
       {anchor && (
         <Popover anchor={anchor} onClose={close} width={Math.max(300, anchor.offsetWidth)}>
           <ChoiceList
@@ -476,6 +489,8 @@ export function FieldEditor(props: EditorProps) {
   switch (props.field.type) {
     case 'select':
       return <SelectEditor {...props} />
+    case 'multi_select':
+      return <MultiSelectEditor {...props} />
     case 'user':
       return <UserEditor {...props} />
     case 'relation':
@@ -485,6 +500,10 @@ export function FieldEditor(props: EditorProps) {
       return <DateEditor {...props} />
     case 'checkbox':
       return <CheckboxEditor {...props} />
+    case 'richtext':
+      return <RichTextField {...props} />
+    case 'drive_files':
+      return <DriveFilesEditor object={props.object} field={props.field} row={props.row} onCommit={props.onCommit} />
     default:
       return <TextEditor {...props} />
   }

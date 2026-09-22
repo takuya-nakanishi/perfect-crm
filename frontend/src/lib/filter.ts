@@ -32,10 +32,31 @@ function isEmpty(v: Scalar | undefined): boolean {
   return v === null || v === undefined || v === ''
 }
 
+/** 複数選択の値(JSON の配列の文字列)。SQL では jsonb の列 */
+function asList(raw: Scalar): Scalar[] | null {
+  if (typeof raw !== 'string' || !raw.startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as Scalar[]) : null
+  } catch {
+    return null
+  }
+}
+
 function matchCondition(row: Row, c: Condition, ctx: FilterContext): boolean {
   const raw = row[c.field] ?? null
-  if (c.op === 'is_empty') return isEmpty(raw)
-  if (c.op === 'is_not_empty') return !isEmpty(raw)
+  if (c.op === 'is_empty') return isEmpty(raw) || raw === '[]'
+  if (c.op === 'is_not_empty') return !isEmpty(raw) && raw !== '[]'
+
+  // 複数選択: eq / in は「どれかを含む」、ne / not_in は「どれも含まない」(SQL は jsonb の ?| / ?&)
+  const list = asList(raw)
+  if (list) {
+    const wanted = (Array.isArray(c.value) ? c.value : [c.value ?? null]).map((v) => resolve(v, ctx))
+    const hit = wanted.some((v) => list.includes(v ?? null))
+    if (c.op === 'eq' || c.op === 'in' || c.op === 'contains') return hit
+    if (c.op === 'ne' || c.op === 'not_in') return !hit
+    return false
+  }
 
   if (c.op === 'in' || c.op === 'not_in') {
     const list = (Array.isArray(c.value) ? c.value : [c.value ?? null]).map((v) => resolve(v, ctx))

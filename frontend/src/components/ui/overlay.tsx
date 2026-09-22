@@ -14,8 +14,13 @@ import { cx } from '@/lib/cx'
 /** ポップオーバーの描き先。モーダルの中では、そのモーダル(top layer)の中へ描かないと隠れてしまう */
 const PortalContainer = createContext<HTMLElement | null>(null)
 
-/** 開いているポップオーバーの数。Esc をモーダルとポップオーバーで取り合わないために数える */
-let openPopovers = 0
+/**
+ * 開いているポップオーバー(開いた順)。
+ * - Esc はいちばん上の 1 つだけを閉じる(モーダルとも取り合わない)
+ * - 外側のクリックの判定で、自分より後に開いたもの(入れ子)の中は「内側」とみなす
+ */
+const popoverStack: { el: HTMLElement | null }[] = []
+const openPopovers = () => popoverStack.length
 
 // ---------------------------------------------------------------------------
 // Modal — ブラウザ標準の <dialog>。フォーカスの閉じ込めと背後の無効化を標準に任せる
@@ -41,6 +46,9 @@ export function Modal({
     const dialog = ref.current
     if (!dialog) return
     if (!dialog.open) dialog.showModal()
+    // showModal() は React の autoFocus(描画時の focus())のあとにフォーカスを取り直す。最初の入力欄へ当て直す
+    // (runbook §4)。入力欄が無いモーダル(ショートカットの一覧など)はそのまま
+    dialog.querySelector<HTMLElement>('input:not([type=hidden]):not([type=file]):not([type=checkbox]), textarea, [contenteditable="true"]')?.focus()
     setContainer(dialog)
     return () => dialog.close()
   }, [])
@@ -52,7 +60,7 @@ export function Modal({
       className="fixed inset-0 h-dvh w-screen overflow-hidden outline-none"
       onCancel={(e) => {
         e.preventDefault()
-        if (openPopovers === 0) onClose()
+        if (openPopovers() === 0) onClose()
       }}
     >
       <div className="absolute inset-0 animate-fade-in bg-ink/25 dark:bg-black/55" onClick={onClose} aria-hidden />
@@ -130,14 +138,21 @@ export function Popover({
   }, [anchor, align])
 
   useEffect(() => {
-    openPopovers++
+    // 要素は描画のあと(この effect の時点)で取れる。外側の判定が先に走っても入れ子を見つけられるよう、ここで入れる
+    const entry = { el: ref.current }
+    popoverStack.push(entry)
+    const above = () => popoverStack.slice(popoverStack.indexOf(entry) + 1)
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node
       if (ref.current?.contains(target) || anchor?.contains(target)) return
+      // 入れ子(自分より後に開いたもの)の中は内側
+      if (above().some((p) => p.el?.contains(target))) return
       onCloseRef.current()
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing) return
+      // いちばん上だけが閉じる
+      if (popoverStack[popoverStack.length - 1] !== entry) return
       e.preventDefault()
       e.stopPropagation()
       onCloseRef.current()
@@ -145,7 +160,7 @@ export function Popover({
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('keydown', onKeyDown, true)
     return () => {
-      openPopovers--
+      popoverStack.splice(popoverStack.indexOf(entry), 1)
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown, true)
       // 閉じたら、開いた元へフォーカスを返す(キーボードで続けて操作できるように)。

@@ -57,6 +57,7 @@ function refreshAll(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['records'] })
   void qc.invalidateQueries({ queryKey: ['record'] })
   void qc.invalidateQueries({ queryKey: ['aggregate'] })
+  void qc.invalidateQueries({ queryKey: ['timeline'] })
   void qc.invalidateQueries({ queryKey: ['search'] })
 }
 

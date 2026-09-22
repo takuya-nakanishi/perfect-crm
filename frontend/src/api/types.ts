@@ -15,12 +15,14 @@
 export type FieldType =
   | 'text'
   | 'textarea'
+  | 'richtext' // 書式付きの文字。値は HTML(許す要素は lib/richtext.ts の allowlist)
   | 'number'
   | 'currency'
   | 'percent'
   | 'date'
   | 'datetime'
   | 'select'
+  | 'multi_select' // 複数選択。値は選択肢の value の配列を JSON 文字列で(ラベルなど)
   | 'checkbox'
   | 'email'
   | 'phone'
@@ -28,6 +30,7 @@ export type FieldType =
   | 'relation' // 別テーブルへの FK(列 = key)
   | 'polymorphic' // 複数テーブルのどれかを指す(列 = columns.object + columns.id)
   | 'user' // users への FK
+  | 'drive_files' // Google ドライブのファイル(複数)。値は DriveFile[] の JSON 文字列
 
 /** 選択肢の色。値は styles/index.css の --tag-* に対応する */
 export type TagColor = 'gray' | 'green' | 'teal' | 'blue' | 'violet' | 'pink' | 'red' | 'orange' | 'amber'
@@ -61,6 +64,14 @@ export interface FieldMeta {
   /** 新規作成フォームに出すか(既定 true。readonly は常に出さない) */
   in_create_form?: boolean
   placeholder?: string
+  /** 文字の列: 最大の文字数(桁数)。超える値はサーバが 400 で断る */
+  max_length?: number
+  /** number / percent: 小数点以下の桁数(既定 0)。サーバがこの桁で丸める */
+  scale?: number
+  /** 業務ルールが使う列(完了の状況、商談のフェーズなど)。テーブル設定から削除・型の変更ができない */
+  locked?: boolean
+  /** polymorphic: 全テーブルを指せる(活動の関連先)。テーブルを足すと targets にも加わる */
+  all_targets?: boolean
 }
 
 export interface ObjectMeta {
@@ -78,9 +89,105 @@ export interface ObjectMeta {
   /** サイドバーに出すか */
   in_sidebar: boolean
   fields: FieldMeta[]
-  /** チェックで完了にできるテーブル(タスク)。field を done_value にすると完了 */
-  completion?: { field: string; done_value: string; open_value: string; completed_at_field?: string }
+  /**
+   * チェックで完了にできるテーブル(タスク)。field を done_value にすると完了。
+   * 繰り返し(Todoist の型): repeat_field(規則の選択肢)があり、完了したときに値が入っていれば、その回は完了済みとして残り、
+   * 次回のタスクをサーバが作る(repeat_of_field に前回の ID)。完了を戻すと、自動で作った次回を消す。02 §3
+   */
+  completion?: {
+    field: string
+    done_value: string
+    open_value: string
+    completed_at_field?: string
+    repeat_field?: string
+    /** チェックの列。真なら次回は完了した日から数える(Todoist の every!)。偽なら元の期限から(every) */
+    repeat_from_completion_field?: string
+    repeat_of_field?: string
+    /** 次回の期限を入れる日付の列(無ければ semantic: deadline の列) */
+    due_field?: string
+  }
+  /** 初めから入っているテーブル。業務ルールや画面の機能(タスクの追加)が前提にしているので削除できない */
+  system?: boolean
+  /**
+   * 活動(時系列の記録)のテーブル。レコードのパネルに、関連リストではなく時系列(タイムライン)として出す。
+   * subject / type / date / body は、それぞれ件名・種別・日付・内容の列名
+   */
+  timeline?: { subject: string; type: string; date: string; body: string }
 }
+
+// ---------------------------------------------------------------------------
+// テーブル設定(画面からテーブルと項目を足す・直す)
+// ---------------------------------------------------------------------------
+
+/** 画面から決められる項目の属性。システムが埋める列(作成日時・更新日時)は含めない */
+export type FieldInput = Pick<
+  FieldMeta,
+  'key' | 'label' | 'type' | 'required' | 'options' | 'target' | 'max_length' | 'scale' | 'placeholder'
+>
+
+/**
+ * POST /api/v1/meta/objects(作成)と PUT /api/v1/meta/objects/{key}(更新)の本文。
+ * - fields は並び順どおりの全量。更新時、ここに無い項目は外れる(列の値は残るので、同じ列名で戻せば復活する)
+ * - 作成時は先頭の項目がレコードの表示名(name_field)になる。文字型・必須に固定
+ * - 既にある項目の列名と型は変えられない。ここに書けない属性(semantic など)は元のまま保たれる
+ */
+export interface ObjectInput {
+  /** テーブル名(列名と同じ規則: 小文字の英字で始まり、英数字と _)。作成後は変えられない */
+  key: string
+  label: string
+  icon: string
+  color: TagColor
+  /** サイドバーに出すか(既定 true)。出さなくても、レコードのパネルや検索からは開ける */
+  in_sidebar?: boolean
+  fields: FieldInput[]
+}
+
+// ---------------------------------------------------------------------------
+// 環境設定: MCP のアクセストークン、Web フォーム
+// ---------------------------------------------------------------------------
+
+/** MCP(や将来の API)に繋ぐためのトークン。値は発行したときに 1 回だけ返す */
+export interface McpToken {
+  id: string
+  name: string
+  /** 繋いだアプリ(User-Agent から推定。発行時は利用者が選んだもの) */
+  client: 'claude-desktop' | 'claude-code' | 'codex' | 'other'
+  /** 見分けるための先頭 8 文字 */
+  prefix: string
+  created_by: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface McpTokenCreated {
+  token: McpToken
+  /** 全文。この応答でしか見られない */
+  secret: string
+}
+
+/**
+ * Web フォーム(Salesforce の Web-to-Lead の汎用版)。どのテーブルにも作れる。
+ * 受け口は POST /api/v1/forms/{key}(認証なし。本文は form-urlencoded か JSON)。列名 → 値で受け、fields に無い列は捨てる
+ */
+export interface WebForm {
+  id: string
+  name: string
+  object: string
+  /** 受け付ける列(この順に埋め込み用の HTML を出す) */
+  fields: string[]
+  /** 受け付けた値に足す既定値(種別 = 見込み客、担当 = 自分 など) */
+  defaults: Record<string, Scalar>
+  /** 受け口の URL に入る鍵。作り直せる */
+  key: string
+  enabled: boolean
+  /** 送信後に戻す URL(空なら「受け付けました」の小さな画面) */
+  redirect_url: string | null
+  created_at: string
+  submissions: number
+  last_submitted_at: string | null
+}
+
+export type WebFormInput = Pick<WebForm, 'name' | 'object' | 'fields' | 'defaults' | 'enabled' | 'redirect_url'>
 
 export type ViewType = 'list' | 'kanban' | 'report'
 
@@ -155,16 +262,28 @@ export type ViewMeta =
   | (ViewBase & { type: 'kanban'; config: KanbanViewConfig })
   | (ViewBase & { type: 'report'; config: ReportViewConfig })
 
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never
+
+/**
+ * POST /api/v1/meta/views(作成。object を添える)と PUT /api/v1/meta/views/{id}(更新)の本文。
+ * 画面から編集するのは name・type・config・pin。position は並べ替えの API で振る
+ */
+export type ViewInput = DistributiveOmit<ViewMeta, 'id' | 'object' | 'position'>
+
 export interface User {
   id: string
   name: string
   email: string
   avatar_color: TagColor
+  /** 環境設定(テーブル・Web フォーム・MCP)を触れる利用者。ロールは持たない(権限の設計は J-038) */
+  admin?: boolean
 }
 
 export interface Workspace {
   id: string
   name: string
+  /** 「今日」の基準(IANA)。フィルタのマクロと日時→日付の変換はこの時刻帯で(04 §3)。利用者ごとには持たない */
+  timezone: string
 }
 
 /** GET /api/v1/meta — 起動時に 1 回読む */
@@ -205,6 +324,8 @@ export interface Condition {
   field: string
   op: FilterOp
   value?: Scalar | Scalar[]
+  /** 参照の条件で、画面が表示名を添えておく(チップに出すため)。サーバは評価に使わない */
+  value_label?: string
 }
 
 export type Filter = Condition | { and: Filter[] } | { or: Filter[] }
@@ -288,6 +409,82 @@ export interface AggregateRow {
 
 export interface AggregateResponse {
   rows: AggregateRow[]
+}
+
+// ---------------------------------------------------------------------------
+// 時系列(レコードのパネルの「活動」)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /objects/{object}/records/{id}/timeline の 1 行。サーバが 3 つを合成する:
+ * - activity: そのレコードを関連先にした活動
+ * - mention: 内容の中で @ で言及された活動(関連先は別のレコード)
+ * - completion: そのレコードに付いた、完了したタスク(活動テーブルには複製しない。初めから完了していたデータも出る)
+ */
+export interface TimelineEntry {
+  kind: 'activity' | 'mention' | 'completion'
+  /** 元のレコード(activities / tasks)。押すと開く */
+  object: string
+  id: string
+  /** 記録の日付(活動は occurred_on、完了したタスクは completed_at の日付) */
+  date: string
+  /** 同じ日の中の並び(新しい順)に使う日時 */
+  at: string
+  subject: string
+  /** 活動の種別(completion には無い) */
+  type?: SelectOption | null
+  /** 内容(HTML)。タスクは詳細を段落にしたもの */
+  body?: string | null
+  user_id?: string | null
+  /** その記録の関連先。開いているレコードと違うとき(言及)に出す */
+  related?: { object: string; id: string; name: string } | null
+}
+
+export interface TimelineResponse {
+  entries: TimelineEntry[]
+}
+
+// ---------------------------------------------------------------------------
+// Google ドライブ(drive_files 型の項目)
+// ---------------------------------------------------------------------------
+
+/** ドライブのファイル 1 つ。項目の値は、これを並べた JSON 文字列 */
+export interface DriveFile {
+  id: string
+  name: string
+  /** Google の MIME(application/vnd.google-apps.document など) */
+  mime_type: string
+  /** 開くための URL */
+  url: string
+}
+
+// ---------------------------------------------------------------------------
+// 取り込みと書き出し(CSV)
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/objects/{object}/import */
+export interface ImportParams {
+  /** CSV の本文(1 行目は見出し) */
+  csv: string
+  /** 見出し → 列名。null は取り込まない列。省略した見出しは、サーバが項目名と列名から推測する */
+  mapping?: Record<string, string | null>
+  /** true なら検証だけして書き込まない(取り込む前の確認に使う) */
+  dry_run?: boolean
+}
+
+export interface ImportResponse {
+  headers: string[]
+  /** 実際に使った対応(推測した結果を含む) */
+  mapping: Record<string, string | null>
+  /** データ行の数と、そのうち取り込める行の数。取り込めない行は飛ばす */
+  total: number
+  valid: number
+  /** 取り込めない行と理由(先頭 20 件)。line は CSV の行番号(見出しが 1) */
+  errors: { line: number; message: string }[]
+  /** 先頭 5 行(見出しと同じ並びの、生の文字) */
+  sample: string[][]
+  /** 作成したレコード(dry_run では空)。取り消しに使う */
+  created_ids: string[]
 }
 
 // ---------------------------------------------------------------------------

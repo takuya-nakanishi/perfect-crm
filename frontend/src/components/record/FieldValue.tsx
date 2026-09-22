@@ -1,11 +1,13 @@
 import { Check, ExternalLink } from 'lucide-react'
 import type { MouseEvent } from 'react'
-import type { FieldMeta, MetaResponse, ObjectMeta, References, RefRecord, Row } from '@/api/types'
+import type { FieldMeta, MetaResponse, ObjectMeta, References, RefRecord, Row, Scalar } from '@/api/types'
 import { Avatar, ObjectIcon, Tag } from '@/components/ui/basics'
 import { cx } from '@/lib/cx'
 import { dueTone, formatDateTime, formatDue } from '@/lib/dates'
 import { formatNumber, formatPercent, formatYen } from '@/lib/format'
 import { isClosed, optionOf, refFor } from '@/lib/records'
+import { driveKind, parseDriveFiles } from '@/lib/drive'
+import { plainText } from '@/lib/richtext'
 
 /** 別レコードへのリンク。押すと右のパネルでそのレコードを開く */
 export function RecordChip({
@@ -77,6 +79,29 @@ export function FieldValue({
   if (value === null || value === undefined || value === '') return null
 
   switch (field.type) {
+    case 'multi_select': {
+      const values = ((): Scalar[] => {
+        try {
+          const parsed = JSON.parse(String(value)) as unknown
+          return Array.isArray(parsed) ? (parsed as Scalar[]) : []
+        } catch {
+          return []
+        }
+      })()
+      if (values.length === 0) return null
+      return (
+        <span className="flex min-w-0 flex-wrap gap-1">
+          {values.map((v) => {
+            const option = optionOf(field, v)
+            return option ? (
+              <Tag key={String(v)} color={option.color}>
+                {option.label}
+              </Tag>
+            ) : null
+          })}
+        </span>
+      )
+    }
     case 'select': {
       const option = optionOf(field, value)
       return option ? <Tag color={option.color}>{option.label}</Tag> : <span>{String(value)}</span>
@@ -84,9 +109,9 @@ export function FieldValue({
     case 'currency':
       return <span className="tabular-nums">{formatYen(Number(value))}</span>
     case 'number':
-      return <span className="tabular-nums">{formatNumber(Number(value))}</span>
+      return <span className="tabular-nums">{formatNumber(Number(value), field.scale)}</span>
     case 'percent':
-      return <span className="tabular-nums">{formatPercent(Number(value))}</span>
+      return <span className="tabular-nums">{formatPercent(Number(value), field.scale)}</span>
     case 'date': {
       const iso = String(value)
       const tone = field.semantic === 'deadline' && !isClosed(object, row) ? dueTone(iso) : 'later'
@@ -125,6 +150,27 @@ export function FieldValue({
           <ExternalLink size={12} className="flex-none text-ink-3" aria-hidden />
         </a>
       )
+    case 'drive_files': {
+      // 一覧では、印を並べて件数が分かるように。名前は最初の 1 つだけ
+      const files = parseDriveFiles(value)
+      if (files.length === 0) return null
+      return (
+        <span className="inline-flex min-w-0 items-center gap-1">
+          {files.slice(0, 3).map((f) => {
+            const kind = driveKind(f.mime_type)
+            return (
+              <span key={f.id} className="grid size-5 flex-none place-items-center rounded" style={{ background: `var(--tag-${kind.color}-bg)`, color: `var(--tag-${kind.color}-ink)` }} title={f.name}>
+                <kind.icon size={12} aria-hidden />
+              </span>
+            )
+          })}
+          <span className="truncate">{files.length === 1 ? files[0].name : `${files.length} 件`}</span>
+        </span>
+      )
+    }
+    case 'richtext':
+      // 一覧では書式を落として 1 行に
+      return <span className="truncate">{plainText(String(value))}</span>
     default:
       return <span className="truncate">{String(value)}</span>
   }

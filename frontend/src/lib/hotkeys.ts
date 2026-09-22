@@ -71,4 +71,16 @@ export const SHORTCUTS: { group: string; items: ShortcutItem[] }[] = [
       { keys: ['Esc'], label: 'パネルを閉じる' },
     ],
   },
+  {
+    group: 'レコードのパネル',
+    items: [{ keys: ['Backspace'], label: 'たどってきた 1 つ前のレコードへ戻る' }],
+  },
+  {
+    group: 'テーブル設定',
+    items: [
+      { keys: ['Enter'], label: '次の項目へ(末尾なら項目を足す)' },
+      { keys: ['Alt', '↑↓'], join: '+', label: '項目・選択肢を並べ替える' },
+      { keys: ['Ctrl', 'Enter'], join: '+', label: '保存する' },
+    ],
+  },
 ]

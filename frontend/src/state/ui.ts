@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { RefRecord, Scalar } from '@/api/types'
+import type { TableDraft } from '@/lib/tableDraft'
 
 export type Theme = 'light' | 'dark' | 'system'
 
@@ -25,6 +26,10 @@ interface UIState {
   quickAdd: { open: boolean; seed: QuickAddSeed }
   /** refs は「列名 → 参照先の表示情報」。defaults に入れた参照の名前を、作成フォームに最初から出すため */
   createFor: { object: string; defaults: Record<string, Scalar>; refs: Record<string, RefRecord> } | null
+  /** テーブル設定の画面。object が無ければ新しいテーブル。draft は「編集に戻る」で続きから開くための下書き */
+  designer: { object?: string; draft?: TableDraft } | null
+  /** CSV を取り込む先のテーブル */
+  importFor: string | null
   toasts: Toast[]
 
   setTheme(theme: Theme): void
@@ -36,6 +41,10 @@ interface UIState {
   closeQuickAdd(): void
   openCreate(object: string, defaults?: Record<string, Scalar>, refs?: Record<string, RefRecord>): void
   closeCreate(): void
+  openDesigner(object?: string, draft?: TableDraft): void
+  closeDesigner(): void
+  openImport(object: string): void
+  closeImport(): void
   toast(toast: Omit<Toast, 'id'>): void
   dismissToast(id: number): void
 }
@@ -64,6 +73,8 @@ export const useUI = create<UIState>((set, get) => ({
   shortcutsOpen: false,
   quickAdd: { open: false, seed: {} },
   createFor: null,
+  designer: null,
+  importFor: null,
   toasts: [],
 
   setTheme(theme) {
@@ -84,6 +95,10 @@ export const useUI = create<UIState>((set, get) => ({
   closeQuickAdd: () => set({ quickAdd: { open: false, seed: {} } }),
   openCreate: (object, defaults = {}, refs = {}) => set({ createFor: { object, defaults, refs }, paletteOpen: false }),
   closeCreate: () => set({ createFor: null }),
+  openDesigner: (object, draft) => set({ designer: { object, draft }, paletteOpen: false, mobileNavOpen: false }),
+  closeDesigner: () => set({ designer: null }),
+  openImport: (object) => set({ importFor: object }),
+  closeImport: () => set({ importFor: null }),
   toast(toast) {
     const id = ++toastSeq
     set({ toasts: [...get().toasts.slice(-2), { ...toast, id }] })
@@ -95,5 +110,5 @@ export const useUI = create<UIState>((set, get) => ({
 /** モーダル類が開いている間は、一覧のキー操作(J/K など)を止める */
 export function isOverlayOpen(): boolean {
   const s = useUI.getState()
-  return s.paletteOpen || s.shortcutsOpen || s.quickAdd.open || s.createFor !== null
+  return s.paletteOpen || s.shortcutsOpen || s.quickAdd.open || s.createFor !== null || s.designer !== null || s.importFor !== null
 }

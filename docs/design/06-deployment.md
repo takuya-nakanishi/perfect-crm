@@ -62,3 +62,16 @@ Compose が動く場所ならどこでも同じ構成で動く。状態は Postg
 4. 旧ホストの `tunnel` を止める。同じトークンで新ホストの cloudflared が繋がるので、DNS も Access も触らない
 
 Tunnel をやめて ALB などで直接受けるなら、TLS と認証(03 §5 の A 案)を自前で持つ。Access を信頼する B 案を採っていると、ここで作り直しになる。
+
+## 7. Access の内側のまま、外から使う(2026-09-22。Q-044 で決定)
+
+**経路は 1 本のまま**(本人の決定: 別のホストや素通しの経路は作らない)。外から叩くものは、**Access のサービストークンをヘッダ(`CF-Access-Client-Id` / `CF-Access-Client-Secret`)で渡して門を通る**。環境設定で作った 2 つの扱い:
+
+| 経路 | 誰が叩くか | 認証 |
+|---|---|---|
+| `POST /api/v1/forms/{key}`(Web フォームの受け口。04 §10) | 外部の Web サイトの訪問者(ブラウザ) | 無し(鍵は URL) |
+| `/mcp`(J-028) | Claude Desktop / Claude Code / Codex | アプリのトークン(`Authorization: Bearer`) |
+
+- **MCP**: Claude Desktop(`headers`)・Claude Code(`--header`)・Codex(`http_headers`)はどれも任意のヘッダを送れるので、サービストークン + アプリのトークンの 2 つを付ける。環境設定の「繋ぎ方」はその形で出す(05 §11)。サービストークンは Zero Trust で発行し、Access のポリシーに「Service Auth」として足す(`scripts/cloudflare-access-check.py` が一時的にやっていることを、恒久のトークンで行う)
+- **Web フォーム**: 訪問者のブラウザは Access のヘッダを付けられない(付けさせると秘密が漏れる)。だから**送るのは Web サイトのサーバ**(問い合わせフォームの送信先。WordPress のプラグイン、サーバレス関数など)で、サービストークンを付けて受け口へ転送する。環境設定の「サーバから送る」がその形。静的なサイトからブラウザで直接送りたい場合だけ、受け口のパスを Access の外に出す(別の判断。いまは持たない)
+- 管理 API(`/settings/*`)と画面は、これまでどおり Access の内側で人だけが通る

@@ -32,10 +32,10 @@ const U2 = uuid('09', 2)
 
 // --- ユーザーとワークスペース ---------------------------------------------------
 const users = [
-  { id: U1, name: 'Takuya', email: 'takuya@example.jp', avatar_color: 'green' },
+  { id: U1, name: 'Takuya', email: 'takuya@example.jp', avatar_color: 'green', admin: true },
   { id: U2, name: 'Misaki', email: 'misaki@example.jp', avatar_color: 'violet' },
 ]
-const workspace = { id: uuid('08', 1), name: 'Sanei Clover' }
+const workspace = { id: uuid('08', 1), name: 'Sanei Clover', timezone: 'Asia/Tokyo' }
 
 // --- 取引先 -----------------------------------------------------------------
 // [名前, フリガナ, 種別, 業種, 都道府県, 住所, 市外局番, 従業員数, ドメイン, 担当, 作成からの日数, メモ]
@@ -284,9 +284,48 @@ const tasks = T.map(([title, status, priority, due, related, contact, descriptio
     contact_id: contact ? contactByName(contact) : null,
     assignee_id: U1,
     description,
+    // 繰り返し(Todoist の型): 月次のものは毎月。ラベルは件名から機械的に
+    repeat: title.startsWith('月次') ? 'monthly' : null,
+    repeat_from_completion: false,
+    repeat_of: null,
+    labels: /経費|請求|契約|税理士/.test(title) ? JSON.stringify(['admin']) : /見積|提案|デモ|ヒアリング|商談|催促|フォロー/.test(title) ? JSON.stringify(['sales']) : /歯医者|セミナー/.test(title) ? JSON.stringify(['personal']) : null,
     completed_at: status === 'done' ? at(-doneAgo, between(9, 18), between(0, 59)) : null,
     created_at: at(-created, between(8, 18), between(0, 59)),
     updated_at: status === 'done' ? at(-doneAgo, between(9, 18), between(0, 59)) : at(-between(0, Math.min(created, 5)), between(9, 19), between(0, 59)),
+  }
+})
+
+// --- 活動(時系列の記録)-----------------------------------------------------------
+// [件名, 種別, 何日前, 関連先, 内容(HTML。書式付きの文字。@ の言及は data-type="mention"), 記録者]
+const ACTIVITY_ROWS = [
+  ['要件の確認と概算の説明', 'meeting', -1, ['o', '検査データ収集システム 第 2 期'], '<p>第 1 期の運用で困っている点を確認。<strong>帳票出力の遅さ</strong>が最優先。</p><ul><li>9 月末に概算見積</li><li>データ移行は先方で対応</li></ul>', U1],
+  ['見積の質問に回答', 'email', -2, ['o', '受発注 EDI 連携'], '<p>取引先コードの変換仕様について回答。既存マスタをそのまま使う方針で合意。</p>', U1],
+  ['社長へ挨拶', 'visit', -3, ['a', 'アオバ精機'], () => `<p>年度の設備投資計画を伺った。来期は検査ラインの増設が中心。窓口は <span data-type="mention" data-id="contacts:${contactByName('三浦 彩花')}" data-label="三浦 彩花">@三浦 彩花</span> のまま。</p>`, U2],
+  ['デモの反応', 'web_meeting', -6, ['o', '物件管理と内見予約のシステム化'], '<p>内見予約のカレンダー連携に好反応。<em>スマホでの操作</em>を重視している。</p>', U1],
+  ['請求先の変更連絡', 'call', -7, ['a', 'コトノハ出版'], '<p>10 月分から請求先を本社経理部へ。担当は変わらず。</p>', U2],
+  ['引き継ぎ会の議事メモ', 'note', -8, ['o', '運用監視の委託'], '<p>監視対象の一覧と連絡網を受領。夜間の一次対応は先方の当番制。</p>', U1],
+  ['展示会で名刺交換', 'other', -12, ['a', 'ハルカゼソフト'], '<p>協業の相談。次回は先方オフィスで。</p>', U2],
+  ['現地調査の所感', 'note', -13, ['o', '倉庫ハンディ端末アプリ'], '<p>電波の弱い区画が 2 か所。<strong>オフライン動作</strong>が要件になりそう。</p>', U1],
+  ['定例の打ち合わせ', 'meeting', -15, ['a', 'アオバ精機'], '<p>月次定例。特記事項なし。</p>', U1],
+  ['更新の意向を確認', 'call', -20, ['a', 'アオバ精機'], '<p>保守契約は更新の方向。条件は 10 月に相談。</p>', U1],
+]
+// 完了したタスクは活動に複製しない(時系列 API が tasks から合成する。docs/design/04 §9)
+const activities = ACTIVITY_ROWS.map(([subject, type, ago, related, body, owner], i) => {
+  const html = typeof body === 'function' ? body() : body
+  // サーバの業務ルールと同じ: 内容の @ の言及を mentions 列(テーブル名:ID の JSON)に写す
+  const mentions = [...(html ?? '').matchAll(/data-id="([^"]+)"/g)].map((m) => m[1])
+  return {
+    id: uuid('05', i + 1),
+    subject,
+    type,
+    occurred_on: day(ago),
+    related_object: related[0] === 'o' ? 'opportunities' : 'accounts',
+    related_id: related[0] === 'o' ? oppByName(related[1]) : accByName(related[1]),
+    body: html,
+    mentions: mentions.length ? JSON.stringify(mentions) : null,
+    owner_id: owner,
+    created_at: at(ago, between(9, 19), between(0, 59)),
+    updated_at: at(ago, between(9, 19), between(0, 59)),
   }
 })
 
@@ -302,3 +341,4 @@ write('accounts.json', accounts)
 write('contacts.json', contacts)
 write('opportunities.json', opportunities)
 write('tasks.json', tasks)
+write('activities.json', activities)

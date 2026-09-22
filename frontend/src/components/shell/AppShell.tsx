@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import type { MetaResponse, Session } from '@/api/types'
 import { CreateRecordModal } from '@/components/record/CreateRecordModal'
@@ -15,6 +15,10 @@ import { QuickAddTask } from './QuickAddTask'
 import { SearchPalette } from './SearchPalette'
 import { ShortcutsHelp } from './ShortcutsHelp'
 import { Sidebar } from './Sidebar'
+
+// テーブル設定と取り込みは、たまにしか開かないので別のファイルに分ける
+const TableDesigner = lazy(() => import('@/components/designer/TableDesigner').then((m) => ({ default: m.TableDesigner })))
+const ImportModal = lazy(() => import('@/components/designer/ImportModal').then((m) => ({ default: m.ImportModal })))
 
 /** アプリ全体のキー操作。1 文字のキーは、文字を打っていないときだけ効く */
 function useGlobalHotkeys(meta: MetaResponse) {
@@ -116,6 +120,8 @@ function Shell({ meta, session }: { meta: MetaResponse; session: Session }) {
   const shortcutsOpen = useUI((s) => s.shortcutsOpen)
   const quickAdd = useUI((s) => s.quickAdd)
   const createFor = useUI((s) => s.createFor)
+  const designer = useUI((s) => s.designer)
+  const importFor = useUI((s) => s.importFor)
 
   return (
     <div className="flex h-dvh overflow-hidden bg-paper text-ink">
@@ -141,6 +147,10 @@ function Shell({ meta, session }: { meta: MetaResponse; session: Session }) {
       {quickAdd.open && <QuickAddTask meta={meta} seed={quickAdd.seed} />}
       {createFor && <CreateRecordModal meta={meta} objectKey={createFor.object} defaults={createFor.defaults} defaultRefs={createFor.refs} />}
       {shortcutsOpen && <ShortcutsHelp />}
+      <Suspense fallback={null}>
+        {designer && <TableDesigner key={designer.object ?? 'new'} meta={meta} target={designer} />}
+        {importFor && <ImportModal meta={meta} objectKey={importFor} />}
+      </Suspense>
       <Toaster />
     </div>
   )

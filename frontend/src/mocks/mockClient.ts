@@ -1,5 +1,8 @@
 import { ApiError, type ApiClient } from '@/api/client'
 import type { Session } from '@/api/types'
+import { exportCsv, importCsv } from './csv'
+import { createDocument, listFiles, resetDrive } from './drive'
+import * as settings from './settings'
 import * as db from './engine'
 
 const SESSION_KEY = 'works.mock.session'
@@ -53,7 +56,62 @@ export function createMockClient(): ApiClient {
     async getMeta() {
       await sleep(READ_MS)
       requireUser()
-      return structuredClone({ workspace: db.workspace, objects: db.objects, views: db.views, users: db.users })
+      return db.getMeta()
+    },
+    async createObject(input) {
+      await sleep(WRITE_MS)
+      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      settings.requireAdmin(requireUser())
+      return db.createObject(input)
+    },
+    async updateObject(key, input) {
+      await sleep(WRITE_MS)
+      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      settings.requireAdmin(requireUser())
+      return db.updateObject(key, input)
+    },
+    async deleteObject(key) {
+      await sleep(WRITE_MS)
+      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      settings.requireAdmin(requireUser())
+      return db.deleteObject(key)
+    },
+    async restoreObject(key) {
+      await sleep(WRITE_MS)
+      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      settings.requireAdmin(requireUser())
+      return db.restoreObject(key)
+    },
+    async reorderObjects(keys) {
+      await sleep(WRITE_MS)
+      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      settings.requireAdmin(requireUser())
+      return db.reorderObjects(keys)
+    },
+    async createView(object, input) {
+      await sleep(WRITE_MS)
+      requireUser()
+      return db.createView(object, input)
+    },
+    async updateView(id, input) {
+      await sleep(WRITE_MS)
+      requireUser()
+      return db.updateView(id, input)
+    },
+    async deleteView(id) {
+      await sleep(WRITE_MS)
+      requireUser()
+      return db.deleteView(id)
+    },
+    async restoreView(id) {
+      await sleep(WRITE_MS)
+      requireUser()
+      return db.restoreView(id)
+    },
+    async reorderViews(object, ids) {
+      await sleep(WRITE_MS)
+      requireUser()
+      return db.reorderViews(object, ids)
     },
 
     async listRecords(object, params = {}) {
@@ -71,8 +129,7 @@ export function createMockClient(): ApiClient {
     },
     async updateRecord(object, id, patch) {
       await sleep(WRITE_MS)
-      requireUser()
-      return db.update(object, id, patch) ?? notFound()
+      return db.update(object, id, patch, requireUser()) ?? notFound()
     },
     async deleteRecord(object, id) {
       await sleep(WRITE_MS)
@@ -89,6 +146,74 @@ export function createMockClient(): ApiClient {
       await sleep(READ_MS)
       return { rows: db.aggregate(object, params, requireUser()) }
     },
+    async getTimeline(object, id) {
+      await sleep(READ_MS)
+      requireUser()
+      return { entries: db.timeline(object, id) }
+    },
+    async importRecords(object, params) {
+      await sleep(WRITE_MS)
+      return importCsv(object, params, requireUser())
+    },
+    async listMcpTokens() {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return settings.listTokens()
+    },
+    async createMcpToken(name, client) {
+      await sleep(WRITE_MS)
+      const me = requireUser()
+      settings.requireAdmin(me)
+      return settings.createToken(name, client, me)
+    },
+    async revokeMcpToken(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      settings.revokeToken(id)
+    },
+    async listWebForms() {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return settings.listForms()
+    },
+    async createWebForm(input) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return settings.createForm(input)
+    },
+    async updateWebForm(id, input) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return settings.updateForm(id, input)
+    },
+    async deleteWebForm(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      settings.deleteForm(id)
+    },
+    async rotateWebFormKey(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return settings.rotateKey(id)
+    },
+    async submitWebForm(key, values) {
+      await sleep(WRITE_MS)
+      // 受け口は認証なし(公開の Web から呼ばれる)
+      return settings.submitForm(key, values)
+    },
+    async listDriveFiles(q) {
+      await sleep(READ_MS * 3)
+      requireUser()
+      return listFiles(q)
+    },
+    async createDriveDocument(object, id, field) {
+      await sleep(WRITE_MS * 4)
+      return createDocument(object, id, field, requireUser())
+    },
+    async exportRecords(object, params = {}) {
+      await sleep(READ_MS)
+      return exportCsv(object, params, requireUser())
+    },
     async search(q) {
       await sleep(READ_MS)
       requireUser()
@@ -100,4 +225,6 @@ export function createMockClient(): ApiClient {
 /** モックのデータを初期状態へ戻す(利用者メニューから呼ぶ) */
 export function resetMockData() {
   db.resetTables()
+  resetDrive()
+  settings.resetSettings()
 }

@@ -16,9 +16,10 @@ export function ShortcutsHelp() {
           <X size={16} />
         </IconButton>
       </header>
-      <div className="grid min-h-0 gap-x-10 gap-y-5 overflow-y-auto px-5 pb-6 sm:grid-cols-2">
+      {/* 群の数が変わっても左右の高さが揃うよう、段組みで流す */}
+      <div className="min-h-0 gap-x-10 overflow-y-auto px-5 pb-1 sm:columns-2">
         {SHORTCUTS.map((group) => (
-          <section key={group.group} className={group.group === 'どこでも' ? 'sm:row-span-2' : undefined}>
+          <section key={group.group} className="mb-5 break-inside-avoid">
             <h3 className="border-b border-line pb-1.5 text-sm text-ink-2">{group.group}</h3>
             <dl className="m-0">
               {group.items.map((item) => (

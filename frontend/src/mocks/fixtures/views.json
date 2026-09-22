@@ -349,6 +349,7 @@
         { "field": "title", "width": 360 },
         { "field": "due_date", "width": 130 },
         { "field": "priority", "width": 90 },
+        { "field": "labels", "width": 160 },
         { "field": "status", "width": 110 },
         { "field": "related", "width": 230 },
         { "field": "contact_id", "width": 150 },
@@ -540,5 +541,30 @@
       "filter": { "field": "status", "op": "eq", "value": "done" },
       "sort": [{ "field": "completed_at", "dir": "desc" }]
     }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000501",
+    "object": "activities",
+    "type": "list",
+    "name": "一覧",
+    "position": 1,
+    "config": {
+      "columns": [
+        { "field": "subject", "width": 280 },
+        { "field": "type", "width": 110 },
+        { "field": "related", "width": 220 },
+        { "field": "occurred_on", "width": 110 },
+        { "field": "owner_id", "width": 130 }
+      ],
+      "sort": [{ "field": "occurred_on", "dir": "desc" }, { "field": "created_at", "dir": "desc" }]
+    }
+  },
+  {
+    "id": "0a000000-0000-7000-8000-000000000502",
+    "object": "activities",
+    "type": "kanban",
+    "name": "種別ごと",
+    "position": 2,
+    "config": { "group_by": "type", "card_fields": ["related", "occurred_on"], "sort": [{ "field": "occurred_on", "dir": "desc" }] }
   }
 ]

@@ -1,4 +1,5 @@
 import { addDays, addMonths, parseISODate, startOfMonth, todayISO, toISODate } from './dates'
+import { REPEAT_WORDS } from './recurrence'
 
 /**
  * タスク追加欄の 1 行から、期限と優先度を読み取る(Todoist の書き方に寄せる)。
@@ -9,8 +10,10 @@ export interface ParsedQuickAdd {
   title: string
   due_date: string | null
   priority: string | null
+  /** 繰り返しの規則(「毎週」など) */
+  repeat: string | null
   /** 読み取った単語(画面で「こう解釈した」と見せるため) */
-  tokens: { text: string; kind: 'due' | 'priority' }[]
+  tokens: { text: string; kind: 'due' | 'priority' | 'repeat' }[]
 }
 
 const WEEKDAYS = '日月火水木金土'
@@ -66,13 +69,19 @@ function parseDateWord(word: string, today: string): string | null {
 }
 
 export function parseQuickAdd(input: string, today = todayISO()): ParsedQuickAdd {
-  const out: ParsedQuickAdd = { title: '', due_date: null, priority: null, tokens: [] }
+  const out: ParsedQuickAdd = { title: '', due_date: null, priority: null, repeat: null, tokens: [] }
   const rest: string[] = []
   for (const word of input.split(/[\s　]+/).filter(Boolean)) {
     const priority = /^[pPｐＰ]([1-4１-４])$/.exec(word)
     if (priority && !out.priority) {
       out.priority = `p${priority[1].normalize('NFKC')}`
       out.tokens.push({ text: word, kind: 'priority' })
+      continue
+    }
+    const repeat = out.repeat ? null : REPEAT_WORDS[word.normalize('NFKC')]
+    if (repeat) {
+      out.repeat = repeat
+      out.tokens.push({ text: word, kind: 'repeat' })
       continue
     }
     const due = out.due_date ? null : parseDateWord(word, today)
@@ -84,5 +93,7 @@ export function parseQuickAdd(input: string, today = todayISO()): ParsedQuickAdd
     rest.push(word)
   }
   out.title = rest.join(' ')
+  // 繰り返しだけ書いたら、最初の回は今日
+  if (out.repeat && !out.due_date) out.due_date = today
   return out
 }

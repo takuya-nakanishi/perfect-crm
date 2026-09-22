@@ -3,8 +3,13 @@ import type { WidgetFormat } from '@/api/types'
 const grouped = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 })
 const oneDecimal = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 })
 
-export function formatNumber(n: number): string {
-  return grouped.format(n)
+/** scale は小数点以下の桁数(項目の定義)。指定があれば、その桁で揃えて出す */
+function fixed(n: number, scale: number): string {
+  return new Intl.NumberFormat('ja-JP', { minimumFractionDigits: scale, maximumFractionDigits: scale }).format(n)
+}
+
+export function formatNumber(n: number, scale?: number): string {
+  return scale ? fixed(n, scale) : grouped.format(n)
 }
 
 /** ¥1,200,000。ja-JP の通貨書式は全角の円記号になるので自前で組む */
@@ -20,8 +25,8 @@ export function formatYenCompact(n: number): string {
   return formatYen(n)
 }
 
-export function formatPercent(n: number): string {
-  return `${oneDecimal.format(n)}%`
+export function formatPercent(n: number, scale?: number): string {
+  return `${scale ? fixed(n, scale) : oneDecimal.format(n)}%`
 }
 
 export function formatByWidget(format: WidgetFormat, n: number, compact = true): string {

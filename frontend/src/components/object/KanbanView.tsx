@@ -176,7 +176,7 @@ export function KanbanView({
   const { data, isPending } = useRecords(object.key, { filter, sort: config.sort, q: q || undefined })
   const update = useUpdateRecord()
   const completion = useCompletion(object, filter)
-  const { peek } = usePeek()
+  const { root: peek } = usePeek()
 
   const ctx: CardContext = useMemo(
     () => ({

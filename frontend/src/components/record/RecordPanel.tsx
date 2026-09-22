@@ -1,16 +1,20 @@
-import { Plus, Trash2, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useQueries } from '@tanstack/react-query'
+import { ArrowLeft, ChevronRight, Ellipsis, Plus, Trash2, X } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '@/api/client'
 import type { FieldMeta, Filter, MetaResponse, ObjectMeta, RefRecord, Row } from '@/api/types'
 import { IconButton, Kbd, ObjectIcon } from '@/components/ui/basics'
+import { Popover } from '@/components/ui/overlay'
 import { useDeleteRecord, useUpdateRecord } from '@/data/mutations'
-import { findObject, useRecord, useRecords } from '@/data/queries'
+import { findObject, keys, useRecord, useRecords } from '@/data/queries'
 import { useCompletion } from '@/data/useCompletion'
 import { cx } from '@/lib/cx'
 import { formatDateTime } from '@/lib/dates'
 import { isPlainKey, isTyping, useKeydown } from '@/lib/hotkeys'
 import { fieldOf, recordName } from '@/lib/records'
-import { usePeek } from '@/lib/usePeek'
+import { PanelScope, usePeek, type PeekRef } from '@/lib/usePeek'
 import { isOverlayOpen, useUI } from '@/state/ui'
+import { ActivityTimeline } from './ActivityTimeline'
 import { FieldEditor } from './FieldEditor'
 import { FieldValue } from './FieldValue'
 import { TaskCheck } from './TaskCheck'
@@ -29,6 +33,8 @@ interface Relationship {
 function relationshipsTo(meta: MetaResponse, parent: ObjectMeta, id: string): Relationship[] {
   const out: Relationship[] = []
   for (const child of meta.objects) {
+    // 活動(時系列)は関連リストではなく、専用のタイムラインで出す
+    if (child.timeline) continue
     for (const field of child.fields) {
       if (field.type === 'relation' && field.target === parent.key) {
         out.push({ child, field, filter: { field: field.key, op: 'eq', value: id } })
@@ -157,6 +163,10 @@ function PanelBody({ meta, object, row, references }: { meta: MetaResponse; obje
   const stamps = object.fields.filter((f) => f.readonly && f.type === 'datetime' && row[f.key])
   const parentRef: RefRecord = { id: row.id, name: recordName(object, row) }
   const relationships = useMemo(() => relationshipsTo(meta, object, row.id), [meta, object, row.id])
+  // 次にやること(タスク)→ これまでの記録(活動)→ ほかの関連、の順
+  const timelines = meta.objects.filter((o) => o.timeline && o.key !== object.key)
+  const todo = relationships.filter((r) => r.child.completion)
+  const rest = relationships.filter((r) => !r.child.completion)
 
   const commit: Parameters<typeof FieldEditor>[0]['onCommit'] = (patch, refs) =>
     update.mutate({ object: object.key, id: row.id, patch, refs })
@@ -187,7 +197,13 @@ function PanelBody({ meta, object, row, references }: { meta: MetaResponse; obje
         ))}
       </dl>
 
-      {relationships.map((rel) => (
+      {todo.map((rel) => (
+        <RelatedList key={`${rel.child.key}.${rel.field.key}`} meta={meta} parent={object} parentRef={parentRef} rel={rel} />
+      ))}
+      {timelines.map((o) => (
+        <ActivityTimeline key={o.key} meta={meta} activities={o} parent={object} parentRef={parentRef} />
+      ))}
+      {rest.map((rel) => (
         <RelatedList key={`${rel.child.key}.${rel.field.key}`} meta={meta} parent={object} parentRef={parentRef} rel={rel} />
       ))}
 
@@ -200,16 +216,172 @@ function PanelBody({ meta, object, row, references }: { meta: MetaResponse; obje
   )
 }
 
+// ---------------------------------------------------------------------------
+// ぱんくず — たどってきたレコード(取引先 › 取引先責任者 › 商談)。途中を押すと、そこへ戻る
+// ---------------------------------------------------------------------------
+
+function Breadcrumbs({ meta, trail, onGo }: { meta: MetaResponse; trail: PeekRef[]; onGo: (index: number) => void }) {
+  const [menu, setMenu] = useState<HTMLElement | null>(null)
+  const ancestors = trail.slice(0, -1)
+  // 名前は開いたときに読んだものが手元にある。URL から直接開いたときだけ取りに行く
+  const records = useQueries({
+    queries: ancestors.map((t) => ({
+      queryKey: keys.record(t.object, t.id),
+      queryFn: () => api.getRecord(t.object, t.id),
+      enabled: Boolean(findObject(meta, t.object)),
+    })),
+  })
+  const crumbs = ancestors.map((t, index) => {
+    const object = findObject(meta, t.object)
+    const row = records[index]?.data?.record
+    return { index, object, name: object && row ? recordName(object, row) : (object?.label ?? '…') }
+  })
+  // 長い経路は、最初と直前だけを出して、あいだを「…」に畳む
+  const folded = crumbs.length > 2 ? crumbs.slice(1, -1) : []
+  const shown = folded.length > 0 ? [crumbs[0], crumbs[crumbs.length - 1]] : crumbs
+  const current = findObject(meta, trail[trail.length - 1]?.object)
+  const separator = <ChevronRight size={13} className="flex-none text-ink-3" aria-hidden />
+  const itemCls = 'flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-ink hover:bg-sunken'
+
+  return (
+    <nav aria-label="たどってきたレコード" className="min-w-0 flex-1">
+      <ol className="m-0 flex min-w-0 list-none items-center gap-1 p-0">
+        {shown.map((c, i) => (
+          <Fragment key={c.index}>
+            <li className="flex min-w-[3.5rem] shrink items-center">
+              <button
+                type="button"
+                onClick={() => onGo(c.index)}
+                title={`${c.object?.label ?? ''}「${c.name}」へ戻る`}
+                className="-mx-1 flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ink-2 hover:bg-sunken hover:text-ink"
+              >
+                {c.object && <ObjectIcon icon={c.object.icon} color={c.object.color} size={12} />}
+                <span className="max-w-[11rem] truncate">{c.name}</span>
+              </button>
+            </li>
+            <li className="flex flex-none items-center" aria-hidden>
+              {separator}
+            </li>
+            {i === 0 && folded.length > 0 && (
+              <>
+                <li className="flex flex-none items-center">
+                  <IconButton label={`あいだの ${folded.length} 件を表示`} aria-haspopup="menu" onClick={(e) => setMenu(e.currentTarget)}>
+                    <Ellipsis size={15} />
+                  </IconButton>
+                </li>
+                <li className="flex flex-none items-center" aria-hidden>
+                  {separator}
+                </li>
+              </>
+            )}
+          </Fragment>
+        ))}
+        {current && (
+          <li aria-current="page" className="flex flex-none items-center gap-2">
+            <ObjectIcon icon={current.icon} color={current.color} size={14} />
+            <span className={ancestors.length > 0 ? 'text-ink' : 'text-ink-2'}>{current.label}</span>
+          </li>
+        )}
+      </ol>
+      {menu && (
+        <Popover anchor={menu} onClose={() => setMenu(null)} width={260}>
+          <div role="menu" className="p-1.5">
+            {folded.map((c) => (
+              <button
+                key={c.index}
+                type="button"
+                role="menuitem"
+                className={itemCls}
+                onClick={() => {
+                  setMenu(null)
+                  onGo(c.index)
+                }}
+              >
+                {c.object && <ObjectIcon icon={c.object.icon} color={c.object.color} size={12} />}
+                <span className="truncate">{c.name}</span>
+              </button>
+            ))}
+          </div>
+        </Popover>
+      )}
+    </nav>
+  )
+}
+
+const PANEL_WIDTH_KEY = 'works.panel.width'
+const PANEL_MIN = 420
+
+/** パネルの左端をつまんで幅を変える。幅は覚えておく。ダブルクリックで既定に戻す */
+function usePanelWidth() {
+  const [width, setWidth] = useState<number | null>(() => {
+    const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
+    return saved >= PANEL_MIN ? saved : null
+  })
+  const [dragging, setDragging] = useState(false)
+  const latest = useRef(width)
+  const lastDown = useRef(0)
+
+  const clamp = (w: number) => Math.round(Math.max(PANEL_MIN, Math.min(w, innerWidth - 320)))
+  const reset = () => {
+    localStorage.removeItem(PANEL_WIDTH_KEY)
+    latest.current = null
+    setWidth(null)
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    // 2 回続けて押したら既定の幅へ(pointerdown の detail は仕様上つねに 0 なので、自前で数える)
+    const now = Date.now()
+    const twice = now - lastDown.current < 400
+    lastDown.current = now
+    if (twice) return reset()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDragging(true)
+    const move = (ev: PointerEvent) => {
+      latest.current = clamp(innerWidth - ev.clientX)
+      setWidth(latest.current)
+    }
+    const up = () => {
+      setDragging(false)
+      if (latest.current) localStorage.setItem(PANEL_WIDTH_KEY, String(latest.current))
+      removeEventListener('pointermove', move)
+      removeEventListener('pointerup', up)
+      removeEventListener('pointercancel', up)
+    }
+    addEventListener('pointermove', move)
+    addEventListener('pointerup', up)
+    addEventListener('pointercancel', up)
+  }
+  // つまんでいる間は、文字を選択させない
+  useEffect(() => {
+    if (!dragging) return
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    return () => {
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+  }, [dragging])
+
+  return { width, dragging, onPointerDown, reset }
+}
+
 export function RecordPanel({ meta }: { meta: MetaResponse }) {
-  const { peek, closePeek } = usePeek()
+  const { peek, trail, goTo, back, closePeek } = usePeek()
+  const panel = usePanelWidth()
   const object = findObject(meta, peek?.object)
   const { data, isPending, isError } = useRecord(object?.key, peek?.id)
   const remove = useDeleteRecord()
 
   useKeydown((e) => {
-    if (e.key === 'Escape' && isPlainKey(e) && !isTyping(e) && !isOverlayOpen()) {
+    if (!isPlainKey(e) || isTyping(e) || isOverlayOpen()) return
+    if (e.key === 'Escape') {
       e.preventDefault()
       closePeek()
+    } else if (e.key === 'Backspace' && trail.length > 1) {
+      e.preventDefault()
+      back()
     }
   }, Boolean(peek))
 
@@ -218,19 +390,38 @@ export function RecordPanel({ meta }: { meta: MetaResponse }) {
   return (
     <aside
       aria-label={`${object.label}の詳細`}
-      className="fixed inset-y-0 right-0 z-40 flex w-full animate-panel-in flex-col border-l border-line bg-paper shadow-pop sm:w-[540px] lg:w-[620px]"
+      // 幅は CSS 変数で渡す。狭い画面(sm 未満)では変数を使わず全幅
+      style={panel.width ? ({ '--panel-w': `${panel.width}px` } as React.CSSProperties) : undefined}
+      className="fixed inset-y-0 right-0 z-40 flex w-full animate-panel-in flex-col border-l border-line bg-paper shadow-pop sm:w-(--panel-w,540px) lg:w-(--panel-w,620px)"
     >
-      <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-5">
-        <ObjectIcon icon={object.icon} color={object.color} size={14} />
-        <span className="text-ink-2">{object.label}</span>
-        <div className="ml-auto flex items-center gap-0.5">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="パネルの幅を変える(ダブルクリックで元の幅)"
+        title="ドラッグで幅を変える。ダブルクリックで元の幅"
+        onPointerDown={panel.onPointerDown}
+        className={cx(
+          'absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize sm:block',
+          'after:absolute after:inset-y-0 after:left-1 after:w-0.5 after:bg-accent after:opacity-0 after:transition-opacity after:duration-150 after:content-[""] hover:after:opacity-100',
+          panel.dragging && 'after:opacity-100',
+        )}
+      />
+      <header className={cx('flex h-12 flex-none items-center gap-2 border-b border-line pr-2', trail.length > 1 ? 'pl-2.5' : 'pl-5')}>
+        {trail.length > 1 && (
+          <IconButton label="前のレコードへ戻る (Backspace)" onClick={back}>
+            <ArrowLeft size={16} />
+          </IconButton>
+        )}
+        <Breadcrumbs meta={meta} trail={trail} onGo={goTo} />
+        <div className="flex flex-none items-center gap-0.5">
           {data && (
             <IconButton
               label="削除"
               className="hover:bg-danger-wash hover:text-danger"
               onClick={() => {
                 remove.mutate({ object: object.key, row: data.record, label: `「${recordName(object, data.record)}」` })
-                closePeek()
+                // たどってきた途中なら、1 つ前のレコードへ戻る
+                back()
               }}
             >
               <Trash2 size={15} />
@@ -251,7 +442,9 @@ export function RecordPanel({ meta }: { meta: MetaResponse }) {
       </header>
 
       {data ? (
-        <PanelBody key={data.record.id} meta={meta} object={object} row={data.record} references={data.references} />
+        <PanelScope.Provider value={true}>
+          <PanelBody key={data.record.id} meta={meta} object={object} row={data.record} references={data.references} />
+        </PanelScope.Provider>
       ) : (
         <p className="p-5 text-ink-2">
           {isError ? 'このレコードは見つかりません。削除された可能性があります。' : isPending ? '読み込んでいます…' : null}

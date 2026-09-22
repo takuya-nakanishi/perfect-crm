@@ -1,10 +1,10 @@
-import { CornerDownLeft, Keyboard, Moon, Plus, Search, Sun, type LucideIcon } from 'lucide-react'
+import { CornerDownLeft, Keyboard, Moon, Plus, Search, Settings, SlidersHorizontal, Sun, Table2, type LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import type { MetaResponse } from '@/api/types'
 import { Kbd, ObjectIcon } from '@/components/ui/basics'
 import { Modal } from '@/components/ui/overlay'
-import { useSearch } from '@/data/queries'
+import { useSearch, useSession } from '@/data/queries'
 import { cx } from '@/lib/cx'
 import { VIEW_ICONS } from '@/lib/icons'
 import { useDebounced } from '@/lib/useDebounced'
@@ -40,6 +40,8 @@ export function SearchPalette({ meta }: { meta: MetaResponse }) {
   const { data, isFetching } = useSearch(q)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const currentKey = /^\/o\/([^/]+)/.exec(useLocation().pathname)?.[1]
+  const admin = Boolean(useSession().data?.user.admin)
   const commands: Item[] = useMemo(() => {
     const ui = useUI.getState()
     const objects = meta.objects.filter((o) => o.in_sidebar).sort((a, b) => a.position - b.position)
@@ -78,6 +80,20 @@ export function SearchPalette({ meta }: { meta: MetaResponse }) {
             run: () => ui.openCreate(o.key),
           }),
         ),
+      ...(admin ? [{ id: 'settings', group: '移動', icon: <CommandIcon icon={Settings} />, label: '環境設定', run: () => navigate('/settings') } satisfies Item] : []),
+      ...(admin ? [{ id: 'table:add', group: '操作', icon: <CommandIcon icon={Table2} />, label: 'テーブルを追加', run: () => navigate('/settings/tables?new') } satisfies Item] : []),
+      // テーブル設定は、いま開いているテーブルのものだけを出す(全テーブル分を並べると一覧が長くなる)
+      ...objects
+        .filter((o) => admin && o.key === currentKey)
+        .map(
+          (o): Item => ({
+            id: `settings:${o.key}`,
+            group: '操作',
+            icon: <CommandIcon icon={SlidersHorizontal} />,
+            label: `${o.label}のテーブル設定`,
+            run: () => navigate(`/settings/tables?object=${o.key}`),
+          }),
+        ),
       {
         id: 'theme',
         group: '操作',
@@ -87,7 +103,7 @@ export function SearchPalette({ meta }: { meta: MetaResponse }) {
       },
       { id: 'shortcuts', group: '操作', icon: <CommandIcon icon={Keyboard} />, label: 'ショートカットの一覧', kbd: '?', run: () => ui.setShortcuts(true) },
     ]
-  }, [meta, navigate])
+  }, [meta, navigate, currentKey, admin])
 
   const items: Item[] = useMemo(() => {
     if (!q) return commands
