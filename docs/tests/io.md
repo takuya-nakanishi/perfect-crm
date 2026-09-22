@@ -46,7 +46,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-040 | 利用者 | 日付 | 表記 | L1 | `formatDue`: 今日 / 明日 / 昨日 / 6 日以内は「金曜日」/ それ以外は「9月30日(水)」/ 年が違えば「2027年1月10日(日)」 | `dates.test.ts` |
 | IO-041 | 利用者 | 日付 | 表記 | L1 | `formatDateTime`: 今日は「今日 9:05」、昨日は「昨日 …」、同じ年は「9月20日」、違う年は `2025/12/01` | `dates.test.ts` |
 | IO-042 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「見積を送る 明日 p1」→ 件名「見積を送る」・期限は明日・P1。「今日の議事録を送る」の「今日」は件名に残る | `quickAddParser.test.ts` |
-| IO-043 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「来週火曜」は次の月曜から始まる週の火曜、「金曜」は次の金曜(今日が金曜なら 7 日後)、「月末」「来月」「3日後」「9/30」「30日」(過ぎていれば来月) | — |
+| IO-043 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「来週火曜」は次の月曜から始まる週の火曜、「金曜」は次の金曜(今日が金曜なら 7 日後)、「月末」「来月」「3日後」「9/30」「30日」(過ぎていれば来月) | `quickAddParser.test.ts` |
 | IO-044 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「毎週」→ `repeat: weekly`、期限が無ければ今日。「平日」「隔週」「毎月」も。2 つめの繰り返しの語は件名に残る | — |
 | IO-045 | 利用者 | 日付 | 表記 | L1 | `parseQuickAdd`: 全角の「ｐ１」や「９／３０」も読む(NFKC) | — |
 | IO-046 | システム | 日付 | 整合 | L1 | `resolveDateMacro`: `$today+N` / `$today-N` / `$start_of_month` / `$end_of_month`。知らないマクロは null | — |

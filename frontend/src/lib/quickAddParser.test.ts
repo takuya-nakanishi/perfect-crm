@@ -26,4 +26,30 @@ describe('parseQuickAdd', () => {
     // 月末をまたいでも明日は翌日
     expect(parseQuickAdd('見積を送る 明日 p1', '2026-09-30').due_date).toBe('2026-10-01')
   })
+
+  it('IO-043 「来週火曜」「金曜」「月末」「来月」「3日後」「9/30」「30日」を今日から見た日付に直す', () => {
+    const due = (word: string, on = today) => parseQuickAdd(`見積を送る ${word}`, on).due_date
+
+    // 来週火曜 = 次の月曜(9/28)から始まる週の火曜。今日が月曜でも日曜でも同じ週を指す
+    expect(due('来週火曜')).toBe('2026-09-29')
+    expect(due('来週火曜', '2026-09-21')).toBe('2026-09-29') // 月曜
+    expect(due('来週火曜', '2026-09-27')).toBe('2026-09-29') // 日曜
+
+    // 金曜 = 次の金曜。今日が金曜なら 7 日後
+    expect(due('金曜')).toBe('2026-09-25')
+    expect(due('金曜', '2026-09-25')).toBe('2026-10-02')
+
+    // 月末は今月の最終日、来月は来月の 1 日
+    expect(due('月末')).toBe('2026-09-30')
+    expect(due('来月')).toBe('2026-10-01')
+    expect(due('3日後')).toBe('2026-09-25')
+    expect(due('9/30')).toBe('2026-09-30')
+
+    // 30日 = 今月の 30 日。過ぎていれば来月
+    expect(due('30日')).toBe('2026-09-30')
+    expect(due('20日')).toBe('2026-10-20')
+
+    // 日付の単語は件名から外れる
+    expect(parseQuickAdd('見積を送る 来週火曜', today).title).toBe('見積を送る')
+  })
 })
