@@ -667,4 +667,17 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     // どれも並びを変えない(他のテーブルも)
     expect(getMeta().views).toEqual(snapshot)
   })
+
+  it('META-071 初めから入っているテーブル(system)を deleteObject → 400 で、GET /meta に残る', () => {
+    const system = getMeta().objects.filter((o) => o.system).map((o) => o.key)
+    expect(system).toContain('accounts')
+    for (const key of system) {
+      expect(statusOf(() => deleteObject(key)), key).toBe(400)
+      expect(getMeta().objects.some((o) => o.key === key), key).toBe(true)
+    }
+    // system でないテーブルは同じ経路で消せる(400 は system だから)
+    expect(statusOf(() => createObject(input('plain')))).toBeNull()
+    expect(statusOf(() => deleteObject('plain'))).toBeNull()
+    expect(getMeta().objects.some((o) => o.key === 'plain')).toBe(false)
+  })
 })
