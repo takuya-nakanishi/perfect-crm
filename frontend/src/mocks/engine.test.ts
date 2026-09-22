@@ -1214,4 +1214,59 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     // タグ名・属性の文字には当たらない
     for (const q of ['strong', '<strong>', '<li>', '</p>']) expect(subjects(q), q).toEqual([])
   })
+
+  it('IO-025 references には、返した行が指す参照・利用者・関連先(polymorphic)の表示名が、その ID の分だけ入る', () => {
+    /** 行が指す ID を、参照先のテーブルごとに集めたもの(期待値) */
+    const expected = (rows: Record<string, unknown>[], pick: (r: Record<string, unknown>) => [string, unknown][]) => {
+      const out: Record<string, string[]> = {}
+      for (const [object, id] of rows.flatMap(pick)) if (typeof id === 'string') (out[object] ??= []).push(id)
+      return Object.fromEntries(Object.entries(out).map(([k, ids]) => [k, [...new Set(ids)].sort()]))
+    }
+    const actual = (refs: Record<string, Record<string, { id: string }>>) =>
+      Object.fromEntries(Object.entries(refs).map(([k, bucket]) => [k, Object.keys(bucket).sort()]))
+    /** 表示名が refOf(参照先の name_field)と同じで、キーと id が一致する */
+    const expectNames = (refs: Record<string, Record<string, { id: string; name: string }>>) => {
+      for (const [object, bucket] of Object.entries(refs))
+        for (const [id, ref] of Object.entries(bucket)) {
+          expect(ref.id).toBe(id)
+          expect(ref.name, `${object}/${id}`).toBe(refOf(object, id)!.name)
+          expect(ref.name).not.toBe('')
+        }
+    }
+
+    // 商談: 参照(取引先・主担当の責任者)と利用者(担当者)。3 件のページなら、その 3 件が指す分だけ
+    const opps = query('opportunities', { sort: [{ field: 'name', dir: 'asc' }], limit: 3 }, null)
+    const oppPick = (r: Record<string, unknown>): [string, unknown][] => [
+      ['accounts', r.account_id],
+      ['contacts', r.primary_contact_id],
+      ['users', r.owner_id],
+    ]
+    expect(actual(opps.references)).toEqual(expected(opps.records, oppPick))
+    expectNames(opps.references)
+    // 全件の参照先より少ない(ページに無い行の参照先は入らない)
+    const allAccounts = new Set(table('opportunities').map((r) => r.account_id))
+    expect(Object.keys(opps.references.accounts!).length).toBeLessThan(allAccounts.size)
+
+    // 活動: 関連先(取引先と商談が混ざる)と利用者。関連先の ID は related_object のテーブルに入る
+    const acts = query('activities', {}, null)
+    expect(new Set(acts.records.map((r) => r.related_object))).toEqual(new Set(['accounts', 'opportunities']))
+    const actPick = (r: Record<string, unknown>): [string, unknown][] => [
+      [r.related_object as string, r.related_id],
+      ['users', r.owner_id],
+    ]
+    expect(actual(acts.references)).toEqual(expected(acts.records, actPick))
+    expectNames(acts.references)
+
+    // タスク: 参照(責任者・繰り返し元)、関連先(空の行もある)、利用者。空の値は references に何も足さない
+    const tasks = query('tasks', {}, null)
+    expect(tasks.records.some((r) => r.related_object == null)).toBe(true)
+    const taskPick = (r: Record<string, unknown>): [string, unknown][] => [
+      ['contacts', r.contact_id],
+      ['tasks', r.repeat_of],
+      ...(typeof r.related_object === 'string' ? [[r.related_object, r.related_id] as [string, unknown]] : []),
+      ['users', r.assignee_id],
+    ]
+    expect(actual(tasks.references)).toEqual(expected(tasks.records, taskPick))
+    expectNames(tasks.references)
+  })
 })
