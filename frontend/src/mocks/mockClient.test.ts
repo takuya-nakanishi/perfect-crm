@@ -163,6 +163,47 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(listForms()).toHaveLength(before.length + 3)
   })
 
+  it('SET-043 submitWebForm は fields に無い列を捨て、defaults を足してレコードを作り、フォームの submissions が増えて last_submitted_at が入る', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    // 必須が文字の項目だけで、ほかに文字の項目を 3 つ持つテーブルをメタデータから探す
+    const plain = (f: ReturnType<typeof getMeta>['objects'][number]['fields'][number]) => f.type === 'text' && !f.readonly
+    const object = getMeta().objects.find((o) => o.fields.filter((f) => f.required).every(plain) && o.fields.filter((f) => plain(f) && !f.required).length >= 3)!
+    const required = object.fields.filter((f) => f.required)
+    const [accepted, dropped, defaulted] = object.fields.filter((f) => plain(f) && !f.required)
+    const form = await api.createWebForm({
+      name: '試しのフォーム',
+      object: object.key,
+      fields: [...required.map((f) => f.key), accepted.key],
+      defaults: { [defaulted.key]: '既定の値' },
+      enabled: true,
+      redirect_url: null,
+    })
+    expect(form.submissions).toBe(0)
+    expect(form.last_submitted_at).toBeNull()
+    // 受け口は認証なしで呼ばれる
+    await api.logout()
+
+    const values = { ...Object.fromEntries(required.map((f) => [f.key, `送信の${f.label}`])), [accepted.key]: '受ける値', [dropped.key]: '捨てる値', no_such_column: '捨てる値' }
+    const startedAt = new Date().toISOString()
+    const { record } = await api.submitWebForm(form.key, values)
+    const finishedAt = new Date().toISOString()
+
+    for (const f of required) expect(record[f.key], f.key).toBe(`送信の${f.label}`)
+    expect(record[accepted.key], 'fields にある列は入る').toBe('受ける値')
+    expect(record[dropped.key] ?? null, 'fields に無い列は捨てる').toBeNull()
+    expect(record, 'テーブルに無い列も入らない').not.toHaveProperty('no_such_column')
+    expect(record[defaulted.key], 'defaults が足される').toBe('既定の値')
+
+    await api.login(admin.email, 'x')
+    const stored = await api.getRecord(object.key, record.id as string)
+    expect(stored.record, 'レコードができている').toMatchObject({ [accepted.key]: '受ける値', [defaulted.key]: '既定の値' })
+    const after = (await api.listWebForms()).find((f) => f.id === form.id)!
+    expect(after.submissions, '送信の数が増える').toBe(1)
+    expect(after.last_submitted_at, '最後の送信の時刻が入る').not.toBeNull()
+    expect(after.last_submitted_at! >= startedAt && after.last_submitted_at! <= finishedAt, '送信した時刻').toBe(true)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
