@@ -164,6 +164,28 @@ describe('文字から値への変換(mocks/csv.ts の coerce)', () => {
     expect(coerce(done, '  ')).toBeNull()
     expect(coerce(amount, '')).toBeNull()
   })
+
+  it('IO-066 複数選択は「営業、事務」を値の配列にし、無いラベルはエラーにし、重複は 1 つにする', () => {
+    const tags: FieldMeta = {
+      key: 'tags',
+      label: '部署',
+      type: 'multi_select',
+      options: [
+        { value: 'sales', label: '営業', color: 'blue' },
+        { value: 'office', label: '事務', color: 'gray' },
+        { value: 'dev', label: '開発', color: 'green' },
+      ],
+    }
+    // 読点で区切ったラベルを、値の配列(JSON)にする。前後の空白は無視
+    expect(JSON.parse(String(coerce(tags, '営業、事務')))).toEqual(['sales', 'office'])
+    expect(JSON.parse(String(coerce(tags, ' 営業 、 開発 ')))).toEqual(['sales', 'dev'])
+    // カンマ区切りでも、値で書いても同じ
+    expect(JSON.parse(String(coerce(tags, 'sales,事務')))).toEqual(['sales', 'office'])
+    // 1 つでも無いラベルがあれば、行ごとエラーにする(黙って落とさない)
+    expect(() => coerce(tags, '営業、経理')).toThrow('部署に「経理」という選択肢はありません')
+    // ラベルと値で同じ選択肢を 2 回書いても 1 つ
+    expect(JSON.parse(String(coerce(tags, '営業、営業、sales、事務')))).toEqual(['sales', 'office'])
+  })
 })
 
 describe('参照の解決(mocks/csv.ts の coerce)', () => {
