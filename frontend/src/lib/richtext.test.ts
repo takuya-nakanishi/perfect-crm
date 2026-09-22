@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeHtml } from './richtext'
+import { extractMentions, isEmptyHtml, plainText, sanitizeHtml } from './richtext'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 describe('書式付きの文字の洗浄(lib/richtext.ts)', () => {
@@ -47,5 +47,32 @@ describe('書式付きの文字の洗浄(lib/richtext.ts)', () => {
         '<p>@架空商事</p>',
       )
     }
+  })
+  it('IO-084 extractMentions は引用符の違いに関わらず同じ ID を 1 回だけ拾い、plainText は段落・改行を落として @名前 を残し、isEmptyHtml は <p></p> を空とみなす', () => {
+    const a = '0b6f5c1e-3d2a-4e8b-9c7f-1a2b3c4d5e6f'
+    const b = '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b'
+    // 二重引用符と単引用符で同じレコードを 2 回言及しても 1 回。別のレコードは別に拾う。順は現れた順
+    const html =
+      `<p><span data-type="mention" data-id="accounts:${a}" data-label="架空商事">@架空商事</span> と ` +
+      `<span data-type='mention' data-id='accounts:${a}' data-label='架空商事'>@架空商事</span> と ` +
+      `<span data-type='mention' data-id='contacts:${b}' data-label='山田 架空'>@山田 架空</span></p>`
+    expect(extractMentions(html)).toEqual([
+      { object: 'accounts', id: a, label: '架空商事' },
+      { object: 'contacts', id: b, label: '山田 架空' },
+    ])
+    // 規則外の data-id は拾わない。空の入力は空の配列
+    expect(extractMentions(`<span data-type="mention" data-id="Accounts:${a}">@x</span>`)).toEqual([])
+    expect(extractMentions(null)).toEqual([])
+    // plainText は段落・改行のタグを落として素の文字にし、言及は @名前 のまま残す
+    expect(plainText(`<p>担当 <span data-type="mention" data-id="accounts:${a}" data-label="架空商事">@架空商事</span> へ</p><p>次<br>行</p>`)).toBe(
+      '担当 @架空商事 へ\n次\n行',
+    )
+    expect(plainText('<p>A &amp; B</p><p></p><p>C</p>')).toBe('A & B\nC')
+    // isEmptyHtml は <p></p> だけの HTML や空文字・null を空とみなし、文字があれば空ではない
+    expect(isEmptyHtml('<p></p>')).toBe(true)
+    expect(isEmptyHtml('<p><br></p>')).toBe(true)
+    expect(isEmptyHtml('')).toBe(true)
+    expect(isEmptyHtml(null)).toBe(true)
+    expect(isEmptyHtml('<p>x</p>')).toBe(false)
   })
 })
