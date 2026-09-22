@@ -148,4 +148,30 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createObject(body('rel_ok', 'accounts')))).toBeNull()
     expect(getMeta().objects.find((o) => o.key === 'rel_ok')?.fields.find((f) => f.key === 'ref')?.target).toBe('accounts')
   })
+
+  it('META-011 文字の項目の max_length が 0・100001、数値の scale が 7 なら 400。scale 1〜6 は保存される', () => {
+    const withField = (table: string, field: ObjectInput['fields'][number]): ObjectInput => ({
+      ...input(table),
+      fields: [{ key: 'name', label: '名前', type: 'text' }, field],
+    })
+    const savedField = (table: string) => getMeta().objects.find((o) => o.key === table)?.fields.find((f) => f.key === 'extra')
+    for (const [name, maxLength] of [['zero', 0], ['over', 100001]] as const) {
+      const table = `len_${name}`
+      expect(statusOf(() => createObject(withField(table, { key: 'extra', label: 'メモ', type: 'text', max_length: maxLength }))), table).toBe(400)
+      expect(getMeta().objects.some((o) => o.key === table), table).toBe(false)
+    }
+    // 境界: 1 と 100000 は保存される
+    for (const [name, maxLength] of [['min', 1], ['max', 100000]] as const) {
+      const table = `len_${name}`
+      expect(statusOf(() => createObject(withField(table, { key: 'extra', label: 'メモ', type: 'text', max_length: maxLength }))), table).toBeNull()
+      expect(savedField(table)?.max_length, table).toBe(maxLength)
+    }
+    expect(statusOf(() => createObject(withField('scale_7', { key: 'extra', label: '金額', type: 'number', scale: 7 })))).toBe(400)
+    expect(getMeta().objects.some((o) => o.key === 'scale_7')).toBe(false)
+    for (const scale of [1, 2, 3, 4, 5, 6]) {
+      const table = `scale_${scale}`
+      expect(statusOf(() => createObject(withField(table, { key: 'extra', label: '金額', type: 'number', scale }))), table).toBeNull()
+      expect(savedField(table)?.scale, table).toBe(scale)
+    }
+  })
 })
