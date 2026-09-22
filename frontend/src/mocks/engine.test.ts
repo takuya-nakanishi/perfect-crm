@@ -2479,6 +2479,39 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
     expect(got).toMatchObject(expected)
     expect(find('scaled', got.id as string)!.record).toMatchObject(expected)
   })
+
+  it('REC-082 insert: 参照の列に無い ID・利用者の列に無い ID・チェックの列に文字は 400 で行は増えない。有る ID と真偽なら作れる', () => {
+    const account_id = table('accounts')[0].id as string
+    const contact_id = table('contacts')[0].id as string
+    const me = usersJson[0].id
+    const missing = '00000000-0000-4000-8000-000000000000'
+
+    const cases: [string, Record<string, Scalar>][] = [
+      // 参照の列: 無い ID・別のテーブルの ID
+      ['opportunities', { name: '取引先が無い', account_id: missing }],
+      ['opportunities', { name: '取引先に責任者の ID', account_id: contact_id }],
+      ['opportunities', { name: '責任者が無い', account_id, primary_contact_id: missing }],
+      ['tasks', { title: '責任者が無い', contact_id: missing }],
+      // 利用者の列: 無い ID・レコードの ID
+      ['opportunities', { name: '担当が無い', account_id, owner_id: missing }],
+      ['tasks', { title: '担当者に取引先の ID', assignee_id: account_id }],
+      // チェックの列: 文字・数値
+      ['tasks', { title: 'チェックに文字', repeat_from_completion: 'true' }],
+      ['tasks', { title: 'チェックに数値', repeat_from_completion: 1 }],
+    ]
+    for (const [object, values] of cases) {
+      const label = String(values.name ?? values.title)
+      const before = table(object).length
+      expect(statusOf(() => insert(object, values, me)), label).toBe(400)
+      expect(table(object), label).toHaveLength(before)
+    }
+
+    // 有る ID と真偽なら作れる(弾いているのは値の中身であって列ではない)
+    const opp = insert('opportunities', { name: '有る参照', account_id, primary_contact_id: contact_id, owner_id: me }, me).record
+    expect(opp).toMatchObject({ account_id, primary_contact_id: contact_id, owner_id: me })
+    const task = insert('tasks', { title: '有る参照', contact_id, assignee_id: me, repeat_from_completion: true }, me).record
+    expect(task).toMatchObject({ contact_id, assignee_id: me, repeat_from_completion: true })
+  })
 })
 
 describe('作成の既定値と定義に無い列(mocks/engine.ts の insert / update)', () => {
