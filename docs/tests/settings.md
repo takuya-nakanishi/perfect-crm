@@ -35,7 +35,7 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 | SET-041 | 外部 | フォーム | 整合 | L3 | 管理者: テスト送信 → 受け口からレコードができ、トーストの「開く」で見られる | `smoke.mjs「テスト送信で、受け口からレコードができる」` |
 | SET-042 | 管理者 | フォーム | 整合 | L2 | `createWebForm`: 名前が空 / テーブルが無い / 項目が 0 / readonly・関連先・ドライブの項目 / `redirect_url` が http(s) でない → それぞれ 400 | `mockClient.test.ts` |
 | SET-043 | 外部 | フォーム | 整合 | L2 | `submitWebForm`: `fields` に無い列は捨て、`defaults` を足し、レコードができる。`submissions` が増え `last_submitted_at` が入る | `mockClient.test.ts` |
-| SET-044 | 外部 | フォーム | 整合 | L2 | `submitWebForm`: form-urlencoded の文字(数値 `"1200000"`、日付 `2026/9/30`、選択肢のラベル)を項目の型に直してから作る。直せなければ 400 | — |
+| SET-044 | 外部 | フォーム | 整合 | L2 | `submitWebForm`: form-urlencoded の文字(数値 `"1200000"`、日付 `2026/9/30`、選択肢のラベル)を項目の型に直してから作る。直せなければ 400 | `mockClient.test.ts` |
 | SET-045 | 外部 | フォーム | 安全弁 | L2 | `submitWebForm`: `enabled: false` → 404。無い鍵 → 404。先のテーブルが削除中 → 404 | — |
 | SET-046 | 外部 | フォーム | 安全弁 | L2 | `submitWebForm`: `_gotcha` が埋まっている(bot)→ 404 で何も作らない | — |
 | SET-047 | 管理者 | フォーム | 安全弁 | L2 | `rotateWebFormKey` → 鍵が変わり、古い鍵で送ると 404 | — |

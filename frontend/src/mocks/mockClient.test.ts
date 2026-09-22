@@ -204,6 +204,41 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(after.last_submitted_at! >= startedAt && after.last_submitted_at! <= finishedAt, '送信した時刻').toBe(true)
   })
 
+  it('SET-044 submitWebForm は form-urlencoded の文字(数値・日付・選択肢のラベル)を項目の型に直してから作り、直せなければ 400 でレコードも送信の数も増えない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    // 数値・日付・選択肢を持つテーブルを作る(既存のテーブル名に頼らない)
+    await api.createObject({
+      ...input('set_form_types'),
+      fields: [
+        { key: 'name', label: '名前', type: 'text' },
+        { key: 'amount', label: '金額', type: 'currency' },
+        { key: 'due', label: '期日', type: 'date' },
+        { key: 'rank', label: '見込み', type: 'select', options: [{ value: 'hot', label: '高い', color: 'red' }, { value: 'cold', label: '低い', color: 'blue' }] },
+      ],
+    })
+    const form = await api.createWebForm({ name: '型のフォーム', object: 'set_form_types', fields: ['name', 'amount', 'due', 'rank'], defaults: {}, enabled: true, redirect_url: null })
+    await api.logout()
+
+    // form-urlencoded は全部が文字で届く
+    const { record } = await api.submitWebForm(form.key, { name: '送信', amount: '1200000', due: '2026/9/30', rank: '高い' })
+    expect(record.amount, '数値の文字は数値に').toBe(1200000)
+    expect(record.due, '日付は YYYY-MM-DD に').toBe('2026-09-30')
+    expect(record.rank, '選択肢はラベルから値に').toBe('hot')
+
+    // 直せない文字は 400。レコードは作られない
+    for (const [key, raw] of [['amount', '百万'], ['due', '9月30日'], ['rank', '普通']] as const) {
+      expect(await statusOf(() => api.submitWebForm(form.key, { name: `直せない${key}`, [key]: raw })), `${key}「${raw}」`).toBe(400)
+    }
+
+    await api.login(admin.email, 'x')
+    const stored = await api.getRecord('set_form_types', record.id as string)
+    expect(stored.record, '直した値で保存される').toMatchObject({ amount: 1200000, due: '2026-09-30', rank: 'hot' })
+    const { records } = await api.listRecords('set_form_types')
+    expect(records.map((r) => r.name), '400 のときはレコードができない').toEqual(['送信'])
+    expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '400 は送信に数えない').toBe(1)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
