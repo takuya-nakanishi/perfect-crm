@@ -1468,4 +1468,36 @@ describe('タスクの追加(mocks/engine.ts の insert)', () => {
     const { record } = insert('tasks', { title: '電話する', priority: 'p1', status: 'in_progress', assignee_id: MISAKI }, TAKUYA)
     expect(record).toMatchObject({ priority: 'p1', status: 'in_progress', assignee_id: MISAKI })
   })
+
+  it('TASK-005 件名が空・関連先が片方だけ・targets 外のテーブルは 400 で、行は増えない', () => {
+    const accountId = table('accounts')[0].id as string
+    const opportunityId = table('opportunities')[0].id as string
+    const contactId = table('contacts')[0].id as string
+    const before = table('tasks').length
+    const bad: [string, Record<string, string | null>][] = [
+      // 件名が空(省く・null・空文字)
+      ['件名を省く', { priority: 'p2' }],
+      ['件名が null', { title: null }],
+      ['件名が空文字', { title: '' }],
+      // 関連先の片方だけ
+      ['テーブル名だけ', { title: '電話する', related_object: 'accounts' }],
+      ['ID だけ', { title: '電話する', related_id: accountId }],
+      // targets(accounts・opportunities)の外。ID はそのテーブルに実在する
+      ['取引先責任者', { title: '電話する', related_object: 'contacts', related_id: contactId }],
+      ['タスク', { title: '電話する', related_object: 'tasks', related_id: table('tasks')[0].id as string }],
+      ['無いテーブル', { title: '電話する', related_object: 'nothing', related_id: accountId }],
+    ]
+    for (const [label, values] of bad) {
+      expect(statusOf(() => insert('tasks', values, TAKUYA)), label).toBe(400)
+    }
+    expect(table('tasks').length).toBe(before)
+
+    // 境界: 件名があり、関連先が targets 内のテーブルと ID の組なら通る。関連先なし(両方 null)も通る
+    for (const [object, id] of [['accounts', accountId], ['opportunities', opportunityId]]) {
+      const { record } = insert('tasks', { title: '電話する', related_object: object, related_id: id }, TAKUYA)
+      expect(record).toMatchObject({ title: '電話する', related_object: object, related_id: id })
+    }
+    expect(statusOf(() => insert('tasks', { title: '電話する' }, TAKUYA))).toBeNull()
+    expect(table('tasks').length).toBe(before + 3)
+  })
 })
