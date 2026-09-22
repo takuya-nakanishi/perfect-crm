@@ -39,4 +39,15 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     expect(matchFilter(row({ stage: null }), notIn, ctx)).toBe(true)
     expect(matchFilter(row({}), notIn, ctx)).toBe(true)
   })
+  it('IO-005 contains は大文字小文字を区別しない。文字でない列には偽', () => {
+    const has = (value: string): Condition => ({ field: 'name', op: 'contains', value })
+    expect(matchFilter(row({ name: 'Acme Holdings' }), has('acme'), ctx)).toBe(true)
+    expect(matchFilter(row({ name: 'acme holdings' }), has('HOLD'), ctx)).toBe(true)
+    expect(matchFilter(row({ name: 'Acme Holdings' }), has('globex'), ctx)).toBe(false)
+    // 文字でない列(数値・真偽・NULL)は、文字に直して比べず偽
+    expect(matchFilter(row({ name: 123 }), has('12'), ctx)).toBe(false)
+    expect(matchFilter(row({ name: true }), has('true'), ctx)).toBe(false)
+    expect(matchFilter(row({ name: null }), has(''), ctx)).toBe(false)
+    expect(matchFilter(row({}), has('a'), ctx)).toBe(false)
+  })
 })
