@@ -12,8 +12,9 @@ export function parseISODate(iso: string): Date {
   return new Date(y, m - 1, d)
 }
 
-export function todayISO(): string {
-  return toISODate(new Date())
+/** 今日。timezone を渡せばその時刻帯での今日(サーバはワークスペースの時刻帯で解決する。04 §3) */
+export function todayISO(timezone?: string): string {
+  return localDateOf(new Date().toISOString(), timezone)
 }
 
 export function addDays(iso: string, n: number): string {
@@ -43,8 +44,13 @@ export function endOfMonth(iso: string): string {
 }
 
 /** ISO 日時(UTC)を、利用者のタイムゾーンでの日付にする */
-export function localDateOf(isoDateTime: string): string {
-  return toISODate(new Date(isoDateTime))
+/** 日時をその時刻帯での日付にする。timezone を省けば端末の時刻帯 */
+export function localDateOf(isoDateTime: string, timezone?: string): string {
+  const d = new Date(isoDateTime)
+  if (!timezone) return toISODate(d)
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')}`
 }
 
 /** $today / $today+7 / $today-30 / $start_of_month / $end_of_month を日付にする。マクロでなければ null */

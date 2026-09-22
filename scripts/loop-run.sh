@@ -19,13 +19,14 @@ cd "$ROOT"
 LAND="hold"; MAX=1; DRY=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --land) LAND="${2:-}"; shift 2 ;;
-    --max) MAX="${2:-1}"; shift 2 ;;
+    --land) [ "$#" -ge 2 ] || { echo "NG: --land に値がありません" >&2; exit 64; }; LAND="$2"; shift 2 ;;
+    --max) [ "$#" -ge 2 ] || { echo "NG: --max に値がありません" >&2; exit 64; }; MAX="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     *) echo "NG: 不明な引数: $1" >&2; exit 64 ;;
   esac
 done
 case "$LAND" in hold|auto) ;; *) echo "NG: --land は hold か auto" >&2; exit 64 ;; esac
+echo "$MAX" | grep -qE '^[1-9][0-9]*$' || { echo "NG: --max は 1 以上の整数" >&2; exit 64; }
 
 CLAUDE_BIN="${LOOP_CLAUDE_BIN:-$HOME/.local/bin/claude}"
 AGENT_TIMEOUT="${LOOP_AGENT_TIMEOUT:-1800}"
@@ -49,20 +50,29 @@ fi
 
 exec 9>"$STATE_DIR/lock"
 flock -n 9 || { say "別のループが動いています。何もしません"; exit 0; }
-[ -e "$STATE_DIR/HALT" ] && { say "HALT が立っています($STATE_DIR/HALT)。原因を確かめて消してから再開してください"; exit 0; }
-if [ -f "$LEDGER" ]; then
-  RECENT_FAILS="$(tail -n "$BREAKER" "$LEDGER" | grep -c '"result":"failed"' || true)"
-  if [ "$(wc -l < "$LEDGER")" -ge "$BREAKER" ] && [ "$RECENT_FAILS" -ge "$BREAKER" ]; then
-    echo "連続 $BREAKER 件失敗したため停止($(now))。$LEDGER と $STATE_DIR/logs を確認" > "$STATE_DIR/HALT"
-    say "連続失敗で HALT を立てました"; exit 1
+# 止める条件。毎周の頭で確かめる(--max で続けて回すときも)
+should_stop() {
+  [ -e "$STATE_DIR/HALT" ] && { say "HALT が立っています($STATE_DIR/HALT)。原因を確かめて消してから再開してください"; return 0; }
+  if [ -f "$LEDGER" ]; then
+    local recent; recent="$(tail -n "$BREAKER" "$LEDGER" | grep -c '"result":"failed"' || true)"
+    if [ "$(wc -l < "$LEDGER")" -ge "$BREAKER" ] && [ "$recent" -ge "$BREAKER" ]; then
+      echo "連続 $BREAKER 件失敗したため停止($(now))。$LEDGER と $STATE_DIR/logs を確認" > "$STATE_DIR/HALT"
+      # 台帳にも残す。HALT を消したあと、同じ失敗の並びを見て再び立てないため(直近 N 件に failed 以外が混ざる)
+      ledger "-" halted "連続 $BREAKER 件失敗"
+      say "連続失敗で HALT を立てました"; return 0
+    fi
   fi
-fi
+  return 1
+}
+should_stop && exit 0
 
 # 失敗・保留の記録を loops/tests/<ID>.md に残して着地させる(次の周が同じ失敗を繰り返さないための記憶)
 record_attempt() { # wt id state note
   local wt="$1" id="$2" state="$3" note="$4" file="loops/tests/$2.md"
   ( cd "$wt" || exit 1
-    git reset -q --hard origin/main
+    # 書く役の成果物は捨てる(未追跡のファイルも)。あとで見られるよう差分だけログに残す
+    git add -A -- . ':!frontend/node_modules' >/dev/null 2>&1; git diff --cached origin/main > "$STATE_DIR/logs/$id-discarded.patch" 2>/dev/null
+    git reset -q --hard origin/main; git clean -fdq -e frontend/node_modules
     mkdir -p loops/tests
     [ -f "$file" ] || printf '# %s\n\n- 状態: 未着手\n\n## 試行の記録\n\n' "$id" > "$file"
     local n; n="$(grep -c '^- \[' "$file" || true)"; n=$((n + 1))
@@ -76,6 +86,7 @@ record_attempt() { # wt id state note
 
 DONE=0
 while [ "$DONE" -lt "$MAX" ]; do
+  [ "$DONE" -gt 0 ] && should_stop && break
   git fetch -q origin main || { say "fetch に失敗"; exit 1; }
   PICK_DIR="$(mktemp -d)"
   git archive "$PICK_REF" docs/tests loops scripts/loop-next.mjs frontend/e2e 2>/dev/null | tar -x -C "$PICK_DIR" 2>/dev/null
@@ -84,6 +95,7 @@ while [ "$DONE" -lt "$MAX" ]; do
   mkdir -p "$PICK_DIR/.claude"; ln -s "$MAIN_TREE/.claude/worktrees" "$PICK_DIR/.claude/worktrees"
   NEXT="$(node "$PICK_DIR/scripts/loop-next.mjs")"
   ID="$(node -e 'console.log(JSON.parse(process.argv[1]).id ?? "")' "$NEXT")"
+  AREA_TABLE="$(node -e 'console.log(JSON.parse(process.argv[1]).table ?? "")' "$NEXT")"
   if [ -z "$ID" ]; then say "取れる行がありません: $NEXT"; rm -rf "$PICK_DIR"; break; fi
   PROMPT="$(node "$PICK_DIR/scripts/loop-next.mjs" --prompt)"
   rm -rf "$PICK_DIR"
@@ -106,7 +118,6 @@ while [ "$DONE" -lt "$MAX" ]; do
   CHANGED="$(git -C "$WT" diff --name-only origin/main...HEAD)"
   if [ -z "$FAIL" ] && [ -z "$CHANGED" ]; then FAIL="コミットが無い"; fi
   if [ -z "$FAIL" ]; then
-    AREA_TABLE="docs/tests/$(echo "$ID" | sed 's/-.*//' | tr 'A-Z' 'a-z').md"
     while IFS= read -r f; do
       case "$f" in
         "loops/tests/$ID.md"|"$AREA_TABLE") ;;

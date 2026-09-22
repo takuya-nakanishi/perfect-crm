@@ -190,14 +190,17 @@ function check(rows) {
   // 単体テスト: 表が名指しする *.test.ts が実在するか。逆に、テストの中の ID が表に無ければ NG
   const testFiles = walk(path.join(ROOT, 'frontend/src'), (n) => /\.test\.tsx?$/.test(n))
   const testNames = new Set(testFiles.map((p) => path.basename(p)))
+  // ファイルごとの「有効な it の ID」(it.skip / it.todo / xit は数えない)
+  const idsIn = new Map(testFiles.map((f) => [path.basename(f), new Set([...readFileSync(f, 'utf8').matchAll(/(?<![\w.])(?:it|test)\(\s*['"`]([A-Z]+-\d+)\b/g)].map((m) => m[1]))]))
   for (const r of rows) {
     for (const m of r.asset.matchAll(/([\w.-]+\.test\.tsx?)/g)) {
       if (!testNames.has(m[1])) errors.push(`${r.id}: 表は ${m[1]} を指すが、frontend/src/ 配下に無い`)
+      else if (!idsIn.get(m[1])?.has(r.id)) errors.push(`${r.id}: 表は ${m[1]} を指すが、その中に it('${r.id} …') が無い(skip / todo は数えない)`)
     }
   }
   for (const f of testFiles) {
     const text = readFileSync(f, 'utf8')
-    for (const m of text.matchAll(/it\(\s*['"`]([A-Z]+-\d+)\b/g)) {
+    for (const m of text.matchAll(/(?<![\w.])(?:it|test)\(\s*['"`]([A-Z]+-\d+)\b/g)) {
       const row = rows.find((r) => r.id === m[1])
       if (!row) errors.push(`${path.relative(ROOT, f)}: ${m[1]} の行が docs/tests に無い`)
       else if (!row.asset.includes(path.basename(f))) errors.push(`${m[1]}: ${path.basename(f)} にテストがあるのに、表の「対応する資産」に書かれていない(${row.table})`)

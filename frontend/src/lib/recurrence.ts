@@ -1,4 +1,14 @@
-import { addDays, addMonths, parseISODate, toISODate } from './dates'
+import { addDays, parseISODate, toISODate } from './dates'
+
+/** 日を保ったまま n か月進める。翌月にその日が無ければ月末(1/31 → 2/28)。dates.addMonths は月の初めへ移す区間用なので使わない */
+function addMonthsKeepDay(iso: string, n: number): string {
+  const d = parseISODate(iso)
+  const day = d.getDate()
+  const next = new Date(d.getFullYear(), d.getMonth() + n, 1)
+  const last = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
+  next.setDate(Math.min(day, last))
+  return toISODate(next)
+}
 
 /**
  * 繰り返しの規則(タスクの repeat の選択肢の value)。Todoist の「毎日 / 平日 / 毎週 / 隔週 / 毎月 / 毎年」に寄せる。
@@ -35,14 +45,10 @@ export function nextDue(from: string, rule: string): string | null {
     case 'biweekly':
       return addDays(from, 14)
     case 'monthly':
-      return addMonths(from, 1)
-    case 'yearly': {
-      const d = parseISODate(from)
-      const next = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate())
+      return addMonthsKeepDay(from, 1)
+    case 'yearly':
       // 2/29 は翌年 2/28 に
-      if (next.getMonth() !== d.getMonth()) next.setDate(0)
-      return toISODate(next)
-    }
+      return addMonthsKeepDay(from, 12)
     default:
       return null
   }

@@ -9,7 +9,7 @@ function fixed(n: number, scale: number): string {
 }
 
 export function formatNumber(n: number, scale?: number): string {
-  return scale ? fixed(n, scale) : grouped.format(n)
+  return scale !== undefined ? fixed(n, scale) : grouped.format(n)
 }
 
 /** ¥1,200,000。ja-JP の通貨書式は全角の円記号になるので自前で組む */
@@ -26,7 +26,7 @@ export function formatYenCompact(n: number): string {
 }
 
 export function formatPercent(n: number, scale?: number): string {
-  return `${scale ? fixed(n, scale) : oneDecimal.format(n)}%`
+  return `${scale !== undefined ? fixed(n, scale) : oneDecimal.format(n)}%`
 }
 
 export function formatByWidget(format: WidgetFormat, n: number, compact = true): string {

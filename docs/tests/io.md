@@ -17,7 +17,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-004 | システム | 条件 | 整合 | L1 | `in` は配列のどれかと一致、`not_in` はどれとも一致しない(NULL は `not_in` で真) | — |
 | IO-005 | システム | 条件 | 表記 | L1 | `contains` は大文字小文字を区別しない。文字でない列には偽 | — |
 | IO-006 | システム | 条件 | 整合 | L1 | `is_empty` は NULL・空文字・`[]`(複数選択の空)で真、`is_not_empty` はその逆 | — |
-| IO-007 | システム | 条件 | 整合 | L1 | 日時の列(ISO)を日付(`YYYY-MM-DD`)と比べる → 端末の時刻帯での日付に直してから比べる(朝の完了が前日扱いにならない) | — |
+| IO-007 | システム | 条件 | 整合 | L1 | 日時の列(ISO)を日付(`YYYY-MM-DD`)と比べる → 文脈の時刻帯(`ctx.timezone`。ワークスペースの設定)での日付に直してから比べる。UTC 23:30 の完了は `Asia/Tokyo` では翌日、`UTC` では当日(端末の時刻帯に依らない) | — |
 | IO-008 | システム | 条件 | 整合 | L1 | `$me` は文脈の利用者 ID。`$today-30` は 30 日前。`$end_of_month` は月末 | — |
 | IO-009 | システム | 条件 | 整合 | L1 | 複数選択の列(JSON の配列): `in` / `eq` は「どれかを含む」、`not_in` / `ne` は「どれも含まない」。壊れた JSON は配列と見なさない | — |
 | IO-010 | システム | 条件 | 整合 | L1 | `and` の中の `or`(お気に入りの「今日」: 期限が今日以前 または 期限が空)を正しく評価する。空の `and` は真 | — |
@@ -34,9 +34,9 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-024 | システム | 検索 | 整合 | L2 | `query` の `q` は文字の列だけを見る。richtext は書式(タグ)を落とした文字で当てる(`<strong>` の中の語も当たる) | — |
 | IO-025 | システム | 検索 | 整合 | L2 | `query` の `references` に、参照・利用者・関連先(polymorphic)の表示名が、必要な ID の分だけ入る | — |
 | IO-026 | システム | 検索 | 整合 | L2 | `searchAll`: 名前に当たったレコードが先。1 テーブル 6 件まで。サイドバーに出していないテーブル(活動)も対象 | — |
-| IO-027 | システム | 集計 | 整合 | L2 | `aggregate` の `count` / `sum` / `avg`。`weight_field` は値 × 百分率 / 100 を足す。値が数値でない行は数えない | — |
+| IO-027 | システム | 集計 | 整合 | L2 | `aggregate`: `count` は条件に合う全行数(値が空でも数える)。`sum` / `avg` は値が数値の行だけ(数値の行が 0 件なら 0)。`weight_field` は値 × 百分率 / 100 を足す | — |
 | IO-028 | システム | 集計 | 整合 | L2 | `aggregate` の `group_by` が選択肢 → 定義順。`order: value_desc` → 値の大きい順。値が空のグループは `key: null`・「未設定」で末尾 | — |
-| IO-029 | システム | 集計 | 整合 | L2 | `aggregate` の `bucket: month` + `range` → 範囲内の月を全部、空の月も 0 で返す。ラベルは「9月」、今月は年付き | — |
+| IO-029 | システム | 集計 | 整合 | L2 | `aggregate` の `bucket: month` + `range` → 範囲内の月を全部、空の月も 0 で返す。ラベルは区間の先頭と 1 月だけ年付き(`2026年8月`・`9月`・年をまたげば `2027年1月`) | — |
 | IO-030 | システム | 集計 | 整合 | L2 | `aggregate` を関連先のテーブル名の列(`related_object`)で分ける → ラベルはテーブルの表示名、空は「関連先なし」 | — |
 
 ## 3. 日付と読み取り(`lib/dates.ts`・`lib/quickAddParser.ts`)
@@ -50,7 +50,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-044 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「毎週」→ `repeat: weekly`、期限が無ければ今日。「平日」「隔週」「毎月」も。2 つめの繰り返しの語は件名に残る | — |
 | IO-045 | 利用者 | 日付 | 表記 | L1 | `parseQuickAdd`: 全角の「ｐ１」や「９／３０」も読む(NFKC) | — |
 | IO-046 | システム | 日付 | 整合 | L1 | `resolveDateMacro`: `$today+N` / `$today-N` / `$start_of_month` / `$end_of_month`。知らないマクロは null | — |
-| IO-047 | システム | 日付 | 整合 | L1 | `addMonths`: 1/31 の 1 か月後は 2 月末(翌月の存在しない日は月末に寄せる) | — |
+| IO-047 | システム | 日付 | 整合 | L1 | `addMonths`(区間の計算用): 日を 1 日に固定して月を進める(`2026-01-31` + 1 → `2026-02-01`、12 月 + 1 → 翌年 1 月)。日を保つ計算は `nextDue`(IO-085)の側 | — |
 
 ## 4. CSV(`mocks/csv.ts`)
 
@@ -74,9 +74,9 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 |
 |---|---|---|---|---|---|---|
 | IO-080 | 利用者 | 書式 | 表記 | L1 | `formatYen`: `¥1,200,000`(半角の ¥)。`formatYenCompact`: 1.2億円 / 1,240万円 / ¥9,800 | — |
-| IO-081 | 利用者 | 書式 | 表記 | L1 | `formatNumber` / `formatPercent` に `scale` → その桁で揃える(`12.50%`)。無ければ最大 1 桁 | — |
+| IO-081 | 利用者 | 書式 | 表記 | L1 | `formatNumber`: `scale` 無しは整数に丸める(12.54 → `13`)、`scale: 2` は `12.54`、`scale: 0` は `13`。`formatPercent`: 無しは最大 1 桁(`12.5%`)、`scale: 2` は `12.54%`、**`scale: 0` は `13%`(0 を無視しない)** | — |
 | IO-082 | システム | 洗浄 | 安全弁 | L1 | `sanitizeHtml`: `<script>`・`onclick`・`<img>` を落とし、`<div>`/`<span>` は中身だけ残す。`javascript:` の `href` は落とし、`https:` は `target=_blank rel=noreferrer` を付ける | — |
 | IO-083 | システム | 洗浄 | 整合 | L1 | `sanitizeHtml`: 言及 `<span data-type="mention" data-id="accounts:<uuid>" data-label="…">` は `role=link` 付きで残す。`data-id` が規則外なら中身の文字だけ残す | — |
 | IO-084 | システム | 洗浄 | 整合 | L1 | `extractMentions`: 二重引用符でも単引用符でも、同じ ID は 1 回。`plainText` は段落・改行を落として `@名前` を残す。`isEmptyHtml` は `<p></p>` を空とみなす | — |
-| IO-085 | 利用者 | 繰り返し | 整合 | L1 | `nextDue`: 毎日 +1、平日は土日を飛ばす(金曜 → 月曜)、毎週 +7、隔週 +14、毎月 +1 か月(1/31 → 2/28)、毎年(2/29 → 翌年 2/28)。知らない規則は null | — |
+| IO-085 | 利用者 | 繰り返し | 整合 | L1 | `nextDue`: 毎日 +1、平日は土日を飛ばす(金曜 → 月曜)、毎週 +7、隔週 +14、毎月は日を保つ(`2026-03-15` → `04-15`、`01-31` → `02-28`、`2024-01-31` → `02-29`)、毎年(`2024-02-29` → `2025-02-28`)。知らない規則は null | — |
 | IO-086 | 利用者 | 書式 | 整合 | L1 | `parseDriveFiles`: JSON の配列を読み、`id` と `url` の無い要素と壊れた JSON は捨てる。`driveKind` は MIME からドキュメント / スプレッドシート / スライド / PDF / ファイル | — |

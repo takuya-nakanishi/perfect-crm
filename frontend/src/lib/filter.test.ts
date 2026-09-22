@@ -13,6 +13,10 @@ describe('フィルタの評価(lib/filter.ts)', () => {
   })
   it('IO-002 eq と大小比較は NULL に対して偽', () => {
     expect(matchFilter(row({ amount: null }), { field: 'amount', op: 'eq', value: 1 }, ctx)).toBe(false)
+    // NULL 同士も等しくない(SQL と同じ)。値を省いた eq も偽
+    expect(matchFilter(row({ amount: null }), { field: 'amount', op: 'eq', value: null }, ctx)).toBe(false)
+    expect(matchFilter(row({ amount: null }), { field: 'amount', op: 'eq' }, ctx)).toBe(false)
+    expect(matchFilter(row({ amount: 1 }), { field: 'amount', op: 'ne', value: null }, ctx)).toBe(true)
     expect(matchFilter(row({ amount: null }), { field: 'amount', op: 'gt', value: 1 }, ctx)).toBe(false)
     expect(matchFilter(row({ amount: null }), { field: 'amount', op: 'lte', value: 1 }, ctx)).toBe(false)
   })

@@ -8,10 +8,12 @@ import { localDateOf, resolveDateMacro, todayISO } from './dates'
 export interface FilterContext {
   today: string
   me: string | null
+  /** 「今日」と、日時 → 日付の変換に使う時刻帯(IANA)。ワークスペースの設定(04 §3)。省けば端末 */
+  timezone?: string
 }
 
-export function defaultContext(me: string | null): FilterContext {
-  return { today: todayISO(), me }
+export function defaultContext(me: string | null, timezone?: string): FilterContext {
+  return { today: todayISO(timezone), me, timezone }
 }
 
 function resolve(value: Scalar | undefined, ctx: FilterContext): Scalar | undefined {
@@ -24,8 +26,8 @@ const isDateOnly = (v: unknown): v is string => typeof v === 'string' && /^\d{4}
 const isDateTime = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)
 
 /** 日時の列を日付と比べるときは、利用者のタイムゾーンでの日付に直してから比べる */
-function align(cell: Scalar, target: Scalar | undefined): Scalar {
-  return isDateTime(cell) && isDateOnly(target) ? localDateOf(cell) : cell
+function align(cell: Scalar, target: Scalar | undefined, timezone?: string): Scalar {
+  return isDateTime(cell) && isDateOnly(target) ? localDateOf(cell, timezone) : cell
 }
 
 function isEmpty(v: Scalar | undefined): boolean {
@@ -65,12 +67,13 @@ function matchCondition(row: Row, c: Condition, ctx: FilterContext): boolean {
   }
 
   const target = resolve(Array.isArray(c.value) ? c.value[0] : c.value, ctx)
-  const cell = align(raw, target)
+  const cell = align(raw, target, ctx.timezone)
   switch (c.op) {
+    // NULL は何とも等しくない(SQL と同じ)。ne は NULL を含む(04 §3)
     case 'eq':
-      return cell === (target ?? null)
+      return !isEmpty(cell) && cell === (target ?? null)
     case 'ne':
-      return cell !== (target ?? null)
+      return isEmpty(cell) || cell !== (target ?? null)
     case 'contains':
       return typeof cell === 'string' && typeof target === 'string' && cell.toLowerCase().includes(target.toLowerCase())
     case 'lt':

@@ -203,7 +203,7 @@ function matchesText(meta: ObjectMeta, row: Row, needle: string): boolean {
 
 export function query(object: string, params: ListParams, me: string | null) {
   const meta = objectMeta(object)
-  const ctx = defaultContext(me)
+  const ctx = defaultContext(me, workspace.timezone)
   let rows = table(object).filter((r) => matchFilter(r, params.filter, ctx))
 
   const needle = params.q ? normalizeText(params.q) : ''
@@ -450,7 +450,7 @@ function measureOf(rows: Row[], m: AggregateParams['measure']): number {
 
 export function aggregate(object: string, params: AggregateParams, me: string | null): AggregateRow[] {
   const meta = objectMeta(object)
-  const ctx = defaultContext(me)
+  const ctx = defaultContext(me, workspace.timezone)
   const rows = table(object).filter((r) => matchFilter(r, params.filter, ctx))
   const g = params.group_by
   if (!g) return [{ key: null, label: '', value: measureOf(rows, params.measure) }]
