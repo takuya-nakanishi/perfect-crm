@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, ViewInput, WebFormInput } from '@/api/types'
+import { parseDriveFiles } from '@/lib/drive'
 import usersJson from './fixtures/users.json'
+import { resetDrive } from './drive'
 import { getMeta, resetTables } from './engine'
 import { createMockClient } from './mockClient'
 import { listForms, listTokens, resetSettings } from './settings'
@@ -399,5 +401,43 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     await api.logout()
     expect(await statusOf(() => api.getMeta()), 'getMeta(ログアウト後)').toBe(401)
     expect(await statusOf(() => api.listRecords(object.key)), 'listRecords(ログアウト後)').toBe(401)
+  })
+})
+
+describe('Google ドライブの擬似(mocks/drive.ts)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetTables()
+    resetDrive()
+  })
+
+  it('SET-061 createDocument: ドキュメントの名前はレコードの表示名、MIME はドキュメント、項目の末尾に足される。作ったものは listFiles で見つかる', async () => {
+    const api = createMockClient()
+    await api.login(member.email, 'x')
+    // 表示名の項目が name でないテーブル(tasks は title)で、drive_files の項目を持つもの
+    const meta = getMeta().objects.find((o) => o.name_field !== 'name' && o.fields.some((f) => f.type === 'drive_files'))!
+    const field = meta.fields.find((f) => f.type === 'drive_files')!.key
+    const { record } = await api.createRecord(meta.key, { [meta.name_field]: '架空商事 定例の議事録' })
+
+    // 先に 1 件付けておく(末尾に足されることを見るため)
+    const [existing] = await api.listDriveFiles('提案書')
+    await api.updateRecord(meta.key, record.id, { [field]: JSON.stringify([existing]) })
+    const before = await api.listDriveFiles('')
+
+    const res = await api.createDriveDocument(meta.key, record.id, field)
+    const attached = parseDriveFiles(res.record[field])
+    expect(attached.map((f) => f.id), '既にあったものの後ろに足される').toEqual([existing.id, expect.any(String)])
+    const doc = attached[1]
+    expect(doc.id, '既存のファイルと別の ID').not.toBe(existing.id)
+    expect(doc, '名前はレコードの表示名、MIME はドキュメント').toMatchObject({ name: '架空商事 定例の議事録', mime_type: 'application/vnd.google-apps.document' })
+    expect(before.some((f) => f.id === doc.id), '作る前には無かった').toBe(false)
+
+    // 保存された行でも同じ
+    const saved = await api.getRecord(meta.key, record.id)
+    expect(parseDriveFiles(saved.record[field])).toEqual(attached)
+
+    // 作ったものは listFiles(名前の部分一致・空の検索)で見つかる
+    expect(await api.listDriveFiles('定例の議事録'), '名前で探すと見つかる').toEqual([doc])
+    expect((await api.listDriveFiles('')).some((f) => f.id === doc.id), '空の検索にも出る').toBe(true)
   })
 })
