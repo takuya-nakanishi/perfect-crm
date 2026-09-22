@@ -21,7 +21,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-008 | システム | 条件 | 整合 | L1 | `$me` は文脈の利用者 ID。`$today-30` は 30 日前。`$end_of_month` は月末 | `filter.test.ts` |
 | IO-009 | システム | 条件 | 整合 | L1 | 複数選択の列(JSON の配列): `in` / `eq` は「どれかを含む」、`not_in` / `ne` は「どれも含まない」。壊れた JSON は配列と見なさない | `filter.test.ts` |
 | IO-010 | システム | 条件 | 整合 | L1 | `and` の中の `or`(お気に入りの「今日」: 期限が今日以前 または 期限が空)を正しく評価する。空の `and` は真 | `filter.test.ts` |
-| IO-011 | システム | 並び | 整合 | L1 | `makeComparator`: NULL は昇順でも降順でも末尾。文字は文字順、数値は数値順。2 つめのキーで同点を割る | — |
+| IO-011 | システム | 並び | 整合 | L1 | `makeComparator`: NULL は昇順でも降順でも末尾。文字は文字順、数値は数値順。2 つめのキーで同点を割る | `filter.test.ts` |
 
 ## 2. 並び・集計・検索(`mocks/engine.ts`)
 

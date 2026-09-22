@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Condition, Filter, Row } from '@/api/types'
-import { matchFilter } from './filter'
+import { makeComparator, matchFilter } from './filter'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const ctx = { today: '2026-09-22', me: 'u1' }
@@ -151,5 +151,44 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     // 空の and は真(条件なし)。空の or は偽
     expect(matchFilter(row({ due: '2026-09-23' }), { and: [] }, ctx)).toBe(true)
     expect(matchFilter(row({ due: '2026-09-23' }), { or: [] }, ctx)).toBe(false)
+  })
+})
+
+describe('並び替え(lib/filter.ts の makeComparator)', () => {
+  const ids = (rows: Row[]) => rows.map((r) => r.id)
+  it('IO-011 NULL は昇順でも降順でも末尾。文字は文字順、数値は数値順。2 つめのキーで同点を割る', () => {
+    // 数値は数値順(文字として比べると 10 が 9 より前に来る)。NULL は昇順・降順どちらでも末尾
+    const nums = [
+      { id: 'n9', amount: 9 },
+      { id: 'null', amount: null },
+      { id: 'n10', amount: 10 },
+      { id: 'n2', amount: 2 },
+    ]
+    expect(ids([...nums].sort(makeComparator([{ field: 'amount', dir: 'asc' }])))).toEqual(['n2', 'n9', 'n10', 'null'])
+    expect(ids([...nums].sort(makeComparator([{ field: 'amount', dir: 'desc' }])))).toEqual(['n10', 'n9', 'n2', 'null'])
+    // 文字は文字順。NULL は末尾
+    const names = [
+      { id: 'c', name: 'ウエノ' },
+      { id: 'null', name: null },
+      { id: 'a', name: 'アオキ' },
+      { id: 'b', name: 'イトウ' },
+    ]
+    expect(ids([...names].sort(makeComparator([{ field: 'name', dir: 'asc' }])))).toEqual(['a', 'b', 'c', 'null'])
+    expect(ids([...names].sort(makeComparator([{ field: 'name', dir: 'desc' }])))).toEqual(['c', 'b', 'a', 'null'])
+    // 1 つめのキーが同点なら 2 つめのキーで割る(段階は昇順、金額は降順)
+    const deals = [
+      { id: 'won-1', stage: 'won', amount: 1 },
+      { id: 'lead-5', stage: 'lead', amount: 5 },
+      { id: 'won-3', stage: 'won', amount: 3 },
+      { id: 'lead-null', stage: 'lead', amount: null },
+      { id: 'lead-8', stage: 'lead', amount: 8 },
+    ]
+    const bothKeys = makeComparator([
+      { field: 'stage', dir: 'asc' },
+      { field: 'amount', dir: 'desc' },
+    ])
+    expect(ids([...deals].sort(bothKeys))).toEqual(['lead-8', 'lead-5', 'lead-null', 'won-3', 'won-1'])
+    // どのキーでも同点なら 0
+    expect(bothKeys(row({ stage: 'won', amount: 1 }), row({ stage: 'won', amount: 1 }))).toBe(0)
   })
 })
