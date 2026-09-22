@@ -37,7 +37,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `reorderObjects` にサイドバーの 3 件だけ渡す → その順が先頭、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400 | `engine.test.ts` |
 | META-025 | 管理者 | 定義 | 整合 | L1 | `autoFieldKey`: 英字の名前 `Lead Source` → `lead_source`。和文 `見積番号` → `field_1`、2 つめは `field_2`。既にある列名は避ける | `tableDraft.test.ts` |
 | META-026 | 管理者 | 定義 | 整合 | L1 | `validateDraft`: 列名の重複・予約語・選択肢の無い選択肢型・参照先の無い参照型を、それぞれ 1 件ずつ数える。名前の無い新しい行は数えない | `tableDraft.test.ts` |
-| META-027 | 管理者 | 定義 | 整合 | L1 | `toInput`: 名前の無い新しい行を落とし、表示名の項目は必須にし、文字型以外の `max_length` を送らない | — |
+| META-027 | 管理者 | 定義 | 整合 | L1 | `toInput`: 名前の無い新しい行を落とし、表示名の項目は必須にし、文字型以外の `max_length` を送らない | `tableDraft.test.ts` |
 | META-028 | 管理者 | 定義 | キー | L3 | 管理者: 歯車の「テーブル設定」→ 環境設定へ飛び、そのテーブルの設定が開く | `smoke.mjs「歯車の「テーブル設定」は環境設定へ飛び、そのテーブルの設定が開く」` |
 | META-029 | 管理者 | 定義 | キー | L5 | 管理者(Windows の MS-IME): 列名の欄で Shift+L, e, a, d → `lead` になり「lleあ」にならない(runbook §4) | — |
 

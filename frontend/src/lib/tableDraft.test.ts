@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MetaResponse } from '@/api/types'
-import { autoFieldKey, blankDraft, newField, validateDraft } from './tableDraft'
+import { autoFieldKey, blankDraft, newField, toInput, validateDraft } from './tableDraft'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 
@@ -64,5 +64,40 @@ describe('テーブル設定の下書き(lib/tableDraft.ts)', () => {
     // 名前の無い新しい行が、既にある列名と重なっていても数えない
     const blankDup = newField(draft.fields, { key: 'code' })
     expect(validateDraft({ ...draft, fields: [name, code, blankDup] }, meta).count).toBe(0)
+  })
+
+  it('META-027 toInput は名前の無い新しい行を落とし、表示名の項目は必須にし、文字型以外の max_length を送らない', () => {
+    const meta = { objects: [], views: [], users: [] } as unknown as MetaResponse
+    const draft = { ...blankDraft(meta), label: ' 見積 ', key: 'quotes' }
+    // 表示名の項目を、必須を外した状態にしておく
+    const name = { ...draft.fields[0], required: false }
+    const memo = newField([name], { label: ' 備考 ', key: 'memo', type: 'textarea', max_length: 500 })
+    const amount = newField([name], { label: '金額', key: 'amount', type: 'number', max_length: 100, scale: 0 })
+    const due = newField([name], { label: '期限', key: 'due', type: 'date', max_length: 20 })
+    const blank = newField([name], { key: 'field_1', type: 'select', max_length: 10 })
+    const spaces = newField([name], { label: '   ', key: 'field_2' })
+
+    const input = toInput({ ...draft, fields: [name, memo, blank, amount, spaces, due] })
+    expect(input.label).toBe('見積')
+
+    // 名前の無い新しい行(空白だけの名前も)は落ちる。残りは元の順
+    expect(input.fields.map((f) => f.key)).toEqual(['name', 'memo', 'amount', 'due'])
+    const byKey = Object.fromEntries(input.fields.map((f) => [f.key, f]))
+
+    // 表示名の項目は、required を外していても必須で送る。ほかは下書きのまま
+    expect(byKey.name.required).toBe(true)
+    expect(byKey.memo.required).toBe(false)
+    expect(byKey.memo.label).toBe('備考')
+
+    // max_length は文字型だけ。数値・日付には送らない
+    expect(byKey.name.max_length).toBe(255)
+    expect(byKey.memo.max_length).toBe(500)
+    expect(byKey.amount.max_length).toBeUndefined()
+    expect(byKey.amount.scale).toBe(0)
+    expect(byKey.due.max_length).toBeUndefined()
+
+    // 既にある項目は、名前を消しても落とさない(サーバが 400 で返す)
+    const existing = { ...memo, isNew: false, label: '' }
+    expect(toInput({ ...draft, fields: [name, existing] }).fields.map((f) => f.key)).toEqual(['name', 'memo'])
   })
 })
