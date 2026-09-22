@@ -273,6 +273,37 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '404 は送信に数えない').toBe(4)
   })
 
+  it('SET-047 rotateWebFormKey は鍵だけを作り直し、古い鍵で送ると 404 でレコードも送信の数も増えず、新しい鍵なら通る', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    await api.createObject(input('set_form_rotate'))
+    const form = await api.createWebForm({ name: '鍵のフォーム', object: 'set_form_rotate', fields: ['name'], defaults: {}, enabled: true, redirect_url: null })
+    const submit = (key: string, name: string) => statusOf(() => api.submitWebForm(key, { name }))
+
+    // 対照: 作り直す前は今の鍵で通る
+    expect(await submit(form.key, '通る 1'), '作り直す前').toBeNull()
+
+    const rotated = await api.rotateWebFormKey(form.id)
+    expect(rotated.key, '鍵が変わる').not.toBe(form.key)
+    expect(rotated, '鍵のほかは同じフォーム').toMatchObject({ ...form, key: rotated.key, submissions: 1, last_submitted_at: expect.any(String) })
+    expect((await api.listWebForms()).find((f) => f.id === form.id)!.key, '一覧も新しい鍵').toBe(rotated.key)
+
+    expect(await submit(form.key, '古い鍵'), '古い鍵').toBe(404)
+    expect(await submit(rotated.key, '通る 2'), '新しい鍵').toBeNull()
+
+    // もう一度作り直すと、1 つ前の鍵も効かなくなる
+    const again = await api.rotateWebFormKey(form.id)
+    expect(again.key).not.toBe(rotated.key)
+    expect(again.key).not.toBe(form.key)
+    expect(await submit(rotated.key, '1 つ前の鍵'), '1 つ前の鍵').toBe(404)
+    expect(await submit(form.key, '最初の鍵'), '最初の鍵').toBe(404)
+    expect(await submit(again.key, '通る 3'), '今の鍵').toBeNull()
+
+    const { records } = await api.listRecords('set_form_rotate')
+    expect(records.map((r) => r.name).sort(), '404 のときはレコードができない').toEqual(['通る 1', '通る 2', '通る 3'])
+    expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '404 は送信に数えない').toBe(3)
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
