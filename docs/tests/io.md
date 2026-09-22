@@ -79,4 +79,4 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-083 | システム | 洗浄 | 整合 | L1 | `sanitizeHtml`: 言及 `<span data-type="mention" data-id="accounts:<uuid>" data-label="…">` は `role=link` 付きで残す。`data-id` が規則外なら中身の文字だけ残す | `richtext.test.ts` |
 | IO-084 | システム | 洗浄 | 整合 | L1 | `extractMentions`: 二重引用符でも単引用符でも、同じ ID は 1 回。`plainText` は段落・改行を落として `@名前` を残す。`isEmptyHtml` は `<p></p>` を空とみなす | `richtext.test.ts` |
 | IO-085 | 利用者 | 繰り返し | 整合 | L1 | `nextDue`: 毎日 +1、平日は土日を飛ばす(金曜 → 月曜)、毎週 +7、隔週 +14、毎月は日を保つ(`2026-03-15` → `04-15`、`01-31` → `02-28`、`2024-01-31` → `02-29`)、毎年(`2024-02-29` → `2025-02-28`)。知らない規則は null | `recurrence.test.ts` |
-| IO-086 | 利用者 | 書式 | 整合 | L1 | `parseDriveFiles`: JSON の配列を読み、`id` と `url` の無い要素と壊れた JSON は捨てる。`driveKind` は MIME からドキュメント / スプレッドシート / スライド / PDF / ファイル | — |
+| IO-086 | 利用者 | 書式 | 整合 | L1 | `parseDriveFiles`: JSON の配列を読み、`id` と `url` の無い要素と壊れた JSON は捨てる。`driveKind` は MIME からドキュメント / スプレッドシート / スライド / PDF / ファイル | `drive.test.ts` |
