@@ -576,4 +576,42 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     createView('opportunities', view('試しの商談 2', { label: 'お気に入り 2', position: 0 }, opps))
     expect(created(before).pin!.position).toBe(pinLast + 2)
   })
+
+  it('META-051 pin を付けたまま updateView(名前だけ変える)→ pin.position は変わらない。外して保存し、また付けて保存するとお気に入りの末尾(元の位置には戻らない)', () => {
+    const accounts = getMeta().objects.find((o) => o.key === 'accounts')!
+    const ids = () => getMeta().views.map((v) => v.id)
+    const lastPin = () => Math.max(0, ...getMeta().views.map((v) => v.pin?.position ?? 0))
+    const viewOf = (id: string) => getMeta().views.find((v) => v.id === id)!
+    /** 画面が保存するときの本文(name・type・config・pin の全量) */
+    const inputOf = (id: string): ViewInput => {
+      const { id: _id, object: _object, position: _position, ...rest } = viewOf(id)
+      return rest as ViewInput
+    }
+    const make = (name: string) => {
+      const before = ids()
+      createView('accounts', { name, type: 'list', config: { columns: [{ field: accounts.name_field }] }, pin: { label: name, position: 0 } })
+      return getMeta().views.find((v) => !before.includes(v.id))!.id
+    }
+    const a = make('試し A')
+    const b = make('試し B')
+    const aPin = viewOf(a).pin!.position
+    expect(viewOf(b).pin!.position).toBe(aPin + 1)
+    // 名前だけ変えて保存しても、お気に入りの位置はそのまま
+    updateView(a, { ...inputOf(a), name: '試し A2' })
+    expect(viewOf(a).name).toBe('試し A2')
+    expect(viewOf(a).pin).toEqual({ label: '試し A', position: aPin })
+    // 本文の pin.position が違っても、既にあるお気に入りの位置は動かない
+    updateView(a, { ...inputOf(a), pin: { label: '試し A', position: 999 } })
+    expect(viewOf(a).pin!.position).toBe(aPin)
+    // 外して保存
+    const { pin: _pin, ...unpinned } = inputOf(a)
+    updateView(a, unpinned as ViewInput)
+    expect(viewOf(a).pin).toBeUndefined()
+    // もう一度付けて保存すると、元の位置(aPin)ではなく末尾
+    const last = lastPin()
+    expect(last).toBeGreaterThanOrEqual(aPin + 1)
+    updateView(a, { ...inputOf(a), pin: { label: '試し A', position: aPin } })
+    expect(viewOf(a).pin!.position).toBe(last + 1)
+    expect(viewOf(b).pin!.position).toBe(aPin + 1)
+  })
 })
