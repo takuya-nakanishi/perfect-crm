@@ -81,7 +81,21 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(await statusOf(() => api.createWebForm(form)), 'createWebForm(管理者)').toBeNull()
   })
 
-  it('SET-004 管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
+  it('SET-021 createMcpToken の secret は wks_ + 40 文字、token.prefix はその先頭 8 文字で、一覧には secret が入らない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+
+    const { token, secret } = await api.createMcpToken('試しのトークン', 'claude-code')
+    expect(secret).toMatch(/^wks_[a-z0-9]{40}$/)
+    expect(token.prefix).toBe(secret.slice(0, 8))
+
+    const listed = (await api.listMcpTokens()).find((t) => t.id === token.id)
+    expect(listed, '発行したトークンが一覧に入る').toMatchObject({ prefix: token.prefix })
+    expect(listed).not.toHaveProperty('secret')
+    expect(JSON.stringify(await api.listMcpTokens()), '一覧のどこにも全文が無い').not.toContain(secret)
+  })
+
+  it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
     const object = getMeta().objects[0]
