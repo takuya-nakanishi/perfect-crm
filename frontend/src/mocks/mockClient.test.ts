@@ -440,4 +440,24 @@ describe('Google ドライブの擬似(mocks/drive.ts)', () => {
     expect(await api.listDriveFiles('定例の議事録'), '名前で探すと見つかる').toEqual([doc])
     expect((await api.listDriveFiles('')).some((f) => f.id === doc.id), '空の検索にも出る').toBe(true)
   })
+
+  it('SET-062 createDocument: ドライブ型でない項目 → 400。無いレコード → 404', async () => {
+    const api = createMockClient()
+    await api.login(member.email, 'x')
+    // SET-061 と同じテーブル(必須の参照を持たないもの)
+    const meta = getMeta().objects.find((o) => o.name_field !== 'name' && o.fields.some((f) => f.type === 'drive_files'))!
+    const driveField = meta.fields.find((f) => f.type === 'drive_files')!.key
+    const textField = meta.fields.find((f) => f.type === 'text')!.key
+    const { record } = await api.createRecord(meta.key, { [meta.name_field]: '架空商事 見積の控え' })
+    const filesBefore = await api.listDriveFiles('')
+
+    expect(await statusOf(() => api.createDriveDocument(meta.key, record.id, textField)), 'ドライブ型でない項目').toBe(400)
+    expect(await statusOf(() => api.createDriveDocument(meta.key, record.id, 'no_such_field')), '無い項目').toBe(400)
+    expect(await statusOf(() => api.createDriveDocument(meta.key, 'no-such-record', driveField)), '無いレコード').toBe(404)
+
+    // どれもドキュメントを作らず、レコードも変えない
+    expect(await api.listDriveFiles(''), 'ドライブにファイルが増えない').toEqual(filesBefore)
+    const saved = await api.getRecord(meta.key, record.id)
+    expect(saved.record, 'レコードは変わらない').toEqual(record)
+  })
 })
