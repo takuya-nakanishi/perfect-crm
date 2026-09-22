@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput } from '@/api/types'
+import type { ObjectInput, WebFormInput } from '@/api/types'
 import usersJson from './fixtures/users.json'
 import { getMeta, resetTables } from './engine'
 import { createMockClient } from './mockClient'
+import { listForms, listTokens, resetSettings } from './settings'
 
 // テストケース表: docs/tests/settings.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -32,6 +33,7 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
   beforeEach(() => {
     localStorage.clear()
     resetTables()
+    resetSettings()
   })
 
   it('SET-002 管理者でない利用者の createObject / updateObject / deleteObject / reorderObjects は 403 で、テーブルの定義は変わらない', async () => {
@@ -52,5 +54,30 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     await api.login(admin.email, 'x')
     expect(await statusOf(() => api.createObject(input('set_trial'))), 'createObject(管理者)').toBeNull()
     expect(await statusOf(() => api.reorderObjects(getMeta().objects.map((o) => o.key).reverse())), 'reorderObjects(管理者)').toBeNull()
+  })
+
+  it('SET-003 管理者でない利用者の listMcpTokens / createMcpToken / listWebForms / createWebForm は 403 で、トークンとフォームは増えない', async () => {
+    const api = createMockClient()
+    await api.login(member.email, 'x')
+    const object = getMeta().objects[0]
+    const field = object.fields.find((f) => !f.readonly && f.type === 'text')!
+    const form: WebFormInput = { name: '試しのフォーム', object: object.key, fields: [field.key], defaults: {}, enabled: true, redirect_url: null }
+    const tokensBefore = listTokens()
+    const formsBefore = listForms()
+
+    expect(await statusOf(() => api.listMcpTokens()), 'listMcpTokens').toBe(403)
+    expect(await statusOf(() => api.createMcpToken('試しのトークン', 'claude-code')), 'createMcpToken').toBe(403)
+    expect(await statusOf(() => api.listWebForms()), 'listWebForms').toBe(403)
+    expect(await statusOf(() => api.createWebForm(form)), 'createWebForm').toBe(403)
+    expect(listTokens()).toEqual(tokensBefore)
+    expect(listForms()).toEqual(formsBefore)
+
+    // 対照: 管理者なら同じ呼び出しが通る(403 は管理者かどうかで決まっている)
+    await api.logout()
+    await api.login(admin.email, 'x')
+    expect(await statusOf(() => api.listMcpTokens()), 'listMcpTokens(管理者)').toBeNull()
+    expect(await statusOf(() => api.createMcpToken('試しのトークン', 'claude-code')), 'createMcpToken(管理者)').toBeNull()
+    expect(await statusOf(() => api.listWebForms()), 'listWebForms(管理者)').toBeNull()
+    expect(await statusOf(() => api.createWebForm(form)), 'createWebForm(管理者)').toBeNull()
   })
 })
