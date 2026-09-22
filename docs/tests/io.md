@@ -18,7 +18,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-005 | システム | 条件 | 表記 | L1 | `contains` は大文字小文字を区別しない。文字でない列には偽 | `filter.test.ts` |
 | IO-006 | システム | 条件 | 整合 | L1 | `is_empty` は NULL・空文字・`[]`(複数選択の空)で真、`is_not_empty` はその逆 | `filter.test.ts` |
 | IO-007 | システム | 条件 | 整合 | L1 | 日時の列(ISO)を日付(`YYYY-MM-DD`)と比べる → 文脈の時刻帯(`ctx.timezone`。ワークスペースの設定)での日付に直してから比べる。UTC 23:30 の完了は `Asia/Tokyo` では翌日、`UTC` では当日(端末の時刻帯に依らない) | `filter.test.ts` |
-| IO-008 | システム | 条件 | 整合 | L1 | `$me` は文脈の利用者 ID。`$today-30` は 30 日前。`$end_of_month` は月末 | — |
+| IO-008 | システム | 条件 | 整合 | L1 | `$me` は文脈の利用者 ID。`$today-30` は 30 日前。`$end_of_month` は月末 | `filter.test.ts` |
 | IO-009 | システム | 条件 | 整合 | L1 | 複数選択の列(JSON の配列): `in` / `eq` は「どれかを含む」、`not_in` / `ne` は「どれも含まない」。壊れた JSON は配列と見なさない | — |
 | IO-010 | システム | 条件 | 整合 | L1 | `and` の中の `or`(お気に入りの「今日」: 期限が今日以前 または 期限が空)を正しく評価する。空の `and` は真 | — |
 | IO-011 | システム | 並び | 整合 | L1 | `makeComparator`: NULL は昇順でも降順でも末尾。文字は文字順、数値は数値順。2 つめのキーで同点を割る | — |

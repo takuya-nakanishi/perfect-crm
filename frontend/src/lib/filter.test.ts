@@ -88,4 +88,24 @@ describe('フィルタの評価(lib/filter.ts)', () => {
       vi.unstubAllEnvs()
     }
   })
+  it('IO-008 $me は文脈の利用者 ID、$today-30 は 30 日前、$end_of_month は月末に解決する', () => {
+    // $me: 文脈の利用者(u1)に解決する。利用者が無い文脈では誰とも一致しない
+    const mine: Condition = { field: 'owner_id', op: 'eq', value: '$me' }
+    expect(matchFilter(row({ owner_id: 'u1' }), mine, ctx)).toBe(true)
+    expect(matchFilter(row({ owner_id: 'u2' }), mine, ctx)).toBe(false)
+    expect(matchFilter(row({ owner_id: '$me' }), mine, { ...ctx, me: null })).toBe(false)
+    expect(matchFilter(row({ owner_id: null }), mine, { ...ctx, me: null })).toBe(false)
+    expect(matchFilter(row({ owner_id: 'u2' }), { field: 'owner_id', op: 'in', value: ['$me'] }, { ...ctx, me: 'u2' })).toBe(true)
+    // $today-30: 2026-09-22 の 30 日前は月をまたいで 2026-08-23
+    const ago = (op: Condition['op']): Condition => ({ field: 'due', op, value: '$today-30' })
+    expect(matchFilter(row({ due: '2026-08-23' }), ago('eq'), ctx)).toBe(true)
+    expect(matchFilter(row({ due: '2026-08-22' }), ago('lt'), ctx)).toBe(true)
+    expect(matchFilter(row({ due: '2026-08-24' }), ago('lt'), ctx)).toBe(false)
+    // $end_of_month: 今日の月の末日。30 日の月・閏年の 2 月・年末
+    const eom: Condition = { field: 'due', op: 'eq', value: '$end_of_month' }
+    expect(matchFilter(row({ due: '2026-09-30' }), eom, ctx)).toBe(true)
+    expect(matchFilter(row({ due: '2026-09-31' }), eom, ctx)).toBe(false)
+    expect(matchFilter(row({ due: '2028-02-29' }), eom, { ...ctx, today: '2028-02-10' })).toBe(true)
+    expect(matchFilter(row({ due: '2026-12-31' }), eom, { ...ctx, today: '2026-12-01' })).toBe(true)
+  })
 })
