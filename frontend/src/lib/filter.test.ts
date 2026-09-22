@@ -108,4 +108,28 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     expect(matchFilter(row({ due: '2028-02-29' }), eom, { ...ctx, today: '2028-02-10' })).toBe(true)
     expect(matchFilter(row({ due: '2026-12-31' }), eom, { ...ctx, today: '2026-12-01' })).toBe(true)
   })
+  it('IO-009 複数選択(JSON の配列)は in / eq が「どれかを含む」、not_in / ne が「どれも含まない」。壊れた JSON は配列と見なさない', () => {
+    const tagged = row({ tags: '["vip","hot"]' })
+    const cond = (op: Condition['op'], value: Condition['value']): Condition => ({ field: 'tags', op, value })
+    // in / eq: 選んだ値のどれかを含めば真
+    expect(matchFilter(tagged, cond('in', ['hot', 'cold']), ctx)).toBe(true)
+    expect(matchFilter(tagged, cond('in', ['cold', 'new']), ctx)).toBe(false)
+    expect(matchFilter(tagged, cond('eq', 'vip'), ctx)).toBe(true)
+    expect(matchFilter(tagged, cond('eq', 'cold'), ctx)).toBe(false)
+    // not_in / ne: どれも含まなければ真。1 つでも含めば偽
+    expect(matchFilter(tagged, cond('not_in', ['cold', 'new']), ctx)).toBe(true)
+    expect(matchFilter(tagged, cond('not_in', ['cold', 'vip']), ctx)).toBe(false)
+    expect(matchFilter(tagged, cond('ne', 'cold'), ctx)).toBe(true)
+    expect(matchFilter(tagged, cond('ne', 'hot'), ctx)).toBe(false)
+    // 空の配列は何も含まない
+    expect(matchFilter(row({ tags: '[]' }), cond('in', ['vip']), ctx)).toBe(false)
+    expect(matchFilter(row({ tags: '[]' }), cond('not_in', ['vip']), ctx)).toBe(true)
+    // 壊れた JSON は配列と見なさず、ただの文字として比べる(中の値を含むとは扱わない)
+    const broken = row({ tags: '["vip","hot"' })
+    expect(matchFilter(broken, cond('in', ['vip']), ctx)).toBe(false)
+    expect(matchFilter(broken, cond('eq', 'vip'), ctx)).toBe(false)
+    expect(matchFilter(broken, cond('not_in', ['vip']), ctx)).toBe(true)
+    expect(matchFilter(broken, cond('ne', 'vip'), ctx)).toBe(true)
+    expect(matchFilter(broken, cond('eq', '["vip","hot"'), ctx)).toBe(true)
+  })
 })
