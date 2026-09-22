@@ -128,6 +128,49 @@ describe('CSV の取り込み(mocks/csv.ts)', () => {
     const newest = query('accounts', { sort: [{ field: 'created_at', dir: 'desc' }], limit: 4 }, users[0].id)
     expect(newest.records.map((r) => r.id)).toEqual(res.created_ids)
   })
+
+  it('IO-069 読み取り専用・関連先(polymorphic)・ドライブの列は受け付けない(mapping に当てても null)', () => {
+    const me = users[0].id
+    const account = table('accounts')[0]
+    const csv = [
+      '件名,関連先,関連先のテーブル,関連先のID,資料,完了日時,作成日時',
+      `取り込み確認のタスク,${account.name},accounts,${account.id},提案書 https://docs.google.com/document/d/f1,2026-01-01 10:00,2020-01-01 09:00`,
+    ].join('\n')
+    const refused = { 関連先: null, 関連先のテーブル: null, 関連先のID: null, 資料: null, 完了日時: null, 作成日時: null }
+
+    // 見出しからの推測でも当てない(項目名は一致している)
+    const guessed = importCsv('tasks', { csv, dry_run: true }, me)
+    expect(guessed.mapping).toEqual({ 件名: 'title', ...refused })
+
+    // 明示の mapping で当てても null にする
+    const res = importCsv(
+      'tasks',
+      {
+        csv,
+        mapping: {
+          件名: 'title',
+          関連先: 'related',
+          関連先のテーブル: 'related_object',
+          関連先のID: 'related_id',
+          資料: 'documents',
+          完了日時: 'completed_at',
+          作成日時: 'created_at',
+        },
+      },
+      me,
+    )
+    expect(res.mapping).toEqual({ 件名: 'title', ...refused })
+    expect(res.errors).toEqual([])
+
+    // 作った行は、受け付けない列の値を持たない
+    const created = table('tasks').find((r) => r.id === res.created_ids[0])!
+    expect(created.title).toBe('取り込み確認のタスク')
+    expect(created.related_object ?? null).toBeNull()
+    expect(created.related_id ?? null).toBeNull()
+    expect(created.documents ?? null).toBeNull()
+    expect(created.completed_at ?? null).toBeNull()
+    expect(String(created.created_at)).not.toContain('2020-01-01')
+  })
 })
 
 describe('文字から値への変換(mocks/csv.ts の coerce)', () => {

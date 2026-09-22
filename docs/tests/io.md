@@ -65,7 +65,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-066 | 外部 | CSV | 整合 | L2 | `coerce` の複数選択: 「営業、事務」を配列に。無いラベルはエラー。重複は 1 つ | `csv.test.ts` |
 | IO-067 | 外部 | CSV | 整合 | L2 | `importCsv` の `created_ids` は CSV の並びと同じ順(一覧で上から同じ順に見える) | `csv.test.ts` |
 | IO-068 | 利用者 | CSV | 表記 | L2 | `exportCsv`: 先頭に BOM、見出しは項目名、選択肢はラベル、参照と利用者は表示名、複数選択は「営業、事務」、richtext は書式を落とした文字、ドライブは名前と URL | `csv.test.ts` |
-| IO-069 | 利用者 | CSV | 整合 | L2 | `importCsv`: `readonly`・関連先(polymorphic)・ドライブの列は受け付けない(mapping に当てても null) | — |
+| IO-069 | 利用者 | CSV | 整合 | L2 | `importCsv`: `readonly`・関連先(polymorphic)・ドライブの列は受け付けない(mapping に当てても null) | `csv.test.ts` |
 | IO-070 | 利用者 | CSV | 整合 | L3 | 利用者: 歯車 → エクスポート → `見積_YYYY-MM-DD.csv` が落ちる | `smoke.mjs「エクスポートで CSV が落ちる」` |
 | IO-071 | 利用者 | CSV | 整合 | L3 | 利用者: インポートで 3 行のうち 1 行が無い選択肢 → 読める 2 行だけ取り込む | `smoke.mjs「インポートは、読める行だけを取り込む」` |
 
