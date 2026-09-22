@@ -1934,4 +1934,27 @@ describe('活動の記録(mocks/engine.ts の insert)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-003 種別を省くと先頭の選択肢(電話)が入り、記録者は自分になる(送った値は既定値より勝ち、種別に null を送れば 400)', () => {
+    const fields = getMeta().objects.find((o) => o.key === 'activities')!.fields
+    const type = fields.find((f) => f.key === 'type')!
+    expect(type).toMatchObject({ type: 'select', required: true })
+    expect(type.options![0]).toMatchObject({ value: 'call', label: '電話' })
+    expect(fields.find((f) => f.key === 'owner_id')).toMatchObject({ type: 'user' })
+    const before = table('activities').length
+
+    // 種別と記録者を省く → 400 にならず、電話と自分が入る
+    const { record } = insert('activities', { subject: '先方へ電話' }, TAKUYA)
+    expect(record).toMatchObject({ type: 'call', owner_id: TAKUYA })
+    expect(find('activities', record.id as string)!.record).toMatchObject({ type: 'call', owner_id: TAKUYA })
+    expect(table('activities').length).toBe(before + 1)
+
+    // 送った種別と記録者は既定値より勝つ
+    const other = '09000000-0000-7000-8000-000000000002'
+    expect(insert('activities', { subject: '訪問', type: 'visit', owner_id: other }, TAKUYA).record).toMatchObject({ type: 'visit', owner_id: other })
+
+    // 境界: 明示的に null を送れば既定値は効かず、必須の検証で 400。行は増えない
+    expect(statusOf(() => insert('activities', { subject: '先方へ電話', type: null }, TAKUYA))).toBe(400)
+    expect(table('activities').length).toBe(before + 2)
+  })
 })
