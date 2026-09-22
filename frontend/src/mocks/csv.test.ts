@@ -165,3 +165,28 @@ describe('文字から値への変換(mocks/csv.ts の coerce)', () => {
     expect(coerce(amount, '')).toBeNull()
   })
 })
+
+describe('参照の解決(mocks/csv.ts の coerce)', () => {
+  beforeEach(() => resetTables())
+
+  it('IO-065 参照は表示名が一致する 1 件なら結び、同名が 2 件以上ならエラーにし(黙って選ばない)、UUID ならそのまま結ぶ', () => {
+    const account: FieldMeta = { key: 'account_id', label: '取引先', type: 'relation', target: 'accounts' }
+    const rows = table('accounts')
+    const unique = rows.find((r) => rows.filter((o) => o.name === r.name).length === 1)!
+    const other = rows.find((r) => r.id !== unique.id)!
+
+    // 表示名が 1 件だけ一致すれば、その ID を結ぶ(前後の空白は無視)
+    expect(coerce(account, String(unique.name))).toBe(unique.id)
+    expect(coerce(account, ` ${String(unique.name)} `)).toBe(unique.id)
+    expect(() => coerce(account, 'どこにもない商事')).toThrow('が見つかりません')
+
+    // 同名がもう 1 件できたら、どちらも選ばずにエラーにする
+    rows.push({ ...other, id: '00000000-0000-4000-8000-000000000065', name: unique.name })
+    expect(() => coerce(account, String(unique.name))).toThrow('が 2 件あります。ID で指定してください')
+
+    // UUID なら名前が重なっていてもその行を結ぶ
+    expect(coerce(account, unique.id)).toBe(unique.id)
+    expect(coerce(account, '00000000-0000-4000-8000-000000000065')).toBe('00000000-0000-4000-8000-000000000065')
+    expect(coerce(account, other.id)).toBe(other.id)
+  })
+})
