@@ -1534,3 +1534,37 @@ describe('タスクの完了(mocks/engine.ts の update)', () => {
     }
   })
 })
+
+describe('タスクの完了日時の持ち込み(mocks/engine.ts の update・insert)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-024 done と一緒に completed_at を渡すと、今ではなく渡した日時が残る(update も insert も)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const now = '2026-10-05T09:00:00.000Z'
+      vi.setSystemTime(new Date(now))
+      // 移行で持ち込む元の完了日時(今より前)
+      const original = '2024-03-15T02:30:00.000Z'
+
+      // update: 未着手のタスクを、完了日時つきで完了にする
+      const { record } = insert('tasks', { title: '請求書を送る' }, TAKUYA)
+      const id = record.id as string
+      const done = update('tasks', id, { status: 'done', completed_at: original }, TAKUYA)!.record
+      expect(done).toMatchObject({ status: 'done', completed_at: original, updated_at: now })
+      expect(find('tasks', id)!.record.completed_at).toBe(original)
+
+      // insert: 最初から完了 + 完了日時
+      const created = insert('tasks', { title: '契約書を返送する', status: 'done', completed_at: original }, TAKUYA).record
+      expect(created).toMatchObject({ status: 'done', completed_at: original })
+      expect(find('tasks', created.id as string)!.record.completed_at).toBe(original)
+
+      // 対照: 完了日時を渡さなければ今になる(上の尊重が既定の動きでないことを示す)
+      const plain = insert('tasks', { title: '議事録を共有する', status: 'done' }, TAKUYA).record
+      expect(plain.completed_at).toBe(now)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

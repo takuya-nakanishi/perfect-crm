@@ -26,7 +26,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` の既定値、`applyRul
 | TASK-021 | 利用者 | 完了 | 可逆 | L3 | 利用者: 完了のトーストの「元に戻す」→ 一覧に戻る | `smoke.mjs「完了のトーストが出る」` / `smoke.mjs「「元に戻す」で一覧に戻る」` |
 | TASK-022 | 利用者 | 完了 | 即時 | L3 | 利用者: チェックを押す → 一覧から消える | `smoke.mjs「チェックを押すと一覧から消える」` |
 | TASK-023 | システム | 完了 | 整合 | L2 | `update`(status → done)→ `completed_at` に現在時刻、`updated_at` も更新。戻す(→ open)→ `completed_at` は null | `engine.test.ts` |
-| TASK-024 | システム | 完了 | 整合 | L2 | `update`(status → done, completed_at も本文に)→ 渡した `completed_at` を尊重する(移行で元の日時を保つ)。`insert` で最初から done + completed_at も同じ | — |
+| TASK-024 | システム | 完了 | 整合 | L2 | `update`(status → done, completed_at も本文に)→ 渡した `completed_at` を尊重する(移行で元の日時を保つ)。`insert` で最初から done + completed_at も同じ | `engine.test.ts` |
 | TASK-025 | システム | 完了 | 冪等 | L2 | `update`(done のタスクにもう一度 done)→ `completed_at` は変わらない | — |
 | TASK-026 | システム | 完了 | 整合 | L2 | `update`(open → 相手待ち)→ `completed_at` は null のまま。`update`(done → 相手待ち)→ `completed_at` は null になる(完了でない状況へ移せば消える) | — |
 
