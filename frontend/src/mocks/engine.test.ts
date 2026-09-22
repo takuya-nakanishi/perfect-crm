@@ -1630,3 +1630,53 @@ describe('タスクを完了でない状況へ移す(mocks/engine.ts の update)
     }
   })
 })
+
+describe('繰り返しのタスクの完了(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+  const OTHER = '09000000-0000-7000-8000-000000000002'
+
+  it('TASK-044 repeat=weekly・期限 9/22 を done にすると、その行は done で残り、期限 9/29・open・repeat_of=元の id の次回が 1 つでき、中身が写る', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-22T00:00:00Z'))
+      const opportunityId = table('opportunities')[0].id as string
+      const contactId = table('contacts')[0].id as string
+      // 既定値と区別できる値を入れる(担当は自分でない人、優先度は p1)
+      const source = {
+        title: '週報を書く',
+        priority: 'p1',
+        due_date: '2026-09-22',
+        repeat: 'weekly',
+        labels: '["internal","follow_up"]',
+        related_object: 'opportunities',
+        related_id: opportunityId,
+        contact_id: contactId,
+        assignee_id: OTHER,
+      }
+      const { record } = insert('tasks', source, TAKUYA)
+      const id = record.id as string
+      const before = table('tasks').length
+
+      update('tasks', id, { status: 'done' }, TAKUYA)
+
+      // 元の行は done のまま残る(期限も動かない)
+      expect(find('tasks', id)!.record).toMatchObject({ status: 'done', due_date: '2026-09-22', repeat: 'weekly' })
+      // 新しい行はちょうど 1 つ
+      expect(table('tasks').length).toBe(before + 1)
+      const next = table('tasks').filter((r) => r.repeat_of === id)
+      expect(next).toHaveLength(1)
+      expect(next[0].id).not.toBe(id)
+      expect(next[0]).toMatchObject({
+        ...source,
+        due_date: '2026-09-29',
+        status: 'open',
+        repeat_of: id,
+        completed_at: null,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
