@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Condition, Filter } from '@/api/types'
-import { flatten, unflatten } from './viewModel'
+import type { Condition, FieldMeta, Filter, ObjectMeta, ViewMeta } from '@/api/types'
+import { flatten, newViewInput, unflatten } from './viewModel'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const a: Condition = { field: 'status', op: 'eq', value: 'open' }
@@ -39,5 +39,64 @@ describe('ビューのフィルタの 1 段化(lib/viewModel.ts)', () => {
     }
     expect(unflatten(flatten({ and: [a, nested, b] }))).toEqual({ and: [a, b, nested] })
     expect(unflatten(flatten({ or: [nested, c] }))).toEqual({ or: [c, nested] })
+  })
+})
+
+// META-056 の土台: 選択肢の項目を持たないテーブル。表示名は先頭ではなく、readonly と複数行の文字の後ろに置く
+const field = (key: string, type: FieldMeta['type'], extra: Partial<FieldMeta> = {}): FieldMeta => ({ key, label: key, type, ...extra })
+const plain: ObjectMeta = {
+  key: 'things',
+  label: 'もの',
+  icon: 'box',
+  color: 'gray',
+  name_field: 'name',
+  position: 0,
+  in_sidebar: true,
+  fields: [
+    field('id', 'text', { readonly: true }),
+    field('memo', 'textarea'),
+    field('body', 'richtext'),
+    field('name', 'text'),
+    field('created_at', 'datetime', { readonly: true }),
+    field('email', 'email'),
+    field('phone', 'phone'),
+    field('notes', 'textarea'),
+    field('amount', 'currency'),
+    field('due', 'date'),
+    field('owner', 'user'),
+    field('site', 'url'),
+    field('count', 'number'),
+  ],
+}
+
+describe('新しいビューの初期値(lib/viewModel.ts newViewInput)', () => {
+  it('META-056 選択肢の無いテーブルでカンバンは null、base 無しの一覧は候補の先頭 6 項目、base が一覧なら base の列を写す', () => {
+    // 選択肢の無いテーブルでカンバン → null(base があっても、それがカンバンでなければ同じ)
+    expect(newViewInput(plain, 'kanban', 'ボード')).toBeNull()
+
+    // base 無しの一覧: readonly と複数行の文字を除いた候補の先頭 6 項目。表示名を含み、幅は型ごとの既定
+    const list = newViewInput(plain, 'list', '一覧')
+    expect(list).toEqual({
+      name: '一覧',
+      type: 'list',
+      config: {
+        columns: [
+          { field: 'name', width: 280 },
+          { field: 'email', width: 220 },
+          { field: 'phone', width: 150 },
+          { field: 'amount', width: 140 },
+          { field: 'due', width: 120 },
+          { field: 'owner', width: 130 },
+        ],
+      },
+    })
+
+    // base が一覧なら、base の列をそのまま写す(候補に無い列・readonly の列・幅の無い列も含めて)。フィルタと並びも受け継ぐ
+    const baseColumns = [{ field: 'created_at', width: 99 }, { field: 'memo' }, { field: 'count', width: 77 }]
+    const filter: Filter = { field: 'amount', op: 'gte', value: 100 }
+    const base: ViewMeta = { id: 'v1', object: 'things', name: '元', position: 0, type: 'list', config: { columns: baseColumns, filter, sort: [{ field: 'due', dir: 'asc' }] } }
+    const copied = newViewInput(plain, 'list', '写し', base)
+    expect(copied).toEqual({ name: '写し', type: 'list', config: { columns: baseColumns, filter, sort: [{ field: 'due', dir: 'asc' }] } })
+    expect(newViewInput(plain, 'kanban', 'ボード', base)).toBeNull()
   })
 })
