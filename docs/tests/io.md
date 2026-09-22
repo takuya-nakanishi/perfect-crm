@@ -49,7 +49,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-043 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「来週火曜」は次の月曜から始まる週の火曜、「金曜」は次の金曜(今日が金曜なら 7 日後)、「月末」「来月」「3日後」「9/30」「30日」(過ぎていれば来月) | `quickAddParser.test.ts` |
 | IO-044 | 利用者 | 日付 | 整合 | L1 | `parseQuickAdd`: 「毎週」→ `repeat: weekly`、期限が無ければ今日。「平日」「隔週」「毎月」も。2 つめの繰り返しの語は件名に残る | `quickAddParser.test.ts` |
 | IO-045 | 利用者 | 日付 | 表記 | L1 | `parseQuickAdd`: 全角の「ｐ１」や「９／３０」も読む(NFKC) | `quickAddParser.test.ts` |
-| IO-046 | システム | 日付 | 整合 | L1 | `resolveDateMacro`: `$today+N` / `$today-N` / `$start_of_month` / `$end_of_month`。知らないマクロは null | — |
+| IO-046 | システム | 日付 | 整合 | L1 | `resolveDateMacro`: `$today+N` / `$today-N` / `$start_of_month` / `$end_of_month`。知らないマクロは null | `dates.test.ts` |
 | IO-047 | システム | 日付 | 整合 | L1 | `addMonths`(区間の計算用): 日を 1 日に固定して月を進める(`2026-01-31` + 1 → `2026-02-01`、12 月 + 1 → 翌年 1 月)。日を保つ計算は `nextDue`(IO-085)の側 | — |
 
 ## 4. CSV(`mocks/csv.ts`)

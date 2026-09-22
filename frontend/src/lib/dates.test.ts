@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { formatDateTime, formatDue } from './dates'
+import { formatDateTime, formatDue, resolveDateMacro } from './dates'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const today = '2026-09-22' // 火曜日
@@ -52,5 +52,31 @@ describe('formatDateTime', () => {
     vi.setSystemTime(new Date(2027, 0, 1, 10, 0))
     expect(formatDateTime(at(2026, 12, 31, 22, 15))).toBe('昨日 22:15')
     expect(formatDateTime(at(2026, 12, 30, 22, 15))).toBe('2026/12/30')
+  })
+})
+
+describe('resolveDateMacro', () => {
+  it('IO-046 $today+N / $today-N / $start_of_month / $end_of_month を今日から解決し、知らないマクロは null', () => {
+    expect(resolveDateMacro('$today', today)).toBe('2026-09-22')
+    expect(resolveDateMacro('$today+7', today)).toBe('2026-09-29')
+    expect(resolveDateMacro('$today-30', today)).toBe('2026-08-23')
+    expect(resolveDateMacro('$today+0', today)).toBe('2026-09-22')
+    // 月・年をまたぐ
+    expect(resolveDateMacro('$today+10', today)).toBe('2026-10-02')
+    expect(resolveDateMacro('$today-1', '2026-01-01')).toBe('2025-12-31')
+    expect(resolveDateMacro('$start_of_month', today)).toBe('2026-09-01')
+    expect(resolveDateMacro('$end_of_month', today)).toBe('2026-09-30')
+    // 月末は月の長さに従う(うるう年の 2 月も)
+    expect(resolveDateMacro('$end_of_month', '2026-02-10')).toBe('2026-02-28')
+    expect(resolveDateMacro('$end_of_month', '2028-02-10')).toBe('2028-02-29')
+    expect(resolveDateMacro('$end_of_month', '2026-12-31')).toBe('2026-12-31')
+    // 知らないマクロ・崩れた書き方・ただの値は null(呼び出し側がそのまま値として使う)
+    expect(resolveDateMacro('$yesterday', today)).toBeNull()
+    expect(resolveDateMacro('$today+', today)).toBeNull()
+    expect(resolveDateMacro('$today*2', today)).toBeNull()
+    expect(resolveDateMacro('$today+7 ', today)).toBeNull()
+    expect(resolveDateMacro('$me', today)).toBeNull()
+    expect(resolveDateMacro('2026-09-22', today)).toBeNull()
+    expect(resolveDateMacro('', today)).toBeNull()
   })
 })
