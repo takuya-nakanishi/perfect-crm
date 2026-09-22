@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { FieldMeta } from '@/api/types'
-import { coerce, importCsv, parseCsv } from './csv'
-import { query, resetTables, table, users } from './engine'
+import { coerce, exportCsv, importCsv, parseCsv } from './csv'
+import { insert, objectMeta, query, resetTables, table, users } from './engine'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 describe('CSV の読み取り(mocks/csv.ts)', () => {
@@ -225,5 +225,77 @@ describe('参照の解決(mocks/csv.ts の coerce)', () => {
     expect(coerce(account, unique.id)).toBe(unique.id)
     expect(coerce(account, '00000000-0000-4000-8000-000000000065')).toBe('00000000-0000-4000-8000-000000000065')
     expect(coerce(account, other.id)).toBe(other.id)
+  })
+})
+
+describe('CSV の書き出し(mocks/csv.ts)', () => {
+  beforeEach(() => resetTables())
+
+  // Blob.text() は先頭の BOM を黙って捨てるので、バイト列で読む
+  async function read(blob: Blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
+    return { bytes, text, rows: parseCsv(text) }
+  }
+
+  it('IO-068 先頭に BOM、見出しは項目名、選択肢はラベル、参照と利用者は表示名、複数選択は「営業、事務」、richtext は書式を落とした文字、ドライブは名前と URL', async () => {
+    const me = users[0].id
+    const contact = table('contacts')[0]
+    const files = [
+      { id: 'f1', name: '提案書', mime_type: 'application/vnd.google-apps.document', url: 'https://docs.google.com/document/d/f1' },
+      { id: 'f2', name: '見積書.pdf', mime_type: 'application/pdf', url: 'https://drive.google.com/file/d/f2' },
+    ]
+    insert(
+      'tasks',
+      {
+        title: '書き出し確認のタスク',
+        status: 'in_progress',
+        labels: JSON.stringify(['sales', 'admin']),
+        contact_id: contact.id,
+        assignee_id: users[1].id,
+        documents: JSON.stringify(files),
+      },
+      me,
+    )
+
+    const tasks = await read(exportCsv('tasks', { q: '書き出し確認のタスク' }, me))
+    // Excel が UTF-8 として開くための BOM(EF BB BF)
+    expect([...tasks.bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    expect(tasks.text.startsWith('\uFEFF')).toBe(true)
+    // 見出しは列名でなく項目名。取り込み(parseCsv)も BOM を見出しに残さない
+    const header = tasks.rows[0]
+    expect(header).toEqual(objectMeta('tasks').fields.map((f) => f.label))
+    expect(header).not.toContain('title')
+    expect(tasks.rows).toHaveLength(2)
+    const cell = (label: string) => tasks.rows[1][header.indexOf(label)]
+    expect(cell('件名')).toBe('書き出し確認のタスク')
+    // 選択肢は値(in_progress)でなくラベル
+    expect(cell('状況')).toBe('進行中')
+    // 複数選択はラベルを「、」でつなぐ
+    expect(cell('ラベル')).toBe('営業、事務')
+    // 参照と利用者は UUID でなく表示名
+    expect(cell('取引先責任者')).toBe(String(contact.name))
+    expect(cell('担当')).toBe(users[1].name)
+    // ドライブは 1 ファイル 1 行で「名前 URL」
+    expect(cell('資料')).toBe('提案書 https://docs.google.com/document/d/f1\n見積書.pdf https://drive.google.com/file/d/f2')
+
+    insert(
+      'activities',
+      {
+        subject: '書き出し確認の活動',
+        type: 'call',
+        body: '<p><strong>決定</strong>: 来週 &amp; 再訪</p><ul><li>見積 &lt;改&gt;</li><li>日程</li></ul>',
+      },
+      me,
+    )
+    const activities = await read(exportCsv('activities', { q: '書き出し確認の活動' }, me))
+    expect([...activities.bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    const aHeader = activities.rows[0]
+    expect(aHeader).toEqual(objectMeta('activities').fields.map((f) => f.label))
+    const aCell = (label: string) => activities.rows[1][aHeader.indexOf(label)]
+    expect(aCell('種別')).toBe('電話')
+    expect(aCell('記録者')).toBe(users[0].name)
+    // richtext はタグを落とし、段落と項目は改行、文字参照は元の文字に戻す
+    expect(aCell('内容')).toBe('決定: 来週 & 再訪\n見積 <改>\n日程')
   })
 })
