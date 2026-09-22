@@ -2556,6 +2556,27 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
     expect(insert('limited', { name: '英字 5 文字', code: 'abcde', size: 'l' }, me).record).toMatchObject({ code: 'abcde', size: 'l' })
     expect(insert('activities', { subject: 'あ'.repeat(200), type: 'call', occurred_on }, me).record.subject).toBe('あ'.repeat(200))
   })
+
+  it('REC-084 update: 本文に無い列は検証しない。必須の列が既に空でも、他の列の更新は通る(空にした必須の列を渡せば 400)', () => {
+    // 必須の列(商談名・取引先)が空の行を用意する(移行や、後から必須にした列で起こりうる)
+    const rows = table('opportunities')
+    const id = rows[0].id as string
+    rows[0] = { ...rows[0], name: '', account_id: null }
+
+    // 他の列だけを渡す更新は通り、空の必須の列はそのまま
+    const got = update('opportunities', id, { amount: 1234567, close_date: '2026-12-25' }, null)!.record
+    expect(got).toMatchObject({ amount: 1234567, close_date: '2026-12-25', name: '', account_id: null })
+    expect(find('opportunities', id)!.record).toMatchObject({ amount: 1234567, name: '', account_id: null })
+
+    // 本文に必須の列を空で渡せば 400。行は変わらない
+    const snapshot = structuredClone(table('opportunities'))
+    expect(statusOf(() => update('opportunities', id, { name: '', amount: 1 }, null))).toBe(400)
+    expect(statusOf(() => update('opportunities', id, { account_id: null }, null))).toBe(400)
+    expect(table('opportunities')).toEqual(snapshot)
+
+    // 必須の列を埋める更新は、別の必須の列が空のままでも通る
+    expect(update('opportunities', id, { name: '名前を埋める' }, null)!.record).toMatchObject({ name: '名前を埋める', account_id: null })
+  })
 })
 
 describe('作成の既定値と定義に無い列(mocks/engine.ts の insert / update)', () => {
