@@ -1197,4 +1197,21 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     // 当たらない語は空(正規化で何にでも当たるようになってはいない)
     expect(names('くらうどさーす')).toEqual([])
   })
+
+  it('IO-024 q は richtext をタグを落とした文字で当てる(<strong> の中の語も、タグをまたぐ語も当たり、タグ名には当たらない)', () => {
+    const subjects = (q: string) => query('activities', { q }, null).records.map((r) => r.subject as string)
+    // 本文は <p>…確認。<strong>帳票出力の遅さ</strong>が最優先。</p><ul><li>…</li></ul>
+    const row = table('activities').find((r) => r.subject === '要件の確認と概算の説明')!
+    expect(row.body as string).toContain('<strong>帳票出力の遅さ</strong>')
+
+    // <strong> の中の語
+    expect(subjects('帳票出力の遅さ')).toEqual(['要件の確認と概算の説明'])
+    expect(subjects('オフライン動作')).toEqual(['現地調査の所感'])
+    // タグの境目をまたぐ語(生の HTML のままでは当たらない)
+    expect(subjects('確認。帳票出力')).toEqual(['要件の確認と概算の説明'])
+    expect(subjects('遅さが最優先')).toEqual(['要件の確認と概算の説明'])
+
+    // タグ名・属性の文字には当たらない
+    for (const q of ['strong', '<strong>', '<li>', '</p>']) expect(subjects(q), q).toEqual([])
+  })
 })
