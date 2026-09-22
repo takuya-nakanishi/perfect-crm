@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor } from '@/api/types'
-import { createObject, deleteObject, getMeta, resetTables } from './engine'
+import { createObject, deleteObject, getMeta, resetTables, updateObject } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -173,5 +173,25 @@ describe('テーブル設定(mocks/engine.ts)', () => {
       expect(statusOf(() => createObject(withField(table, { key: 'extra', label: '金額', type: 'number', scale }))), table).toBeNull()
       expect(savedField(table)?.scale, table).toBe(scale)
     }
+  })
+
+  it('META-012 updateObject で既存の項目の型を変えると 400 になり、型は元のまま', () => {
+    const fields: ObjectInput['fields'] = [
+      { key: 'name', label: '名前', type: 'text' },
+      { key: 'amount', label: '金額', type: 'number' },
+    ]
+    expect(statusOf(() => createObject({ ...input('type_fixed'), fields }))).toBeNull()
+    const typeOf = () => getMeta().objects.find((o) => o.key === 'type_fixed')?.fields.find((f) => f.key === 'amount')?.type
+    for (const type of ['text', 'textarea', 'percent', 'date', 'email'] as const) {
+      const body = { ...input('type_fixed'), label: '変えた名前', fields: [fields[0], { key: 'amount', label: '金額', type }] }
+      expect(statusOf(() => updateObject('type_fixed', body)), type).toBe(400)
+      expect(typeOf(), type).toBe('number')
+      // 弾いた更新は、他の変更(テーブル名)も残さない
+      expect(getMeta().objects.find((o) => o.key === 'type_fixed')?.label, type).toBe('試しのテーブル')
+    }
+    // 型を変えなければ同じ本文で更新できる
+    expect(statusOf(() => updateObject('type_fixed', { ...input('type_fixed'), label: '変えた名前', fields }))).toBeNull()
+    expect(getMeta().objects.find((o) => o.key === 'type_fixed')?.label).toBe('変えた名前')
+    expect(typeOf()).toBe('number')
   })
 })
