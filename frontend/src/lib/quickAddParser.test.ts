@@ -52,4 +52,26 @@ describe('parseQuickAdd', () => {
     // 日付の単語は件名から外れる
     expect(parseQuickAdd('見積を送る 来週火曜', today).title).toBe('見積を送る')
   })
+
+  it('IO-044 「毎週」は repeat: weekly、期限が無ければ今日。「平日」「隔週」「毎月」も読み、2 つめの繰り返しの語は件名に残る', () => {
+    const weekly = parseQuickAdd('週報を書く 毎週', today)
+    expect(weekly.title).toBe('週報を書く')
+    expect(weekly.repeat).toBe('weekly')
+    // 期限を書かなければ、最初の回は今日
+    expect(weekly.due_date).toBe(today)
+    expect(weekly.tokens).toEqual([{ text: '毎週', kind: 'repeat' }])
+
+    expect(parseQuickAdd('日報を書く 平日', today).repeat).toBe('weekdays')
+    expect(parseQuickAdd('定例に出る 隔週', today).repeat).toBe('biweekly')
+    expect(parseQuickAdd('請求書を送る 毎月', today).repeat).toBe('monthly')
+
+    // 期限を書けば、そちらが最初の回
+    expect(parseQuickAdd('定例に出る 隔週 金曜', today).due_date).toBe('2026-09-25')
+
+    // 読む繰り返しは 1 つだけ。2 つめの語は件名に残る
+    const twice = parseQuickAdd('毎週 毎月の振り返り 毎月', today)
+    expect(twice.repeat).toBe('weekly')
+    expect(twice.title).toBe('毎月の振り返り 毎月')
+    expect(twice.tokens).toEqual([{ text: '毎週', kind: 'repeat' }])
+  })
 })
