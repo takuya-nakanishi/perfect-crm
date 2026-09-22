@@ -74,7 +74,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 |
 |---|---|---|---|---|---|---|
 | IO-080 | 利用者 | 書式 | 表記 | L1 | `formatYen`: `¥1,200,000`(半角の ¥)。`formatYenCompact`: 1.2億円 / 1,240万円 / ¥9,800 | `format.test.ts` |
-| IO-081 | 利用者 | 書式 | 表記 | L1 | `formatNumber`: `scale` 無しは整数に丸める(12.54 → `13`)、`scale: 2` は `12.54`、`scale: 0` は `13`。`formatPercent`: 無しは最大 1 桁(`12.5%`)、`scale: 2` は `12.54%`、**`scale: 0` は `13%`(0 を無視しない)** | — |
+| IO-081 | 利用者 | 書式 | 表記 | L1 | `formatNumber`: `scale` 無しは整数に丸める(12.54 → `13`)、`scale: 2` は `12.54`、`scale: 0` は `13`。`formatPercent`: 無しは最大 1 桁(`12.5%`)、`scale: 2` は `12.54%`、**`scale: 0` は `13%`(0 を無視しない)** | `format.test.ts` |
 | IO-082 | システム | 洗浄 | 安全弁 | L1 | `sanitizeHtml`: `<script>`・`onclick`・`<img>` を落とし、`<div>`/`<span>` は中身だけ残す。`javascript:` の `href` は落とし、`https:` は `target=_blank rel=noreferrer` を付ける | — |
 | IO-083 | システム | 洗浄 | 整合 | L1 | `sanitizeHtml`: 言及 `<span data-type="mention" data-id="accounts:<uuid>" data-label="…">` は `role=link` 付きで残す。`data-id` が規則外なら中身の文字だけ残す | — |
 | IO-084 | システム | 洗浄 | 整合 | L1 | `extractMentions`: 二重引用符でも単引用符でも、同じ ID は 1 回。`plainText` は段落・改行を落として `@名前` を残す。`isEmptyHtml` は `<p></p>` を空とみなす | — |
