@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Condition, Row } from '@/api/types'
+import type { Condition, Filter, Row } from '@/api/types'
 import { matchFilter } from './filter'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
@@ -131,5 +131,25 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     expect(matchFilter(broken, cond('not_in', ['vip']), ctx)).toBe(true)
     expect(matchFilter(broken, cond('ne', 'vip'), ctx)).toBe(true)
     expect(matchFilter(broken, cond('eq', '["vip","hot"'), ctx)).toBe(true)
+  })
+  it('IO-010 and の中の or(お気に入りの「今日」: 期限が今日以前 または 期限が空)を正しく評価する。空の and は真', () => {
+    const todayView: Filter = {
+      and: [
+        { field: 'done', op: 'eq', value: false },
+        { or: [{ field: 'due', op: 'lte', value: '$today' }, { field: 'due', op: 'is_empty' }] },
+      ],
+    }
+    // or のどちらかに当たり、and の残りも満たせば真
+    expect(matchFilter(row({ done: false, due: '2026-09-22' }), todayView, ctx)).toBe(true)
+    expect(matchFilter(row({ done: false, due: '2026-09-01' }), todayView, ctx)).toBe(true)
+    expect(matchFilter(row({ done: false, due: null }), todayView, ctx)).toBe(true)
+    // or のどちらにも当たらなければ偽(明日の期限)
+    expect(matchFilter(row({ done: false, due: '2026-09-23' }), todayView, ctx)).toBe(false)
+    // or に当たっても、and の残りを満たさなければ偽
+    expect(matchFilter(row({ done: true, due: '2026-09-22' }), todayView, ctx)).toBe(false)
+    expect(matchFilter(row({ done: true, due: null }), todayView, ctx)).toBe(false)
+    // 空の and は真(条件なし)。空の or は偽
+    expect(matchFilter(row({ due: '2026-09-23' }), { and: [] }, ctx)).toBe(true)
+    expect(matchFilter(row({ due: '2026-09-23' }), { or: [] }, ctx)).toBe(false)
   })
 })
