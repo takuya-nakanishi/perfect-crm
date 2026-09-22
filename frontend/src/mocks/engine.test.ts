@@ -2061,4 +2061,36 @@ describe('時系列(mocks/engine.ts の timeline)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('ACT-023 関連先が X で done のタスクは kind: completion で出て、date は completed_at の日付、body は詳細を段落にしたもの。open のタスクは出ない', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      // 作った日(created_at / updated_at)と completed_at の日付をずらし、date がどちらから来るかを見分ける
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      const x = insert('accounts', { name: '完了の確かめ' }, TAKUYA).record.id as string
+      const other = insert('accounts', { name: '別の取引先' }, TAKUYA).record.id as string
+      const task = (title: string, status: string, related_id: string, extra: Record<string, Scalar> = {}) =>
+        insert('tasks', { title, status, related_object: 'accounts', related_id, ...extra }, TAKUYA).record.id as string
+      // 時刻は昼にして、実行環境のタイムゾーンで日付がずれないようにする
+      const done = task('見積書を送る', 'done', x, { completed_at: '2026-09-15T12:00:00.000Z', description: '一行目\n\n二行目 <b>太字</b>' })
+      const doneNoBody = task('電話で確認する', 'done', x, { completed_at: '2026-09-18T12:00:00.000Z' })
+      task('まだ開いている', 'open', x, { description: '出てはいけない' })
+      task('別の取引先の完了', 'done', other, { completed_at: '2026-09-20T12:00:00.000Z' })
+
+      const entries = timeline('accounts', x)
+      expect(entries.map((e) => e.id)).toEqual([doneNoBody, done])
+      expect(entries[1]).toMatchObject({
+        kind: 'completion',
+        object: 'tasks',
+        date: '2026-09-15',
+        at: '2026-09-15T12:00:00.000Z',
+        subject: '見積書を送る',
+        body: '<p>一行目</p><p>二行目 &lt;b&gt;太字&lt;/b&gt;</p>',
+        user_id: TAKUYA,
+      })
+      expect(entries[0]).toMatchObject({ kind: 'completion', date: '2026-09-18', subject: '電話で確認する', body: null })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

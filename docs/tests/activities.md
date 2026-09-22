@@ -25,7 +25,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`timeline`、`applyRules` の活�
 | ACT-020 | 利用者 | 時系列 | 整合 | L3 | 利用者: 初めから完了していたタスク(種データ)が、取引先の時系列に「完了」として出る | `smoke.mjs「完了済みのタスクが時系列に出る(種データのものも)」` |
 | ACT-021 | 利用者 | 時系列 | 整合 | L3 | 利用者: タスクを完了 → 関連先の時系列に「完了」として出る。戻す → 消える | `smoke.mjs「タスクを完了にすると、関連先の時系列に「完了」として出る」` / `smoke.mjs「完了を戻すと、時系列からも消える」` |
 | ACT-022 | システム | 時系列 | 整合 | L2 | `timeline(accounts, X)`: 関連先が X の活動 → `kind: activity`。日付の新しい順、同じ日は `created_at` の新しい順 | `engine.test.ts` |
-| ACT-023 | システム | 時系列 | 整合 | L2 | `timeline(accounts, X)`: 関連先が X で status=done のタスク → `kind: completion`、`date` は `completed_at` の日付、`body` は詳細を段落にしたもの。open のタスクは出ない | — |
+| ACT-023 | システム | 時系列 | 整合 | L2 | `timeline(accounts, X)`: 関連先が X で status=done のタスク → `kind: completion`、`date` は `completed_at` の日付、`body` は詳細を段落にしたもの。open のタスクは出ない | `engine.test.ts` |
 | ACT-024 | システム | 時系列 | 整合 | L2 | `timeline(contacts, Y)`: `contact_id` が Y の完了したタスクも出る(relation でも拾う) | — |
 | ACT-025 | システム | 時系列 | 整合 | L2 | `timeline(tasks, T)`: タスク自身を開いたとき、そのタスクの完了は出ない(自分自身は除く)。関連先が T の活動は出る | — |
 | ACT-026 | システム | 時系列 | 整合 | L2 | `timeline`: 100 件を超えたら新しい 100 件 | — |
