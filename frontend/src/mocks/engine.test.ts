@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, update, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -2023,5 +2023,42 @@ describe('活動の記録(mocks/engine.ts の insert)', () => {
     expect(find('contacts', CONTACT)!.record).toEqual(contact)
     expect(table('accounts')).toEqual(others.accounts)
     expect(table('contacts')).toEqual(others.contacts)
+  })
+})
+
+describe('時系列(mocks/engine.ts の timeline)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('ACT-022 関連先が X の活動は kind: activity で出て、日付の新しい順、同じ日は created_at の新しい順に並ぶ', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T09:00:00Z'))
+      // 種データの活動が混ざらないよう、新しい取引先を 2 つ作る
+      const x = insert('accounts', { name: '時系列の確かめ' }, TAKUYA).record.id as string
+      const other = insert('accounts', { name: '別の取引先' }, TAKUYA).record.id as string
+      // 作った順(created_at)と日付の順をわざとずらす
+      const at = (iso: string, subject: string, occurred_on: string, related_id = x) => {
+        vi.setSystemTime(new Date(iso))
+        return insert('activities', { subject, occurred_on, related_object: 'accounts', related_id }, TAKUYA).record.id as string
+      }
+      const sameDayOld = at('2026-10-01T10:00:00Z', '同じ日・先に作った', '2026-09-20')
+      const newest = at('2026-10-01T11:00:00Z', '日付が最も新しい', '2026-09-25')
+      const oldest = at('2026-10-01T12:00:00Z', '日付が最も古い(作ったのは最後に近い)', '2026-09-10')
+      const sameDayNew = at('2026-10-01T13:00:00Z', '同じ日・後で作った', '2026-09-20')
+      at('2026-10-01T14:00:00Z', '別の取引先の活動', '2026-09-30', other)
+
+      const entries = timeline('accounts', x)
+      // 別の取引先を関連先にした活動は出ない
+      expect(entries.map((e) => e.id)).toEqual([newest, sameDayNew, sameDayOld, oldest])
+      expect(entries.map((e) => e.date)).toEqual(['2026-09-25', '2026-09-20', '2026-09-20', '2026-09-10'])
+      for (const e of entries) {
+        expect(e).toMatchObject({ kind: 'activity', object: 'activities', related: { object: 'accounts', id: x, name: '時系列の確かめ' } })
+      }
+      expect(entries[1]).toMatchObject({ subject: '同じ日・後で作った', at: '2026-10-01T13:00:00.000Z', type: { value: 'call' }, user_id: TAKUYA })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
