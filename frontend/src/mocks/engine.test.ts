@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
-import { createObject, createView, deleteObject, deleteView, getMeta, insert, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, table, updateObject, updateView } from './engine'
+import { createObject, createView, deleteObject, deleteView, getMeta, insert, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -1046,5 +1046,32 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => updateObject('activities', body(withMinutes)))).toBeNull()
     expect(views().find((v) => v.id === mixedId)).toEqual(mixed)
     expect(views().find((v) => v.id === onlyId)).toEqual(only)
+  })
+
+  it('META-095 subtitle_field の項目を外すと subtitle_field が消え、参照・検索の添え字も出ない(無い項目を指さない)', () => {
+    const before = getMeta().objects.find((o) => o.key === 'accounts')!
+    expect(before.subtitle_field).toBe('industry')
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'accounts', label: before.label, icon: before.icon, color: before.color, fields })
+    const accounts = () => getMeta().objects.find((o) => o.key === 'accounts')!
+    const id = table('accounts').find((r) => r.name === '株式会社アオバ精機')!.id as string
+    const hit = () => searchAll('アオバ精機').find((h) => h.object === 'accounts' && h.id === id)!
+    expect(refOf('accounts', id)?.subtitle).toBe('製造')
+    expect(hit().subtitle).toBe('製造')
+
+    // subtitle_field 以外の項目を外しても、subtitle_field は残る
+    expect(statusOf(() => updateObject('accounts', body(bodyFields.filter((f) => f.key !== 'phone'))))).toBeNull()
+    expect(accounts().subtitle_field).toBe('industry')
+
+    // subtitle_field の項目を外す → subtitle_field が消え、名前に添える文字も出ない
+    expect(statusOf(() => updateObject('accounts', body(bodyFields.filter((f) => f.key !== 'phone' && f.key !== 'industry'))))).toBeNull()
+    const after = accounts()
+    expect(after.fields.some((f) => f.key === 'industry')).toBe(false)
+    expect(after.subtitle_field).toBeUndefined()
+    expect(after.name_field).toBe('name')
+    expect(refOf('accounts', id)).toEqual({ id, name: '株式会社アオバ精機', subtitle: null })
+    expect(hit().subtitle).toBeNull()
   })
 })
