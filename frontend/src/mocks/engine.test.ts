@@ -767,4 +767,29 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     // 列の値はそのまま読める
     expect(table('opportunities')).toEqual(rows)
   })
+
+  it('META-075 数値の項目を外し、同じ列名で参照型を足す → 400 で、保管していた定義と列の値は捨てない', () => {
+    const plain = () => getMeta().objects.find((o) => o.key === 'plain')!
+    const name = { key: 'name', label: '名前', type: 'text' as const }
+    const count = { key: 'headcount', label: '人数', type: 'number' as const, scale: 0 }
+    createObject({ ...input('plain'), fields: [name, count] })
+    insert('plain', { name: '残す一件', headcount: 12 }, null)
+    const kept = plain().fields.find((f) => f.key === 'headcount')!
+    const rows = structuredClone(table('plain'))
+
+    // 数値の項目を外して保存
+    expect(statusOf(() => updateObject('plain', { ...input('plain'), fields: [name] }))).toBeNull()
+    expect(plain().fields.some((f) => f.key === 'headcount')).toBe(false)
+
+    // 同じ列名で参照型を足す → 400。定義は変わらず、列の値もそのまま
+    const before = plain()
+    expect(statusOf(() => updateObject('plain', { ...input('plain'), fields: [name, { key: 'headcount', label: '担当先', type: 'relation', target: 'accounts' }] }))).toBe(400)
+    expect(plain()).toEqual(before)
+    expect(table('plain')).toEqual(rows)
+
+    // 保管していた定義は捨てていない(同じ型で戻せば数値の項目として復活する)
+    expect(statusOf(() => updateObject('plain', { ...input('plain'), fields: [name, count] }))).toBeNull()
+    expect(plain().fields.find((f) => f.key === 'headcount')).toEqual(kept)
+    expect(table('plain')).toEqual(rows)
+  })
 })
