@@ -849,4 +849,28 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(source()).toEqual({ ...before, label: '名前を変えたテーブル' })
     expect(table('source')).toEqual(rows)
   })
+
+  it('META-078 テーブルを削除すると活動の関連先の targets から消え、そのテーブルを指す polymorphic の値は行に残る', () => {
+    const targets = () => getMeta().objects.find((o) => o.key === 'activities')!.fields.find((f) => f.key === 'related')!.targets
+    createObject(input('trial'))
+    expect(targets()).toContain('trial')
+    const target = insert('trial', { name: '関連先の一件' }, null)
+    const activity = insert('activities', { subject: '試しの活動', related_object: 'trial', related_id: target.record.id }, null)
+    const row = () => table('activities').find((r) => r.id === activity.record.id)!
+    expect(row().related_object).toBe('trial')
+    const before = structuredClone(row())
+    const others = targets()!.filter((k) => k !== 'trial')
+
+    // テーブルを削除 → 関連先の targets からだけ消え(ほかの関連先は残る)、行の値はそのまま
+    deleteObject('trial')
+    expect(targets()).toEqual(others)
+    expect(row()).toEqual(before)
+    expect(row().related_object).toBe('trial')
+    expect(row().related_id).toBe(target.record.id)
+
+    // 戻す → targets にも戻る
+    restoreObject('trial')
+    expect(targets()).toEqual([...others, 'trial'])
+    expect(row()).toEqual(before)
+  })
 })

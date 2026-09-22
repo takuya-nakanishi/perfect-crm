@@ -78,7 +78,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-075 | 管理者 | 削除 | 安全弁 | L2 | 管理者: 数値の項目を外し、同じ列名で参照型を足す → 400(型を変えての再利用は不可) | `engine.test.ts` |
 | META-076 | 管理者 | 削除 | 整合 | L2 | 管理者: 参照先のテーブルを削除 → 参照元の relation の項目は `GET /meta` から隠れる。参照先を戻す → 項目も戻る | `engine.test.ts` |
 | META-077 | 管理者 | 削除 | 整合 | L2 | 管理者: 参照先が削除中のあいだに、参照元のテーブルの名前だけ変えて保存(本文に隠れた項目が無い)→ 隠れた項目は外れない | `engine.test.ts` |
-| META-078 | 管理者 | 削除 | 整合 | L2 | 管理者: テーブルを削除 → 活動の関連先の `targets` から消え、そのテーブルを指す polymorphic の値は行に残る | — |
+| META-078 | 管理者 | 削除 | 整合 | L2 | 管理者: テーブルを削除 → 活動の関連先の `targets` から消え、そのテーブルを指す polymorphic の値は行に残る | `engine.test.ts` |
 
 ## 4. 整合(無くなった項目を指す定義)
 
