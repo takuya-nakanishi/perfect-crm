@@ -326,4 +326,33 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => updateObject('tasks', bodyWithout(other!)))).toBeNull()
     expect(values()).toEqual(before.filter((v) => v !== other))
   })
+
+  it('META-017 項目を足して保存すると、先頭の一覧ビューの列に updated_at の手前で加わる', () => {
+    const accounts = () => getMeta().objects.find((o) => o.key === 'accounts')!
+    const lists = () => getMeta().views.filter((v) => v.object === 'accounts' && v.type === 'list').sort((a, b) => a.position - b.position)
+    const columns = () => {
+      const list = lists()[0]
+      return list.type === 'list' ? list.config.columns.map((c) => c.field) : []
+    }
+    const before = columns()
+    expect(before.at(-1)).toBe('updated_at')
+    // 画面が送るのと同じ全量の本文に、項目を 1 つ足す
+    const current = accounts()
+    const body: ObjectInput = {
+      key: 'accounts',
+      label: current.label,
+      icon: current.icon,
+      color: current.color,
+      fields: [
+        ...current.fields
+          .filter((f) => !f.readonly)
+          .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder })),
+        { key: 'fiscal_month', label: '決算月', type: 'text' },
+      ],
+    }
+    expect(statusOf(() => updateObject('accounts', body))).toBeNull()
+    expect(accounts().fields.some((f) => f.key === 'fiscal_month')).toBe(true)
+    // 既存の列の並びはそのまま、足した列が updated_at の手前に 1 つだけ入る
+    expect(columns()).toEqual([...before.slice(0, -1), 'fiscal_month', 'updated_at'])
+  })
 })
