@@ -1902,3 +1902,36 @@ describe('ラベルの形(mocks/engine.ts の update)', () => {
     }
   })
 })
+
+describe('活動の記録(mocks/engine.ts の insert)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('ACT-002 日付を省くと今日が入り、必須の検証で弾かれない(送った日付は既定値より勝ち、null を送れば 400)', () => {
+    const date = getMeta().objects.find((o) => o.key === 'activities')!.fields.find((f) => f.key === 'occurred_on')!
+    expect(date).toMatchObject({ type: 'date', required: true })
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      // 正午(UTC)にしておけば、どのタイムゾーンで流しても日付は同じ
+      vi.setSystemTime(new Date('2026-10-05T12:00:00Z'))
+      const before = table('activities').length
+
+      // 日付を省く → 400 にならず、今日が入る
+      const { record } = insert('activities', { subject: '先方へ電話' }, TAKUYA)
+      expect(record.occurred_on).toBe('2026-10-05')
+      expect(find('activities', record.id as string)!.record.occurred_on).toBe('2026-10-05')
+      expect(table('activities').length).toBe(before + 1)
+
+      // 送った日付は既定値より勝つ
+      expect(insert('activities', { subject: '訪問', occurred_on: '2026-09-30' }, TAKUYA).record.occurred_on).toBe('2026-09-30')
+
+      // 境界: 明示的に null を送れば既定値は効かず、必須の検証で 400。行は増えない
+      expect(statusOf(() => insert('activities', { subject: '先方へ電話', occurred_on: null }, TAKUYA))).toBe(400)
+      expect(table('activities').length).toBe(before + 2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
