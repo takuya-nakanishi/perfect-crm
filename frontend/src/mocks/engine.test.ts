@@ -2389,3 +2389,33 @@ describe('商談のフェーズの変更と確度(mocks/engine.ts の update)', 
     }
   })
 })
+
+describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  it('REC-065 update: 渡した列だけが変わり、他の列と他の行はそのまま(updated_at は進む)。無い ID は null で何も変えない', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const at = '2026-10-01T01:23:45.000Z'
+      vi.setSystemTime(new Date(at))
+      const rows = table('accounts')
+      const id = rows[0].id as string
+      const before = structuredClone(rows)
+
+      const got = update('accounts', id, { name: '名前だけ変える' }, null)!.record
+      // 渡した列と業務ルールの updated_at 以外は、元の行と同じ(id も created_at も)
+      const expected = { ...before[0], name: '名前だけ変える', updated_at: at }
+      expect(got).toEqual(expected)
+      expect(find('accounts', id)!.record).toEqual(expected)
+      // 他の行は触らない
+      expect(table('accounts').slice(1)).toEqual(before.slice(1))
+
+      // 無い ID → null。どの行も変わらない
+      const snapshot = structuredClone(table('accounts'))
+      expect(update('accounts', 'no-such-id', { name: '存在しない' }, null)).toBeNull()
+      expect(table('accounts')).toEqual(snapshot)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
