@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { formatDateTime, formatDue, resolveDateMacro } from './dates'
+import { addMonths, formatDateTime, formatDue, resolveDateMacro } from './dates'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const today = '2026-09-22' // 火曜日
@@ -78,5 +78,20 @@ describe('resolveDateMacro', () => {
     expect(resolveDateMacro('$me', today)).toBeNull()
     expect(resolveDateMacro('2026-09-22', today)).toBeNull()
     expect(resolveDateMacro('', today)).toBeNull()
+  })
+})
+
+describe('addMonths', () => {
+  it('IO-047 addMonths は日を 1 日に固定して月を進める(1/31 + 1 は 2/1、12 月 + 1 は翌年 1 月、負の数は前の月)', () => {
+    // 日を保たない(1/31 + 1 は 3/3 にも 2/28 にもならず 2/1)。日を保つのは recurrence の nextDue の側
+    expect(addMonths('2026-01-31', 1)).toBe('2026-02-01')
+    expect(addMonths('2026-09-22', 1)).toBe('2026-10-01')
+    expect(addMonths('2026-09-01', 0)).toBe('2026-09-01')
+    expect(addMonths('2026-09-22', 0)).toBe('2026-09-01')
+    // 年をまたぐ
+    expect(addMonths('2026-12-15', 1)).toBe('2027-01-01')
+    expect(addMonths('2026-11-30', 14)).toBe('2028-01-01')
+    expect(addMonths('2026-01-31', -1)).toBe('2025-12-01')
+    expect(addMonths('2026-03-31', -1)).toBe('2026-02-01')
   })
 })
