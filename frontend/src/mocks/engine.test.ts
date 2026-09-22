@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput, SelectOption, TagColor } from '@/api/types'
-import { createObject, deleteObject, getMeta, reorderObjects, resetTables, updateObject } from './engine'
+import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
+import { createObject, createView, deleteObject, getMeta, reorderObjects, resetTables, updateObject } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -474,5 +474,39 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => deleteObject('hidden_b'))).toBeNull()
     expect(statusOf(() => reorderObjects(['hidden_b', sidebar[1]]))).toBe(400)
     expect(ordered().map((o) => o.key)).toEqual(current.filter((k) => k !== 'hidden_b'))
+  })
+
+  it('META-048 createView の名前が空(空白だけも)なら 400。無い項目を列・並び・条件(入れ子も)に指しても 400 で、ビューは増えない', () => {
+    const accounts = getMeta().objects.find((o) => o.key === 'accounts')!
+    const name = accounts.name_field
+    const other = accounts.fields.find((f) => f.key !== name)!.key
+    const view = (patch: Partial<Extract<ViewInput, { type: 'list' }>['config']> = {}, label = '試しのビュー'): ViewInput => ({
+      name: label,
+      type: 'list',
+      config: {
+        columns: [{ field: name }, { field: other }],
+        filter: { and: [{ field: other, op: 'is_not_empty' }, { or: [{ field: name, op: 'contains', value: '株式' }] }] },
+        sort: [{ field: name, dir: 'asc' }],
+        ...patch,
+      },
+    })
+    const count = () => getMeta().views.filter((v) => v.object === 'accounts').length
+    const before = count()
+    // 名前が空・空白だけ
+    expect(statusOf(() => createView('accounts', view({}, '')))).toBe(400)
+    expect(statusOf(() => createView('accounts', view({}, '   ')))).toBe(400)
+    // 無い項目を列・並び・条件に指す(条件は入れ子の奥でも)
+    expect(statusOf(() => createView('accounts', view({ columns: [{ field: name }, { field: 'no_such_field' }] })))).toBe(400)
+    expect(statusOf(() => createView('accounts', view({ sort: [{ field: 'no_such_field', dir: 'desc' }] })))).toBe(400)
+    expect(statusOf(() => createView('accounts', view({ filter: { field: 'no_such_field', op: 'is_empty' } })))).toBe(400)
+    expect(
+      statusOf(() => createView('accounts', view({ filter: { and: [{ field: other, op: 'is_not_empty' }, { or: [{ field: 'no_such_field', op: 'eq', value: 1 }] }] } }))),
+    ).toBe(400)
+    // 弾いたものは 1 枚も作られない
+    expect(count()).toBe(before)
+    // 同じ本文で名前と項目が揃っていれば作れる(名前は前後の空白を落として保存)
+    expect(statusOf(() => createView('accounts', view({}, '  試しのビュー  ')))).toBeNull()
+    expect(count()).toBe(before + 1)
+    expect(getMeta().views.filter((v) => v.object === 'accounts').map((v) => v.name)).toContain('試しのビュー')
   })
 })
