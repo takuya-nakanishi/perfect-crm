@@ -55,7 +55,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-047 | 利用者 | ビュー | 可逆 | L3 | 利用者: ビューを削除 → タブが減り、トーストの「元に戻す」で戻る | `smoke.mjs「ビューを削除して「元に戻す」で戻る」` |
 | META-048 | 利用者 | ビュー | 整合 | L2 | 利用者: `createView` の名前が空 → 400。無い項目を列・並び・条件に指す → 400 | `engine.test.ts` |
 | META-049 | 利用者 | ビュー | 整合 | L2 | 利用者: カンバンの `group_by` に選択肢でない項目 → 400 | `engine.test.ts` |
-| META-050 | 利用者 | ビュー | 整合 | L2 | 利用者: `createView` → `position` は同じテーブルの末尾。`pin` を付けて作ると `pin.position` はお気に入りの末尾 | — |
+| META-050 | 利用者 | ビュー | 整合 | L2 | 利用者: `createView` → `position` は同じテーブルの末尾。`pin` を付けて作ると `pin.position` はお気に入りの末尾 | `engine.test.ts` |
 | META-051 | 利用者 | ビュー | 整合 | L2 | 利用者: `pin` を付けたまま `updateView`(名前だけ変える)→ `pin.position` は変わらない。`pin` を外して保存し、もう一度付けて保存 → お気に入りの末尾になる(元の位置には戻らない) | — |
 | META-052 | 利用者 | ビュー | 安全弁 | L2 | 利用者: そのテーブルの最後の 1 枚を `deleteView` → 400 | — |
 | META-053 | 利用者 | ビュー | 可逆 | L2 | 利用者: `deleteView` → `GET /meta` から消える。`restoreView` → 同じ id・同じ定義で戻る | — |

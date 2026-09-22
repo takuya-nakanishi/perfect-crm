@@ -534,4 +534,46 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(statusOf(() => createView('opportunities', kanban(select.key)))).toBeNull()
     expect(count()).toBe(before + 1)
   })
+
+  it('META-050 createView の position は同じテーブルの末尾(他のテーブルの並びは見ない)。pin を付けると pin.position はお気に入り(全テーブル)の末尾', () => {
+    const accounts = getMeta().objects.find((o) => o.key === 'accounts')!
+    const opps = getMeta().objects.find((o) => o.key === 'opportunities')!
+    const view = (name: string, pin?: ViewInput['pin'], object = accounts): ViewInput => ({
+      name,
+      type: 'list',
+      config: { columns: [{ field: object.name_field }] },
+      ...(pin ? { pin } : {}),
+    })
+    const created = (before: string[]) => getMeta().views.find((v) => !before.includes(v.id))!
+    const ids = () => getMeta().views.map((v) => v.id)
+    const lastOf = (object: string) => Math.max(0, ...getMeta().views.filter((v) => v.object === object).map((v) => v.position))
+    const lastPin = () => Math.max(0, ...getMeta().views.map((v) => v.pin?.position ?? 0))
+    let before = ids()
+    const accountsLast = lastOf('accounts')
+    createView('accounts', view('試し 1'))
+    const a = created(before)
+    expect(a.position).toBe(accountsLast + 1)
+    expect(a.pin).toBeUndefined()
+    // 続けて作ると、そのさらに後ろ
+    before = ids()
+    createView('accounts', view('試し 2'))
+    expect(created(before).position).toBe(accountsLast + 2)
+    // 別のテーブルは、そのテーブルの末尾から数える
+    before = ids()
+    const oppsLast = lastOf('opportunities')
+    createView('opportunities', view('試しの商談', undefined, opps))
+    expect(created(before).position).toBe(oppsLast + 1)
+    expect(lastOf('accounts')).toBe(accountsLast + 2)
+    // pin を付けて作ると、渡した position は使わず、お気に入り全体の末尾に付く
+    const pinLast = lastPin()
+    before = ids()
+    createView('accounts', view('試し 3', { label: 'お気に入り 1', position: 1, show_count: true }))
+    const p1 = created(before)
+    expect(p1.pin).toEqual({ label: 'お気に入り 1', position: pinLast + 1, show_count: true })
+    expect(p1.position).toBe(accountsLast + 3)
+    // 別のテーブルで pin を付けても、お気に入りはテーブルをまたいで 1 列の末尾
+    before = ids()
+    createView('opportunities', view('試しの商談 2', { label: 'お気に入り 2', position: 0 }, opps))
+    expect(created(before).pin!.position).toBe(pinLast + 2)
+  })
 })
