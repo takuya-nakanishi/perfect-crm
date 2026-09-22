@@ -1744,3 +1744,39 @@ describe('繰り返しの完了を二重に送る(mocks/engine.ts の update)', 
     }
   })
 })
+
+describe('繰り返しの完了を戻す(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-047 done を open に戻すと未着手の次回は消え、次回を既に完了していれば消さない', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-22T03:00:00Z'))
+
+      // 次回がまだ未着手 → 戻すと消える
+      const a = insert('tasks', { title: '週報を書く', due_date: '2026-09-22', repeat: 'weekly' }, TAKUYA).record.id as string
+      const before = table('tasks').length
+      update('tasks', a, { status: 'done' }, TAKUYA)
+      expect(table('tasks').filter((r) => r.repeat_of === a)).toHaveLength(1)
+      update('tasks', a, { status: 'open' }, TAKUYA)
+      expect(table('tasks').filter((r) => r.repeat_of === a)).toHaveLength(0)
+      expect(table('tasks').length).toBe(before)
+      expect(find('tasks', a)?.record.status).toBe('open')
+
+      // 次回を既に完了している → 戻しても消さない
+      const b = insert('tasks', { title: '月次の締め', due_date: '2026-09-22', repeat: 'weekly' }, TAKUYA).record.id as string
+      update('tasks', b, { status: 'done' }, TAKUYA)
+      const nextId = table('tasks').find((r) => r.repeat_of === b)!.id as string
+      update('tasks', nextId, { status: 'done' }, TAKUYA)
+      update('tasks', b, { status: 'open' }, TAKUYA)
+      const kept = table('tasks').filter((r) => r.repeat_of === b)
+      expect(kept).toHaveLength(1)
+      expect(kept[0].id).toBe(nextId)
+      expect(kept[0].status).toBe('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
