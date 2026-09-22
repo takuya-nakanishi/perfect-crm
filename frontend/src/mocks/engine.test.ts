@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ObjectInput, SelectOption, TagColor, ViewInput } from '@/api/types'
 import { aggregate, createObject, createView, deleteObject, deleteView, getMeta, insert, query, refOf, reorderObjects, reorderViews, resetTables, restoreObject, restoreView, searchAll, table, updateObject, updateView } from './engine'
@@ -1388,5 +1388,38 @@ describe('集計(mocks/engine.ts の aggregate)', () => {
       ['deal', '商談中', 1],
       [null, '未設定', 5],
     ])
+  })
+  it('IO-029 aggregate の bucket: month + range は範囲内の月を全部、空の月も 0 で返し、ラベルは区間の先頭と 1 月だけ年付き', () => {
+    // 今日を 2026-10-15(JST の昼)に固定する。range は今日の月を 0 とした相対の月
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-15T03:00:00Z'))
+    try {
+      createObject({
+        key: 'deals',
+        label: '試しの案件',
+        icon: 'box',
+        color: 'blue',
+        fields: [
+          { key: 'name', label: '名前', type: 'text' },
+          { key: 'close_date', label: '締め日', type: 'date' },
+        ],
+      })
+      // 8 月 2 件・10 月 1 件・2027 年 1 月 3 件。9・11・12・2 月は 0 件。範囲外(7 月・2027 年 3 月)と空の日付は数えない
+      const dates = ['2026-08-01', '2026-08-31', '2026-10-15', '2027-01-01', '2027-01-15', '2027-01-31', '2026-07-31', '2027-03-01', null]
+      dates.forEach((close_date, i) => insert('deals', { name: `D${i}`, close_date }, null))
+
+      const rows = aggregate('deals', { group_by: { field: 'close_date', bucket: 'month', range: { from: -2, to: 4 } }, measure: { op: 'count' } }, null)
+      expect(rows.map((r) => [r.key, r.label, r.value])).toEqual([
+        ['2026-08', '2026年8月', 2],
+        ['2026-09', '9月', 0],
+        ['2026-10', '10月', 1],
+        ['2026-11', '11月', 0],
+        ['2026-12', '12月', 0],
+        ['2027-01', '2027年1月', 3],
+        ['2027-02', '2月', 0],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
