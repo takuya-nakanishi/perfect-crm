@@ -77,4 +77,39 @@ describe('CSV の取り込み(mocks/csv.ts)', () => {
     const created = table('accounts').find((r) => r.id === res.created_ids[0])
     expect(created).toMatchObject({ name: '丸山商事', website: 'https://example.com', name_kana: 'マルヤマショウジ', phone: '03-1111-2222', employees: 12 })
   })
+
+  it('IO-063 読めない行(必須が空・無い選択肢・数値でない)は errors に行番号と理由を残して飛ばし、読める行だけ作る。dry_run は作らない', () => {
+    const csv = [
+      '取引先名,業種,従業員数',
+      '丸山商事,製造,12',
+      ',製造,5',
+      '山田商店,宇宙,5',
+      '川口工業,IT・通信,たくさん',
+      '森田物産,,7',
+    ].join('\n')
+    const expectedErrors = [
+      // 行番号は見出しを 1 行目と数えた CSV の行
+      { line: 3, message: '取引先名が空です' },
+      { line: 4, message: '業種に「宇宙」という選択肢はありません' },
+      { line: 5, message: '従業員数「たくさん」は数値ではありません' },
+    ]
+
+    // dry_run は検証だけ。件数とエラーは本番と同じで、レコードは作らない
+    const before = table('accounts').length
+    const dry = importCsv('accounts', { csv, dry_run: true }, users[0].id)
+    expect(dry).toMatchObject({ total: 5, valid: 2, errors: expectedErrors, created_ids: [] })
+    expect(table('accounts')).toHaveLength(before)
+
+    // 本番は読める行だけ作り、読めない行は飛ばす
+    const res = importCsv('accounts', { csv }, users[0].id)
+    expect(res).toMatchObject({ total: 5, valid: 2, errors: expectedErrors })
+    expect(res.created_ids).toHaveLength(2)
+    expect(table('accounts')).toHaveLength(before + 2)
+    const created = res.created_ids.map((id) => table('accounts').find((r) => r.id === id))
+    expect(created).toMatchObject([
+      { name: '丸山商事', industry: 'manufacturing', employees: 12 },
+      { name: '森田物産', employees: 7 },
+    ])
+    for (const name of ['山田商店', '川口工業']) expect(table('accounts').some((r) => r.name === name)).toBe(false)
+  })
 })
