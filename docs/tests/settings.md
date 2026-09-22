@@ -37,7 +37,7 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 | SET-043 | 外部 | フォーム | 整合 | L2 | `submitWebForm`: `fields` に無い列は捨て、`defaults` を足し、レコードができる。`submissions` が増え `last_submitted_at` が入る | `mockClient.test.ts` |
 | SET-044 | 外部 | フォーム | 整合 | L2 | `submitWebForm`: form-urlencoded の文字(数値 `"1200000"`、日付 `2026/9/30`、選択肢のラベル)を項目の型に直してから作る。直せなければ 400 | `mockClient.test.ts` |
 | SET-045 | 外部 | フォーム | 安全弁 | L2 | `submitWebForm`: `enabled: false` → 404。無い鍵 → 404。先のテーブルが削除中 → 404 | `mockClient.test.ts` |
-| SET-046 | 外部 | フォーム | 安全弁 | L2 | `submitWebForm`: `_gotcha` が埋まっている(bot)→ 例外を投げず 200 相当で返るが、レコードは増えず `submissions` も増えない(応答の `record` は `id` だけの空。04 §10 の 3)。`_gotcha` が空なら通る(対照) | — |
+| SET-046 | 外部 | フォーム | 安全弁 | L2 | `submitWebForm`: `_gotcha` が埋まっている(bot)→ 例外を投げず 200 相当で返るが、レコードは増えず `submissions` も増えない(応答の `record` は `id` だけの空。04 §10 の 3)。`_gotcha` が空なら通る(対照) | `mockClient.test.ts` |
 | SET-047 | 管理者 | フォーム | 安全弁 | L2 | `rotateWebFormKey` → 鍵が変わり、古い鍵で送ると 404 | `mockClient.test.ts` |
 | SET-048 | 外部 | フォーム | 整合 | L2 | `submitWebForm` で作ったレコードの担当(user 型)は空(`defaults` で入れられる) | `mockClient.test.ts` |
 

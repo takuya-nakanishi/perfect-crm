@@ -273,6 +273,31 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, '404 は送信に数えない').toBe(4)
   })
 
+  it('SET-046 submitWebForm は _gotcha が埋まっていたら例外を投げずに id だけの空の応答を返し、レコードも送信の数も増えない。_gotcha が空なら通る', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    await api.createObject(input('set_form_gotcha'))
+    const form = await api.createWebForm({ name: 'bot 避けのフォーム', object: 'set_form_gotcha', fields: ['name'], defaults: {}, enabled: true, redirect_url: null })
+    await api.logout()
+
+    // bot: 人には見えない欄が埋まっている → 成功に見せて何もしない(04 §10 の 3)
+    expect(await statusOf(() => api.submitWebForm(form.key, { name: 'bot の送信', _gotcha: 'http://spam.example' })), '例外を投げない').toBeNull()
+    const { record, references } = await api.submitWebForm(form.key, { name: 'bot の送信 2', _gotcha: 'x' })
+    expect(Object.keys(record).sort(), '応答は id だけの空').toEqual(['created_at', 'id', 'updated_at'])
+    expect(typeof record.id, 'id はある').toBe('string')
+    expect(references).toEqual({})
+
+    // 対照: _gotcha が空なら通る
+    const { record: human } = await api.submitWebForm(form.key, { name: '人の送信', _gotcha: '' })
+    expect(human.name, '空の _gotcha は通る').toBe('人の送信')
+
+    await api.login(admin.email, 'x')
+    expect(await statusOf(() => api.getRecord('set_form_gotcha', record.id as string)), '空の応答の id のレコードは無い').toBe(404)
+    const { records } = await api.listRecords('set_form_gotcha')
+    expect(records.map((r) => r.name), 'bot の送信ではレコードができない').toEqual(['人の送信'])
+    expect((await api.listWebForms()).find((f) => f.id === form.id)!.submissions, 'bot の送信は数えない').toBe(1)
+  })
+
   it('SET-047 rotateWebFormKey は鍵だけを作り直し、古い鍵で送ると 404 でレコードも送信の数も増えず、新しい鍵なら通る', async () => {
     const api = createMockClient()
     await api.login(admin.email, 'x')
