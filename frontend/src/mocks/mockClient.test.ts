@@ -115,6 +115,21 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(listTokens(), '404 のあとも一覧は変わらない').toEqual(before)
   })
 
+  it('SET-023 createMcpToken の created_by は発行した自分の id、last_used_at は null(一覧でも同じ)', async () => {
+    const api = createMockClient()
+    const others = usersJson.filter((u) => u.admin).slice(0, 2)
+    for (const me of others.length > 1 ? others : [admin]) {
+      await api.login(me.email, 'x')
+      const { token } = await api.createMcpToken(`${me.id} のトークン`, 'codex')
+      expect(token.created_by, '発行した利用者').toBe(me.id)
+      expect(token.last_used_at, 'まだ使っていない').toBeNull()
+
+      const listed = (await api.listMcpTokens()).find((t) => t.id === token.id)
+      expect(listed, '一覧でも同じ').toMatchObject({ created_by: me.id, last_used_at: null })
+      await api.logout()
+    }
+  })
+
   it('SET-004管理者でない利用者の createView / updateView / deleteView は通り、ビューが作られ・変わり・消える(ビューは誰でも。Q-045)', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
