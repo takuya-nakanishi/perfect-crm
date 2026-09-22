@@ -1568,3 +1568,30 @@ describe('タスクの完了日時の持ち込み(mocks/engine.ts の update・i
     }
   })
 })
+
+describe('タスクの完了のやり直し(mocks/engine.ts の update)', () => {
+  beforeEach(() => resetTables())
+
+  const TAKUYA = '09000000-0000-7000-8000-000000000001'
+
+  it('TASK-025 完了済みのタスクにもう一度 done を送っても、completed_at は最初に完了にした日時のまま', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+      const { record } = insert('tasks', { title: '見積もりを送る' }, TAKUYA)
+      const id = record.id as string
+
+      const doneAt = '2026-10-02T01:23:45.000Z'
+      vi.setSystemTime(new Date(doneAt))
+      expect(update('tasks', id, { status: 'done' }, TAKUYA)!.record.completed_at).toBe(doneAt)
+
+      // 時計を進めてから、同じ done をもう一度送る(二重送信・再試行)
+      vi.setSystemTime(new Date('2026-10-04T08:00:00.000Z'))
+      const again = update('tasks', id, { status: 'done' }, TAKUYA)!.record
+      expect(again).toMatchObject({ status: 'done', completed_at: doneAt })
+      expect(find('tasks', id)!.record.completed_at).toBe(doneAt)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
