@@ -50,4 +50,18 @@ describe('フィルタの評価(lib/filter.ts)', () => {
     expect(matchFilter(row({ name: null }), has(''), ctx)).toBe(false)
     expect(matchFilter(row({}), has('a'), ctx)).toBe(false)
   })
+  it('IO-006 is_empty は NULL・空文字・[](複数選択の空)で真、is_not_empty はその逆', () => {
+    const empty: Condition = { field: 'tags', op: 'is_empty' }
+    const notEmpty: Condition = { field: 'tags', op: 'is_not_empty' }
+    // 空と見なす値: NULL・列が無い行・空文字・空の配列(複数選択)
+    for (const v of [row({ tags: null }), row({}), row({ tags: '' }), row({ tags: '[]' })]) {
+      expect(matchFilter(v, empty, ctx)).toBe(true)
+      expect(matchFilter(v, notEmpty, ctx)).toBe(false)
+    }
+    // 空でない値: 文字・中身のある配列・0・false(0 と偽は空ではない)
+    for (const v of [row({ tags: 'a' }), row({ tags: '["vip"]' }), row({ tags: 0 }), row({ tags: false })]) {
+      expect(matchFilter(v, empty, ctx)).toBe(false)
+      expect(matchFilter(v, notEmpty, ctx)).toBe(true)
+    }
+  })
 })
