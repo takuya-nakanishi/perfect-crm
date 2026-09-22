@@ -37,7 +37,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-027 | システム | 集計 | 整合 | L2 | `aggregate`: `count` は条件に合う全行数(値が空でも数える)。`sum` / `avg` は値が数値の行だけ(数値の行が 0 件なら 0)。`weight_field` は値 × 百分率 / 100 を足す | `engine.test.ts` |
 | IO-028 | システム | 集計 | 整合 | L2 | `aggregate` の `group_by` が選択肢 → 定義順。`order: value_desc` → 値の大きい順。値が空のグループは `key: null`・「未設定」で末尾 | `engine.test.ts` |
 | IO-029 | システム | 集計 | 整合 | L2 | `aggregate` の `bucket: month` + `range` → 範囲内の月を全部、空の月も 0 で返す。ラベルは区間の先頭と 1 月だけ年付き(`2026年8月`・`9月`・年をまたげば `2027年1月`) | `engine.test.ts` |
-| IO-030 | システム | 集計 | 整合 | L2 | `aggregate` を関連先のテーブル名の列(`related_object`)で分ける → ラベルはテーブルの表示名、空は「関連先なし」 | — |
+| IO-030 | システム | 集計 | 整合 | L2 | `aggregate` を関連先のテーブル名の列(`related_object`)で分ける → ラベルはテーブルの表示名、空は「関連先なし」 | `engine.test.ts` |
 
 ## 3. 日付と読み取り(`lib/dates.ts`・`lib/quickAddParser.ts`)
 

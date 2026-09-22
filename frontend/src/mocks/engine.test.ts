@@ -1422,4 +1422,26 @@ describe('集計(mocks/engine.ts の aggregate)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('IO-030 aggregate を関連先のテーブル名の列(related_object)で分けると、ラベルはテーブルの表示名、空は「関連先なし」', () => {
+    // タスクの関連先は取引先・商談などが混ざり、空の行もある
+    const all = table('tasks')
+    const counts = new Map<string | null, number>()
+    for (const r of all) {
+      const key = typeof r.related_object === 'string' && r.related_object !== '' ? r.related_object : null
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    expect(counts.has(null)).toBe(true)
+    expect([...counts.keys()].filter((k) => k !== null).length).toBeGreaterThanOrEqual(2)
+
+    const labelOf = (key: string) => getMeta().objects.find((o) => o.key === key)!.label
+    const rows = aggregate('tasks', { group_by: { field: 'related_object' }, measure: { op: 'count' } }, null)
+    // どのグループも、ラベルはテーブルの表示名(列名のままではない)。空は key: null・「関連先なし」で末尾
+    const expected = [...counts.entries()]
+      .map(([key, value]) => ({ key, label: key === null ? '関連先なし' : labelOf(key), value }))
+      .sort((a, b) => (a.key === null ? 1 : b.key === null ? -1 : b.value - a.value))
+    expect(rows.map((r) => ({ key: r.key, label: r.label, value: r.value }))).toEqual(expected)
+    for (const r of rows) if (r.key !== null) expect(r.label).not.toBe(r.key)
+    expect(rows.at(-1)).toMatchObject({ key: null, label: '関連先なし' })
+  })
 })
