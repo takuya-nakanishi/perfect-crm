@@ -1111,4 +1111,34 @@ describe('一覧の読み取り(mocks/engine.ts の query)', () => {
     const pDesc = query('tasks', { sort: [{ field: 'priority', dir: 'desc' }] }, null).records.map((r) => r.priority as string)
     expect([...new Set(pDesc)]).toEqual([...priorities].reverse())
   })
+  it('IO-021 参照・利用者の列で並べると参照先の表示名の順になり、ID の順ではない', () => {
+    const ja = (a: string, b: string) => a.localeCompare(b, 'ja')
+    const accountName = (id: string) => refOf('accounts', id)!.name
+
+    // 参照(取引先): 取引先名の順に束になる。ID の順とは違う並びであることを前提として確かめる
+    const ids = [...new Set(table('opportunities').map((r) => r.account_id as string))]
+    const byName = [...ids].sort((a, b) => ja(accountName(a), accountName(b)))
+    expect([...ids].sort()).not.toEqual(byName)
+
+    const asc = query('opportunities', { sort: [{ field: 'account_id', dir: 'asc' }] }, null)
+    expect(asc.records.length).toBe(table('opportunities').length)
+    const ascIds = asc.records.map((r) => r.account_id as string)
+    expect([...new Set(ascIds)]).toEqual(byName)
+    // 返した参照(references)の表示名で見ても順に並んでいる
+    const ascNames = ascIds.map((id) => asc.references.accounts![id]!.name)
+    expect(ascNames).toEqual([...ascNames].sort(ja))
+
+    const desc = query('opportunities', { sort: [{ field: 'account_id', dir: 'desc' }] }, null).records.map((r) => r.account_id as string)
+    expect([...new Set(desc)]).toEqual([...byName].reverse())
+
+    // 利用者(担当者): 名前の順(Misaki → Takuya)。ID の順(Takuya が先)とは逆
+    const owners = getMeta().users
+    const takuya = owners.find((u) => u.name === 'Takuya')!.id
+    const misaki = owners.find((u) => u.name === 'Misaki')!.id
+    expect(takuya < misaki).toBe(true)
+    const oAsc = query('opportunities', { sort: [{ field: 'owner_id', dir: 'asc' }] }, null).records.map((r) => r.owner_id)
+    expect([...new Set(oAsc)]).toEqual([misaki, takuya])
+    const oDesc = query('opportunities', { sort: [{ field: 'owner_id', dir: 'desc' }] }, null).records.map((r) => r.owner_id)
+    expect([...new Set(oDesc)]).toEqual([takuya, misaki])
+  })
 })
