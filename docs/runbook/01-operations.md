@@ -34,6 +34,7 @@ npm install
 npm run dev          # http://127.0.0.1:5173(モックで動く)
 npm run build        # 型検査 + 本番ビルド
 npm run lint         # oxlint
+npm test             # Vitest(L1 の lib と L2 のモック。docs/tests)
 npm run e2e          # 実ブラウザで主要な操作を確かめる(開発サーバに対して)
 npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtures.mjs)
 ```
@@ -74,6 +75,13 @@ python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'npm --
 | 公開 URL でだけ、コンソールに `static.cloudflareinsights.com/beacon.min.js … violates Content Security Policy` | ゾーンの Web Analytics が HTML にビーコンを自動挿入していた。CSP が止めるので実害は無い。配る側で `Cache-Control: no-transform` を返して挿入させないようにした。ホスト単位の除外ルールは無料プランでは作れない(`maxRulesError`) |
 | Access の確認で、同じ要求が 302 と 200 を行き来する | 作りたてのポリシーが Cloudflare の全拠点へ行き渡るまで十数秒かかる。確認スクリプトは 3 回続けて通るまで待つ |
 | 絞り込み欄で、打った文字が逆順に入る(「かささぎ」→「ぎささか」) | 幅 0 から広がるアニメーションの途中で打鍵すると、Chromium がキャレットを先頭に置き続ける。入力欄は、開いた状態でだけ描く(幅を動かさない)。**入力欄の幅をアニメーションさせない** |
+| テーブル設定で、Enter のあと速く打つと、文字が前の欄に入る(「見積」→ Enter →「見積番号」が「見」と「名前積番号」になる) | 次の欄へのフォーカス移動を `requestAnimationFrame` で 1 フレーム遅らせていた。**フォーカスの移動は同期で行う。**行を足してから移すときは `flushSync` で先に描く。E2E は待ちを挟まずに打つので、この類を拾える |
+| 日本語 IME で英字を打つと、変換が途切れて「lleあ」のようになる(列名の欄で `Lead` を Shift+l, e, a, d と打つ) | 入力のたびに `toLowerCase()` した値を書き戻していた。変換中(`InputEvent.isComposing`)に値を書き換えると変換が仕切り直しになる。**変換中は値をそのまま持ち、`compositionend` と blur で整える**(`keyInputHandlers`)。Linux の Playwright では再現できない(CDP の `Input.imeSetComposition` でも Windows の MS-IME の挙動にはならない)ので、値を変形する入力欄を作るときは規則として守る |
+| パネルの幅を変えたあと、パネルがもう一度スライドして入ってくる | ドラッグ中だけ `animate-panel-in` を外していたため、付け直すたびに CSS アニメーションが再生されていた。**アニメーションのクラスは付けたままにする**(初回の挿入時だけ走る) |
+| ポップオーバーの中からポップオーバーを開くと、内側を押した瞬間に外側が閉じて、選んだ値が消える | 外側の「外側のクリック」判定が、body に描かれた内側を外側だと見ていた。開いた順の並び(`popoverStack`)を持ち、自分より後に開いたものの中は内側とみなす。Esc もいちばん上だけが閉じる。**ポップオーバーの部品は `ui/overlay.tsx` の `Popover` だけを使う**(自前で fixed の div を出すと、この判定から外れる) |
+| レコードを作成しても「〜を作成しました」のトーストが出ない | `mutate(vars, { onSuccess })` の onSuccess は、呼んだ画面が閉じた(unmount した)あとには呼ばれない(TanStack Query の仕様)。閉じたあとに知らせるものは `mutateAsync().then()` で受ける |
+| `<dialog>` を開くと、先頭のボタンにフォーカスが入り、React の `autoFocus` が効かない | `showModal()` が、描画のあとで先頭のフォーカス可能な要素へ当て直す。**`Modal` が開いたあとに最初の入力欄へ当て直す**(`ui/overlay.tsx`)。個々のモーダルで細工しない(Web フォームの作成で同じことを踏み直して共通化した) |
+| 開発サーバで、初めて開いた画面が一度だけ再読み込みされる | Vite が新しい依存(`@dnd-kit/react/sortable` など)を初回に最適化して reload する。本番ビルドでは起きない。スクリーンショットのスクリプトは 2 回目から安定する |
 | 数字のゼロに全部斜線が入る | 書体(Atkinson Hyperlegible Next)の仕様で、切り替える機能も無い。Figtree に替えた。**書体を替えるときは、金額の並ぶ画面で確かめる** |
 | PostgreSQL 18 が空のまま起動する | 18 からデータの場所が `/var/lib/postgresql/18/docker`。ボリュームは `/var/lib/postgresql` に付ける |
 

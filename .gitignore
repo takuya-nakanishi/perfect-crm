@@ -1,2 +1,5 @@
 .env
 __pycache__/
+
+# 並行セッションと無人ループの作業ツリー(scripts/wt-new.sh、scripts/loop-run.sh)
+.claude/worktrees/
