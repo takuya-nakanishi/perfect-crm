@@ -28,3 +28,25 @@ def query_records(object_key: str, params: ListParams, conn: Conn, user: Current
 @router.get("/objects/{object_key}/records/{record_id}")
 def read_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
     return service.find(conn, object_key, record_id)
+
+
+@router.post("/objects/{object_key}/records", status_code=200)
+def create_record(object_key: str, values: dict[str, Any], conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return service.insert(conn, object_key, values, user["id"])
+
+
+@router.patch("/objects/{object_key}/records/{record_id}")
+def patch_record(
+    object_key: str, record_id: str, patch: dict[str, Any], conn: Conn, user: CurrentUser
+) -> dict[str, Any]:
+    return service.update(conn, object_key, record_id, patch, user["id"])
+
+
+@router.delete("/objects/{object_key}/records/{record_id}", status_code=204)
+def delete_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> None:
+    service.remove(conn, object_key, record_id)
+
+
+@router.post("/objects/{object_key}/records/{record_id}/restore")
+def restore_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return service.restore(conn, object_key, record_id)
