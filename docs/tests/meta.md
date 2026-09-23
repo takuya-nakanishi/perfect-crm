@@ -14,7 +14,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-001 | 管理者 | 定義 | 整合 | L3 | 管理者: サイドバーの「+」→ 名前と項目を打ち Ctrl+Enter → 新しいテーブルがサイドバーに出て、その画面が開く | `smoke.mjs「追加したテーブルがサイドバーに出る」` | — |
 | META-002 | 管理者 | 定義 | 整合 | L3 | 管理者: 選択肢の項目を含めて作る → 一覧に加えてカンバンのビューも付く | `smoke.mjs「選択肢の項目があると、カンバンも付く」` | — |
 | META-003 | 利用者 | 定義 | 整合 | L3 | 利用者: 追加したテーブルで N → レコードを作れて一覧に出る | `smoke.mjs「追加したテーブルにレコードを作れる」` | — |
-| META-004 | 管理者 | 定義 | 整合 | L2 | 管理者: `createObject` に列名が規則外(大文字・先頭が数字・40 文字超)のテーブル → 400 | `engine.test.ts` | — |
+| META-004 | 管理者 | 定義 | 整合 | L2 | 管理者: `createObject` に列名が規則外(大文字・先頭が数字・40 文字超)のテーブル → 400 | `engine.test.ts` | —`test_meta_write.py` |
 | META-005 | 管理者 | 定義 | 整合 | L2 | 管理者: 列名 `users` / `meta` / `session` / `search` のテーブル → 400(予約) | `engine.test.ts` | — |
 | META-006 | 管理者 | 定義 | 整合 | L2 | 管理者: 先頭の項目が文字(1 行)でないテーブル → 400。文字なら `name_field` になり必須が付く | `engine.test.ts` | — |
 | META-007 | 管理者 | 定義 | 整合 | L2 | 管理者: 項目の列名が `id` / `created_at` / `updated_at` → 400。同じ列名が 2 つ → 400 | `engine.test.ts` | — |
