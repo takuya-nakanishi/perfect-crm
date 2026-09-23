@@ -102,39 +102,73 @@ docker compose logs -f api
 
 ## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
 
-画面の「Google に接続」が動くまでに、**人が GCP で 1 回だけ**やること。設計は `docs/design/04` §8。
-**この手順で作る値(クライアント ID とシークレット)は `.env` に入れるだけで、コミットしない。**
+画面の「Google に接続」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §8。
+**ここで作る値(クライアント ID とシークレット、署名鍵)は `.env` に入れるだけで、コミットしない。**
 
 | | |
 |---|---|
 | GCP プロジェクト | `citric-earth-449901-e7`(**スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト**。sanei-clover.com の Workspace) |
-| コンソール | `https://console.cloud.google.com/apis/credentials?project=citric-earth-449901-e7` |
+| OAuth の画面 | `https://console.cloud.google.com/auth/clients?project=citric-earth-449901-e7`(**Google Auth Platform**。2025 年に「API とサービス → OAuth 同意画面」から移った) |
+| API の有効化 | `https://console.cloud.google.com/apis/library/drive.googleapis.com?project=citric-earth-449901-e7` |
 
-1. **Drive API を有効にする** — 「API とサービス」→「ライブラリ」→ Google Drive API →「有効にする」
-2. **OAuth の同意画面**を「内部」(Internal)で作る。内部にしておくと、`drive.readonly` が制限付きスコープでも
-   **審査(CASA)が要らない**。外部にすると審査が要るので、必ず内部のままにする
-3. **OAuth クライアント ID** を「ウェブ アプリケーション」で作り、
-   「承認済みのリダイレクト URI」に `https://works.sanei-clover.com/api/v1/google/callback` を**1 文字も違わず**入れる
-4. スコープに `…/auth/drive.readonly`・`…/auth/drive.file`・`…/auth/userinfo.email`・`openid` を足す
-5. 出てきた ID とシークレットを `.env` に置く(`backend/README.md` の表)
+**A. 自分で作る値(GCP とは関係ない。手元のコマンドで生成する)**
 
 ```
-WORKS_GOOGLE_CLIENT_ID=…apps.googleusercontent.com
-WORKS_GOOGLE_CLIENT_SECRET=…
-# 既定は https://works.sanei-clover.com/api/v1/google/callback。変えたら GCP 側も揃える
-WORKS_GOOGLE_REDIRECT_URI=…
+openssl rand -hex 32     # → WORKS_SECRET_KEY(セッション Cookie の署名 + Google の鍵の暗号化)
+openssl rand -hex 24     # → WORKS_DB_PASSWORD(まだ入れていなければ。記号を含めない)
 ```
 
-6. `docker compose --profile backend up -d --build api` で建て直し、商談のパネルの「資料」から「Google に接続」を押す
+`WORKS_SECRET_KEY` は**どこかから取ってくるものではなく、自分で作る乱数**。一度決めたら変えない
+(変えると、ログイン中の人は入り直し、繋いだ Google は繋ぎ直しになる)。
+
+**B. GCP コンソールで取る値(クライアント ID とシークレット)**
+
+1. **Drive API を有効にする** — 上の「API の有効化」を開いて「有効にする」
+2. **Google Auth Platform → ブランディング(Branding)** — アプリ名(例 `Works`)とサポート用メールを入れる
+   (プロジェクトで初めて OAuth を使うときだけ。カスタム MCP で作ってあれば済んでいる)
+3. **対象(Audience)** を **「内部」(Internal)** にする。内部なら、`drive.readonly` が制限付きスコープでも
+   **審査(CASA)が要らず、同意画面にスコープの一覧も出ない**。外部にすると審査が要るので、必ず内部のままにする
+   (内部を選べるのは、そのプロジェクトが Workspace 組織の中にあるときだけ)
+4. **クライアント(Clients)→「クライアントを作成」** — 種類は **ウェブ アプリケーション**、名前は `Works`。
+   **承認済みのリダイレクト URI** に次を**1 文字も違わず**足す
+
+   ```
+   https://works.sanei-clover.com/api/v1/google/callback
+   ```
+
+5. 作成直後のダイアログに **クライアント ID** と **クライアント シークレット** が出る。
+   閉じてしまっても、クライアントの詳細画面からいつでも見られる(JSON でも落とせる)
+6. **データアクセス(Data Access)のスコープ登録は、内部アプリでは必須ではない**(同意画面に出ないため)。
+   登録しても害は無い: `…/auth/drive.readonly`・`…/auth/drive.file`・`…/auth/userinfo.email`・`openid`
+
+**C. `.env` に入れて建て直す**
+
+```
+WORKS_SECRET_KEY=<A で作った 64 文字>
+WORKS_GOOGLE_CLIENT_ID=<...>.apps.googleusercontent.com
+WORKS_GOOGLE_CLIENT_SECRET=<GOCSPX-... >
+# 既定は https://works.sanei-clover.com/api/v1/google/callback。変えたときだけ書く(GCP 側も揃える)
+WORKS_GOOGLE_REDIRECT_URI=
+```
+
+```
+docker compose --profile backend up -d --build api
+```
+
+タスクか商談のパネルの「資料」に「Google に接続」が出る。押して自分の Workspace アカウントで許可すると、
+同じ画面へ戻ってきて「新規」「参照」が使えるようになる。
 
 つまずいたとき:
 
 | 症状 | 見るところ |
 |---|---|
+| ドライブの項目に「Google 連携が設定されていません」と出る | `WORKS_GOOGLE_CLIENT_ID` / `SECRET` が api に渡っていない(`.env` に入れたあと `up -d --build api` をしたか) |
 | `redirect_uri_mismatch` | GCP のリダイレクト URI と `WORKS_GOOGLE_REDIRECT_URI` の不一致(末尾の `/`・http と https・ホスト名) |
 | 繋いだのに次の日また「Google に接続」が出る | `WORKS_SECRET_KEY` が空だと、再起動のたびに鍵が変わって保存した token を読めない(`.env` に固定する) |
 | 403 `access_denied` で戻る | 同意画面が「内部」で、押した人が Workspace の利用者か。外部アカウント(個人の Gmail)では通らない |
 | Cloudflare Access の画面が Google の戻りで出る | 戻り先も Access の内側。**同じブラウザで Works にログインしたまま**繋ぐ |
+
+出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)。
 
 ## 7. 版を上げる
 
