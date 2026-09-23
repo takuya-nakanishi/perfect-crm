@@ -1,5 +1,6 @@
 """レコードの読み取り(04 §2 の `records/query` と 1 件)。書き込みは次(J-021 の続き)。"""
 
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import Connection, Select, Table, asc, case, desc, func, literal, nullslast, select
@@ -7,12 +8,15 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.errors import bad_request, not_found
 from app.meta import store
+from app.meta.tables import SYSTEM_COLUMNS
 from app.meta.tables import users as users_table
 from app.records.filters import Context, compile_filter
-from app.records.normalize import normalize_text
+from app.records.normalize import normalize_text, search_text_of
 from app.records.refs import collect_references
+from app.records.rules import apply_rules, defaults_for_insert
 from app.records.tables import fields_by_column, table_of
-from app.records.values import row_to_api
+from app.records.validate import reject_unknown_columns, validate
+from app.records.values import row_to_api, to_db
 
 
 def context(conn: Connection, me: str | None) -> Context:
@@ -94,3 +98,100 @@ def find(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]:
         raise not_found("レコードがありません")
     record = row_to_api(row, fields)
     return {"record": record, "references": collect_references(conn, obj, [record])}
+
+
+def _now() -> str:
+    from datetime import datetime
+
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _writable(table: Table, values: dict[str, Any], fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """実際に列がある値だけを、DB に入れられる形にして返す。"""
+    return {key: to_db(value, fields.get(key)) for key, value in values.items() if key in table.c}
+
+
+def _blank_row(obj: dict[str, Any]) -> dict[str, Any]:
+    """作成時の下敷き。共通の列(id・作成日時・更新日時)はサーバ側の既定値に任せるので含めない。"""
+    row: dict[str, Any] = {}
+    for field in obj["fields"]:
+        cols = field.get("columns")
+        for name in [cols["object"], cols["id"]] if cols else [field["key"]]:
+            if name not in SYSTEM_COLUMNS:
+                row[name] = None
+    return row
+
+
+def insert(conn: Connection, object_key: str, values: dict[str, Any], me: str | None) -> dict[str, Any]:
+    obj = store.object_meta(conn, object_key)
+    reject_unknown_columns(obj, values)
+    table = table_of(obj)
+    fields = fields_by_column(obj)
+    timezone = store.get_workspace(conn)["timezone"]
+    now = _now()
+
+    effective = {**defaults_for_insert(obj, me, timezone), **values}
+    row = {**_blank_row(obj), **effective}
+    row = validate(conn, obj, row, None)
+    row = apply_rules(obj, None, row, effective, now=now, timezone=timezone)
+
+    payload = _writable(table, row, fields)
+    # 渡されていない共通の列は DB の既定値に任せる(移行で作成日時を指定したときは尊重する)
+    for name in ("id", "created_at", "updated_at"):
+        if payload.get(name) is None:
+            payload.pop(name, None)
+    payload["search_text"] = search_text_of(obj["fields"], row)
+    record_id = conn.execute(table.insert().values(**payload).returning(table.c.id)).scalar_one()
+    return find(conn, object_key, str(record_id))
+
+
+def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, Any], me: str | None) -> dict[str, Any]:
+    obj = store.object_meta(conn, object_key)
+    reject_unknown_columns(obj, patch)
+    table = table_of(obj)
+    fields = fields_by_column(obj)
+    timezone = store.get_workspace(conn)["timezone"]
+    now = _now()
+
+    current = conn.execute(select(table).where(table.c.id == record_id, table.c.deleted_at.is_(None))).first()
+    if current is None:
+        raise not_found("レコードがありません")
+    before = row_to_api(current, fields)
+
+    row = {**before, **patch}
+    row = validate(conn, obj, row, list(patch))
+    row = apply_rules(obj, before, row, patch, now=now, timezone=timezone)
+
+    payload = _writable(table, {k: v for k, v in row.items() if before.get(k) != v}, fields)
+    payload.pop("id", None)
+    payload.pop("created_at", None)
+    payload["updated_at"] = now
+    payload["search_text"] = search_text_of(obj["fields"], row)
+    conn.execute(table.update().where(table.c.id == record_id).values(**payload))
+    return find(conn, object_key, record_id)
+
+
+def remove(conn: Connection, object_key: str, record_id: str) -> None:
+    """論理削除(02 §4)。画面の「元に戻す」は `restore` でこれを外すだけ。"""
+    obj = store.object_meta(conn, object_key)
+    table = table_of(obj)
+    result = conn.execute(
+        table.update()
+        .where(table.c.id == record_id, table.c.deleted_at.is_(None))
+        .values(deleted_at=func.now(), updated_at=func.now())
+    )
+    if result.rowcount == 0:
+        raise not_found("レコードがありません")
+
+
+def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]:
+    obj = store.object_meta(conn, object_key)
+    table = table_of(obj)
+    result = conn.execute(
+        table.update()
+        .where(table.c.id == record_id, table.c.deleted_at.isnot(None))
+        .values(deleted_at=None, updated_at=func.now())
+    )
+    if result.rowcount == 0:
+        raise not_found("削除されたレコードがありません")
+    return find(conn, object_key, record_id)

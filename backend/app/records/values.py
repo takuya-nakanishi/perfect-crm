@@ -37,3 +37,19 @@ def row_to_api(row: Row, fields: dict[str, dict[str, Any]]) -> dict[str, Any]:
             continue
         out[name] = to_api(value, fields.get(name))
     return out
+
+
+def to_db(value: Any, field: dict[str, Any] | None) -> Any:
+    """API の値を、その列に入れられる形にする(検証を通ったあとに呼ぶ)。"""
+    if value is None:
+        return None
+    ftype = (field or {}).get("type")
+    if ftype in ("multi_select", "drive_files"):
+        return json.loads(value) if isinstance(value, str) else value
+    if ftype == "date":
+        return date.fromisoformat(value) if isinstance(value, str) else value
+    if ftype == "datetime":
+        return datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+    if ftype in ("number", "percent") and not isinstance(value, Decimal):
+        return Decimal(str(value))
+    return value
