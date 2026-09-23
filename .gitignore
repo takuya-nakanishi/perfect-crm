@@ -3,3 +3,9 @@ __pycache__/
 
 # 並行セッションと無人ループの作業ツリー(scripts/wt-new.sh、scripts/loop-run.sh)
 .claude/worktrees/
+
+# バックエンド(uv の仮想環境と道具のキャッシュ)
+backend/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

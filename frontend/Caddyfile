@@ -1,5 +1,5 @@
 # 画面(ビルド済みの静的ファイル)を配る。TLS と認証は手前の Cloudflare(Tunnel + Access)が持つので、ここは平文の HTTP だけ。
-# バックエンドができたら、下の /api/* をそこへ流す(画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ)。
+# /api/* は api(FastAPI)へ流す。画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ。
 {
 	admin off
 	auto_https off
@@ -24,9 +24,10 @@
 		respond "ok" 200
 	}
 
-	# handle /api/* {
-	# 	reverse_proxy api:8000
-	# }
+	# API(profile backend で起動する。起動していなければ 502。画面が mock モードなら呼ばない)
+	handle /api/* {
+		reverse_proxy api:8000
+	}
 
 	# ファイル名にハッシュが入るので、変わらないものとして長く持たせる。無いファイルは 404(index.html で誤魔化さない)
 	handle /assets/* {

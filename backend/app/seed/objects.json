@@ -1,0 +1,303 @@
+[
+  {
+    "key": "accounts",
+    "label": "取引先",
+    "icon": "building-2",
+    "color": "blue",
+    "name_field": "name",
+    "subtitle_field": "industry",
+    "position": 1,
+    "in_sidebar": true,
+    "system": true,
+    "fields": [
+      { "key": "name", "label": "取引先名", "type": "text", "required": true, "placeholder": "株式会社〇〇" },
+      { "key": "name_kana", "label": "フリガナ", "type": "text" },
+      {
+        "key": "type",
+        "label": "種別",
+        "type": "select",
+        "options": [
+          { "value": "prospect", "label": "見込み客", "color": "amber" },
+          { "value": "customer", "label": "顧客", "color": "green" },
+          { "value": "partner", "label": "パートナー", "color": "violet" },
+          { "value": "other", "label": "その他", "color": "gray" }
+        ]
+      },
+      {
+        "key": "industry",
+        "label": "業種",
+        "type": "select",
+        "options": [
+          { "value": "it", "label": "IT・通信", "color": "blue" },
+          { "value": "manufacturing", "label": "製造", "color": "teal" },
+          { "value": "retail", "label": "小売・卸", "color": "orange" },
+          { "value": "construction", "label": "建設・不動産", "color": "amber" },
+          { "value": "finance", "label": "金融", "color": "violet" },
+          { "value": "medical", "label": "医療・福祉", "color": "pink" },
+          { "value": "education", "label": "教育", "color": "green" },
+          { "value": "public", "label": "官公庁・団体", "color": "gray" },
+          { "value": "logistics", "label": "運輸・物流", "color": "red" },
+          { "value": "service", "label": "サービス", "color": "teal" }
+        ]
+      },
+      { "key": "phone", "label": "電話", "type": "phone" },
+      { "key": "website", "label": "Web サイト", "type": "url" },
+      { "key": "prefecture", "label": "都道府県", "type": "text" },
+      { "key": "address", "label": "住所", "type": "text", "in_create_form": false },
+      { "key": "employees", "label": "従業員数", "type": "number", "in_create_form": false },
+      { "key": "owner_id", "label": "担当", "type": "user" },
+      { "key": "description", "label": "メモ", "type": "textarea" },
+      { "key": "created_at", "label": "作成日時", "type": "datetime", "readonly": true },
+      { "key": "updated_at", "label": "更新日時", "type": "datetime", "readonly": true }
+    ]
+  },
+  {
+    "key": "contacts",
+    "label": "取引先責任者",
+    "icon": "contact-round",
+    "color": "violet",
+    "name_field": "name",
+    "subtitle_field": "title",
+    "position": 2,
+    "in_sidebar": true,
+    "system": true,
+    "fields": [
+      { "key": "name", "label": "氏名", "type": "text", "required": true, "placeholder": "山田 太郎" },
+      { "key": "name_kana", "label": "フリガナ", "type": "text" },
+      { "key": "account_id", "label": "取引先", "type": "relation", "target": "accounts" },
+      { "key": "department", "label": "部署", "type": "text" },
+      { "key": "title", "label": "役職", "type": "text" },
+      { "key": "email", "label": "メール", "type": "email" },
+      { "key": "phone", "label": "電話", "type": "phone" },
+      {
+        "key": "role",
+        "label": "役割",
+        "type": "select",
+        "options": [
+          { "value": "decision_maker", "label": "決裁者", "color": "red" },
+          { "value": "champion", "label": "推進役", "color": "green" },
+          { "value": "liaison", "label": "窓口", "color": "blue" },
+          { "value": "technical", "label": "技術担当", "color": "teal" },
+          { "value": "accounting", "label": "経理", "color": "amber" },
+          { "value": "other", "label": "その他", "color": "gray" }
+        ]
+      },
+      {
+        "key": "status",
+        "label": "関係",
+        "type": "select",
+        "options": [
+          { "value": "new", "label": "新規", "color": "blue" },
+          { "value": "active", "label": "やり取り中", "color": "green" },
+          { "value": "nurturing", "label": "定期フォロー", "color": "amber" },
+          { "value": "dormant", "label": "休眠", "color": "gray" }
+        ]
+      },
+      { "key": "last_contacted_on", "label": "最終接触日", "type": "date", "in_create_form": false },
+      { "key": "owner_id", "label": "担当", "type": "user", "in_create_form": false },
+      { "key": "description", "label": "メモ", "type": "textarea" },
+      { "key": "created_at", "label": "作成日時", "type": "datetime", "readonly": true },
+      { "key": "updated_at", "label": "更新日時", "type": "datetime", "readonly": true }
+    ]
+  },
+  {
+    "key": "opportunities",
+    "label": "商談",
+    "icon": "handshake",
+    "color": "green",
+    "name_field": "name",
+    "subtitle_field": "stage",
+    "position": 3,
+    "in_sidebar": true,
+    "system": true,
+    "fields": [
+      { "key": "name", "label": "商談名", "type": "text", "required": true, "placeholder": "〇〇システム導入" },
+      { "key": "account_id", "label": "取引先", "type": "relation", "target": "accounts", "required": true },
+      { "key": "primary_contact_id", "label": "取引先責任者", "type": "relation", "target": "contacts" },
+      {
+        "key": "stage",
+        "locked": true,
+        "label": "フェーズ",
+        "type": "select",
+        "required": true,
+        "options": [
+          { "value": "lead", "label": "見込み", "color": "gray", "probability": 10, "kind": "open" },
+          { "value": "hearing", "label": "ヒアリング", "color": "blue", "probability": 25, "kind": "open" },
+          { "value": "proposal", "label": "提案", "color": "violet", "probability": 50, "kind": "open" },
+          { "value": "quote", "label": "見積", "color": "amber", "probability": 70, "kind": "open" },
+          { "value": "negotiation", "label": "交渉", "color": "orange", "probability": 85, "kind": "open" },
+          { "value": "won", "label": "受注", "color": "green", "probability": 100, "kind": "won" },
+          { "value": "lost", "label": "失注", "color": "red", "probability": 0, "kind": "lost" }
+        ]
+      },
+      { "key": "amount", "label": "金額", "type": "currency" },
+      { "key": "probability", "label": "確度", "type": "percent", "locked": true, "in_create_form": false },
+      { "key": "close_date", "label": "完了予定日", "type": "date", "semantic": "deadline" },
+      {
+        "key": "type",
+        "label": "種別",
+        "type": "select",
+        "in_create_form": false,
+        "options": [
+          { "value": "new", "label": "新規", "color": "blue" },
+          { "value": "expansion", "label": "既存深耕", "color": "green" },
+          { "value": "renewal", "label": "更新", "color": "teal" }
+        ]
+      },
+      {
+        "key": "lead_source",
+        "label": "きっかけ",
+        "type": "select",
+        "in_create_form": false,
+        "options": [
+          { "value": "referral", "label": "紹介", "color": "green" },
+          { "value": "web", "label": "Web 問い合わせ", "color": "blue" },
+          { "value": "event", "label": "展示会・セミナー", "color": "violet" },
+          { "value": "existing", "label": "既存顧客", "color": "teal" },
+          { "value": "other", "label": "その他", "color": "gray" }
+        ]
+      },
+      { "key": "next_step", "label": "次の一手", "type": "text" },
+      { "key": "documents", "label": "資料", "type": "drive_files", "in_create_form": false },
+      { "key": "owner_id", "label": "担当", "type": "user", "in_create_form": false },
+      { "key": "description", "label": "メモ", "type": "textarea" },
+      { "key": "created_at", "label": "作成日時", "type": "datetime", "readonly": true },
+      { "key": "updated_at", "label": "更新日時", "type": "datetime", "readonly": true }
+    ]
+  },
+  {
+    "key": "tasks",
+    "label": "タスク",
+    "icon": "circle-check",
+    "color": "red",
+    "name_field": "title",
+    "position": 4,
+    "in_sidebar": true,
+    "system": true,
+    "completion": {
+      "field": "status",
+      "done_value": "done",
+      "open_value": "open",
+      "completed_at_field": "completed_at",
+      "repeat_field": "repeat",
+      "repeat_from_completion_field": "repeat_from_completion",
+      "repeat_of_field": "repeat_of",
+      "due_field": "due_date"
+    },
+    "fields": [
+      { "key": "title", "label": "件名", "type": "text", "required": true, "placeholder": "やること" },
+      {
+        "key": "status",
+        "label": "状況",
+        "type": "select",
+        "required": true,
+        "options": [
+          { "value": "open", "label": "未着手", "color": "gray", "kind": "open" },
+          { "value": "in_progress", "label": "進行中", "color": "blue", "kind": "open" },
+          { "value": "waiting", "label": "相手待ち", "color": "amber", "kind": "open" },
+          { "value": "done", "label": "完了", "color": "green", "kind": "done" }
+        ]
+      },
+      {
+        "key": "priority",
+        "locked": true,
+        "label": "優先度",
+        "type": "select",
+        "required": true,
+        "options": [
+          { "value": "p1", "label": "P1", "color": "red" },
+          { "value": "p2", "label": "P2", "color": "orange" },
+          { "value": "p3", "label": "P3", "color": "blue" },
+          { "value": "p4", "label": "P4", "color": "gray" }
+        ]
+      },
+      { "key": "due_date", "label": "期限", "type": "date", "semantic": "deadline" },
+      {
+        "key": "repeat",
+        "label": "繰り返し",
+        "type": "select",
+        "locked": true,
+        "options": [
+          { "value": "daily", "label": "毎日", "color": "teal" },
+          { "value": "weekdays", "label": "平日", "color": "teal" },
+          { "value": "weekly", "label": "毎週", "color": "blue" },
+          { "value": "biweekly", "label": "隔週", "color": "blue" },
+          { "value": "monthly", "label": "毎月", "color": "violet" },
+          { "value": "yearly", "label": "毎年", "color": "violet" }
+        ]
+      },
+      { "key": "repeat_from_completion", "label": "完了した日から数える", "type": "checkbox", "locked": true, "in_create_form": false },
+      { "key": "repeat_of", "label": "前回", "type": "relation", "target": "tasks", "locked": true, "in_create_form": false },
+      {
+        "key": "labels",
+        "label": "ラベル",
+        "type": "multi_select",
+        "options": [
+          { "value": "sales", "label": "営業", "color": "green" },
+          { "value": "admin", "label": "事務", "color": "amber" },
+          { "value": "internal", "label": "社内", "color": "blue" },
+          { "value": "personal", "label": "個人", "color": "gray" },
+          { "value": "follow_up", "label": "要連絡", "color": "red" }
+        ]
+      },
+      {
+        "key": "related",
+        "label": "関連先",
+        "type": "polymorphic",
+        "targets": ["accounts", "opportunities"],
+        "columns": { "object": "related_object", "id": "related_id" }
+      },
+      { "key": "contact_id", "label": "取引先責任者", "type": "relation", "target": "contacts" },
+      { "key": "assignee_id", "label": "担当", "type": "user" },
+      { "key": "description", "label": "詳細", "type": "textarea" },
+      { "key": "documents", "label": "資料", "type": "drive_files", "in_create_form": false },
+      { "key": "completed_at", "label": "完了日時", "type": "datetime", "readonly": true },
+      { "key": "created_at", "label": "作成日時", "type": "datetime", "readonly": true },
+      { "key": "updated_at", "label": "更新日時", "type": "datetime", "readonly": true }
+    ]
+  },
+  {
+    "key": "activities",
+    "label": "活動",
+    "icon": "activity",
+    "color": "orange",
+    "name_field": "subject",
+    "subtitle_field": "type",
+    "position": 5,
+    "in_sidebar": false,
+    "system": true,
+    "timeline": { "subject": "subject", "type": "type", "date": "occurred_on", "body": "body" },
+    "fields": [
+      { "key": "subject", "label": "件名", "type": "text", "required": true, "placeholder": "〇〇へ電話", "max_length": 200 },
+      {
+        "key": "type",
+        "label": "種別",
+        "type": "select",
+        "required": true,
+        "locked": true,
+        "options": [
+          { "value": "call", "label": "電話", "color": "blue" },
+          { "value": "email", "label": "メール", "color": "teal" },
+          { "value": "meeting", "label": "打ち合わせ", "color": "violet" },
+          { "value": "visit", "label": "訪問", "color": "green" },
+          { "value": "web_meeting", "label": "Web 会議", "color": "pink" },
+          { "value": "note", "label": "メモ", "color": "gray" },
+          { "value": "other", "label": "その他", "color": "gray" }
+        ]
+      },
+      { "key": "occurred_on", "label": "日付", "type": "date", "required": true },
+      {
+        "key": "related",
+        "label": "関連先",
+        "type": "polymorphic",
+        "all_targets": true,
+        "targets": ["accounts", "contacts", "opportunities", "tasks"],
+        "columns": { "object": "related_object", "id": "related_id" }
+      },
+      { "key": "body", "label": "内容", "type": "richtext", "placeholder": "話した内容、決まったこと、次にやること" },
+      { "key": "owner_id", "label": "記録者", "type": "user", "in_create_form": false },
+      { "key": "created_at", "label": "作成日時", "type": "datetime", "readonly": true },
+      { "key": "updated_at", "label": "更新日時", "type": "datetime", "readonly": true }
+    ]
+  }
+]
