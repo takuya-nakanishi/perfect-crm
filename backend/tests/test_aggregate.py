@@ -60,9 +60,7 @@ def test_value_desc_なら選択肢でも値の大きい順(admin: TestClient, m
     account = make("accounts", name="会社")
     for stage in ("lead", "negotiation", "negotiation"):
         make("opportunities", name=stage, account_id=account, stage=stage)
-    rows = agg(
-        admin, "opportunities", group_by={"field": "stage"}, measure={"op": "count"}, order="value_desc"
-    )
+    rows = agg(admin, "opportunities", group_by={"field": "stage"}, measure={"op": "count"}, order="value_desc")
     assert [r["key"] for r in rows] == ["negotiation", "lead"]
 
 
