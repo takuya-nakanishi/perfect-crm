@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import type { AggregateParams, ListParams, MetaResponse, ObjectMeta, ViewMeta } from '@/api/types'
 
 /** キャッシュのキー。更新系(mutations.ts)が同じ形で無効化する */
@@ -15,7 +15,13 @@ export const keys = {
 }
 
 export function useSession() {
-  return useQuery({ queryKey: keys.session, queryFn: () => api.getSession(), staleTime: Infinity })
+  // 門を通れていない・利用者でない(ApiError)は、繰り返しても変わらないので再試行しない
+  return useQuery({
+    queryKey: keys.session,
+    queryFn: () => api.getSession(),
+    staleTime: Infinity,
+    retry: (count, error) => !(error instanceof ApiError) && count < 3,
+  })
 }
 
 export function useMeta(enabled = true) {

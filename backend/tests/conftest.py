@@ -73,6 +73,9 @@ def engine() -> Iterator[Engine]:
     os.environ["WORKS_DATABASE_URL"] = TEST_URL
     # TestClient は http://testserver を名乗るので、Secure 付きの Cookie は保存されない(本番は https)
     os.environ["WORKS_SECURE_COOKIE"] = "false"
+    # ログインは dev(メールアドレスだけ)を既定にする。.env に WORKS_AUTH=access があっても、テストはこちら。
+    # Access の JWT を確かめるテストは、そのテストの中だけ access に切り替える(test_session.py)
+    os.environ["WORKS_AUTH"] = "dev"
     from app.config import get_settings
 
     get_settings.cache_clear()

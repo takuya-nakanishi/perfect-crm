@@ -3,7 +3,8 @@ import type { ApiErrorBody } from './types'
 
 /**
  * Python バックエンド向けの実装。エンドポイントの一覧は docs/design/04-api.md と対で保つ。
- * 認証はセッション Cookie(同一オリジン)。
+ * 本番の認証は Cloudflare Access(03 §5 の B 案)。Access が付ける JWT をサーバが確かめるので、画面は何も持たない。
+ * バックエンドを WORKS_AUTH=dev で動かすときだけ、メールアドレスで入るセッション Cookie になる。
  */
 const BASE = '/api/v1'
 
@@ -27,13 +28,22 @@ const enc = encodeURIComponent
 
 export function createHttpClient(): ApiClient {
   return {
+    // null はログイン画面を出す合図(dev だけ)。Access を通っていない(access_required)・
+    // 利用者でない(not_registered)はエラーのまま返し、ログイン画面がその旨を出す
     getSession: () =>
       request<Awaited<ReturnType<ApiClient['getSession']>>>('GET', '/session').catch((e) => {
-        if (e instanceof ApiError && e.status === 401) return null
+        if (e instanceof ApiError && e.status === 401 && e.code === 'unauthorized') return null
         throw e
       }),
     login: (email, password) => request('POST', '/session', { email, password }),
-    logout: () => request('DELETE', '/session'),
+    logout: async () => {
+      const res = await request<{ logout_url?: string } | undefined>('DELETE', '/session')
+      if (res?.logout_url) {
+        // Access のセッションを切る。ページごと移るので、呼び出し側の続き(ログイン画面へ送る)は走らせない
+        window.location.assign(res.logout_url)
+        await new Promise<never>(() => {})
+      }
+    },
 
     getMeta: () => request('GET', '/meta'),
     createObject: (input) => request('POST', '/meta/objects', input),

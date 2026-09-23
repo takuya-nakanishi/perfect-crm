@@ -7,7 +7,7 @@
 
 ## 1. 約束ごと
 
-- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。認証はセッション Cookie
+- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。認証は Cloudflare Access が付ける JWT(`Cf-Access-Jwt-Assertion`)。画面は何も持たない(03 §5)。`WORKS_AUTH=dev` のときだけセッション Cookie
 - JSON の列名は **DB の列名そのまま**(snake_case)。ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)、金額は円の整数。書式付きの文字(`richtext`)は HTML で、**サーバは保存前に許した要素だけを残し、その結果から `@` の言及を取る**(この順。`frontend/src/lib/richtext.ts` と同じ規則。Python では `nh3` のような現行のライブラリを使い、非推奨の `bleach` は使わない)
 - 参照は ID で返し、表示名は応答の `references` に添える(§2)
 - エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400
@@ -16,9 +16,9 @@
 
 | メソッドとパス | 役割 | 応答 |
 |---|---|---|
-| `GET /session` | いまの利用者 | `Session`。未ログインは 401 |
-| `POST /session` | ログイン(`email`・`password`) | `Session` |
-| `DELETE /session` | ログアウト | 204 |
+| `GET /session` | いまの利用者 | `Session`。Access を通っていない・JWT が確かめられない → 401 `access_required`。Works の利用者でない → 403 `not_registered`。Access の設定が無い → 503。dev の未ログインは 401 `unauthorized`(画面はログインのフォームを出す) |
+| `POST /session` | ログイン(`email`・`password`)。**dev だけ**(パスワードは見ない)。access では 400 `access_login` | `Session` |
+| `DELETE /session` | ログアウト | access は `{ "logout_url": "/cdn-cgi/access/logout" }`(画面はそこへ移る)。dev は 204 |
 | `GET /meta` | テーブル・項目・ビュー・利用者の定義。起動時に 1 回 | `MetaResponse` |
 | `POST /meta/objects` | テーブルを作る(本文に `ObjectInput`)。§6 | `MetaResponse` |
 | `PUT /meta/objects/{key}` | テーブル設定を保存する(本文に `ObjectInput`。項目は全量) | `MetaResponse` |

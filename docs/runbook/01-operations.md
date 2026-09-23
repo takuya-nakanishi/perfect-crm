@@ -95,6 +95,9 @@ docker compose logs -f api
 
 - **道具は uv。**入っていなければ `curl -LsSf https://astral.sh/uv/install.sh | sh`(公式の入れ方)。`scripts/verify.sh` は uv が無いと red になる
 - 初回の起動で `python -m app.cli init` が走り、マイグレーション → 初期メタデータ → 管理者まで揃う。**`WORKS_ADMIN_EMAIL` が空だと管理者が作られず、ログインできない**
+- **ログインは Cloudflare Access**(`docs/design/03` §5)。api は Access の JWT を確かめるので、`.env` に `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` が要る。`scripts/cloudflare-tunnel-setup.py`(§3。再実行しても重複しない)が書く。空のままだと画面は「ログインし直してください」+ 503 で止まる
+- **人を足すときは 2 か所**: Access のポリシーにメールアドレスを足し(門)、`docker compose exec api python -m app.cli add-user <メール> [名前] [--admin]` で Works の利用者にする。片方だけだと、門で止まるか、「登録されていません」が出る
+- **Access の無い手元で API を触るとき**(E2E など)は `.env` に `WORKS_AUTH=dev` と `WORKS_SECURE_COOKIE=false`。メールアドレスだけで入れるので、**公開する場所では使わない**
 - `.env` に要る値は `backend/README.md`(`WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`)
 - **db はホストの 127.0.0.1:55432 に出ている**(pytest が実物に繋ぐため)。外へは出さない
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
@@ -114,12 +117,12 @@ docker compose logs -f api
 **A. 自分で作る値(GCP とは関係ない。手元のコマンドで生成する)**
 
 ```
-openssl rand -hex 32     # → WORKS_SECRET_KEY(セッション Cookie の署名 + Google の鍵の暗号化)
+openssl rand -hex 32     # → WORKS_SECRET_KEY(署名 + Google の鍵の暗号化)
 openssl rand -hex 24     # → WORKS_DB_PASSWORD(まだ入れていなければ。記号を含めない)
 ```
 
 `WORKS_SECRET_KEY` は**どこかから取ってくるものではなく、自分で作る乱数**。一度決めたら変えない
-(変えると、ログイン中の人は入り直し、繋いだ Google は繋ぎ直しになる)。
+(変えると、繋いだ Google は繋ぎ直しになる)。
 
 **B. GCP コンソールで取る値(クライアント ID とシークレット)**
 

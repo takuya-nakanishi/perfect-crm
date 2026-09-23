@@ -18,6 +18,8 @@ dependencies = [
     "httpx2>=2.13.0",
     # 繋いだ Google の鍵を暗号化して DB に置く(app/google/store.py)
     "cryptography>=50.0.1",
+    # Cloudflare Access が付ける JWT を検証して利用者を決める(app/access.py。03 §5 の B 案)
+    "pyjwt>=2.15.0",
 ]
 
 [dependency-groups]

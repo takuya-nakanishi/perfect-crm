@@ -85,7 +85,16 @@ Claude Code / Codex ──MCP(これから)────────────�
 ## 5. 認証
 
 **外側の門は Cloudflare Access で確定**(2026-09-22。Q-035・Q-039)。Access の IdP は One-time PIN に加えて **Cloudflare の IdP(Google Workspace の SSO)を手で足した**(Cloudflare 自身が Google Workspace でログインできるため。人が増えたら再考)。
-アプリ自身のログインの形(下の A / B)は J-023 で決める。ログイン画面はある(モックでは何を入れても通る)。
+**アプリ自身のログインは B 案「Access を信頼する」に決定**(2026-09-24。本人の決定。J-023)。下の表の B のとおり、
+api は Access が付ける `Cf-Access-Jwt-Assertion` を確かめて(署名 = チームの公開鍵、`aud` = Access アプリの AUD タグ、`iss` = チーム、期限)、
+そのメールアドレスで `users` を引く。実装は `backend/app/access.py` と `app/api/deps.py`。
+
+- **門を通す人は Access のポリシー、Works の利用者は `users`**。Access は通ったが `users` にいない人は 403(`not_registered`)。足すのは `python -m app.cli add-user`(画面は J-038)。人が勝手に増えないよう、初めて来た人を自動で足すことはしない
+- **アプリはログイン画面もパスワードも持たない。**画面の `/login` は、門を通れていない(401 `access_required`)・利用者でない(403)ときの案内だけを出す。ログアウトは Access のログアウト(`/cdn-cgi/access/logout`)へ送る
+- サービストークン(MCP・Web フォームの送り手。06 §7)の JWT にはメールアドレスが無いので、画面の利用者にはならない(401)。それらは各自のトークンで守る
+- **Access の無い手元(E2E、テスト)だけは `WORKS_AUTH=dev`**: メールアドレスだけで入り、署名付きの Cookie を持つ。公開する場所では使わない。既定は `access`
+- 設定(`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD`)は `scripts/cloudflare-tunnel-setup.py` が `.env` に書く。無ければ 503 で、だれも入れない(門を開けたままにしない)
+- **引き受けたリスク**: Cloudflare の外(AWS など)へ出すと成り立たない。そのときは A 案を作る(06 §6)
 
 **管理者(2026-09-22)**: 環境設定(テーブルの定義、Web フォーム、MCP のトークン。05 §11)は、利用者の `admin` が真の人だけが開ける。サーバは `/meta/objects`・`/settings/*` の書き込みで 403 を返す(`/meta/views` は誰でも書ける。05 §11)。**ロールや細かい権限の概念はまだ持たない**(印 1 つだけ)。人が増えたときの権限の設計は J-038。
 
@@ -95,6 +104,7 @@ Claude Code / Codex ──MCP(これから)────────────�
 | B. Access を信頼する | Cloudflare が付ける `Cf-Access-Jwt-Assertion` を検証して利用者を決める。ログイン画面は出さない | 楽。ただし Cloudflare の外(AWS など)へ出すと成り立たない |
 
 引っ越しやすさ(01 D-05)を取るなら A。当面の手軽さなら B。A を作ったうえで「Access の JWT があれば自動でログイン済みにする」という折衷もある。
+比べた結果、本人は B を選んだ(上)。A へ移るときは、`deps.py` の `current_user` にパスワードとセッションの経路を足せばよい(画面の `/login` のフォームは dev で既に動いている)。
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
@@ -185,7 +195,8 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 | pydantic / pydantic-settings | 2.13.5 / 2.15.0 | 2026-08-28 / 2026-08-07 | 入出力の検証、環境変数の読み取り |
 | psycopg | 3.3.6 | 2026-09-18 | PostgreSQL のドライバ |
 | nh3 | 0.3.7 | 2026-08-23 | richtext の洗浄(04 §1)。**`bleach` は非推奨なので使わない** |
-| argon2-cffi | 25.1.0 | 2025-06-03 | パスワードのハッシュ(J-023)と MCP トークンのハッシュ(J-039) |
+| argon2-cffi | 25.1.0 | 2025-06-03 | MCP トークンのハッシュ(J-039)。ログインは Access(§5)なので、パスワードには使わない |
+| PyJWT | 2.15.0 | 2026-09-23 | Access の JWT の検証(§5。2026-09-24 に足した。PyPI で `yanked` 無し、非推奨の表示無し。暗号は既に入っている cryptography を使う) |
 | python-multipart | 0.0.32 | 2026-06-04 | Web フォームの受け口(form-urlencoded。04 §10) |
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | 2026-06-19 / 2026-05-26 | テスト |
 | httpx2 | 2.13.0 | 2026-09-14 | **Google の API を叩く**(04 §8)ことと、テストから ASGI 越しに HTTP 層ごと叩くこと。**`httpx`(0.28.1)は使わない** — starlette 1.6.0 が「`httpx` と一緒に使うのは非推奨。`httpx2` を入れること」と警告する(2026-09-23 に実物の出力で確認) |

@@ -14,7 +14,8 @@ FastAPI + SQLAlchemy 2(Core)+ Alembic + Pydantic v2 + psycopg 3。パッケー�
 | `app/google/` | Google ドライブ(04 §8)。`oauth`(繋ぐ)・`store`(鍵を暗号化して持つ)・`drive`(Drive API)・`http`(**唯一の外向きの口**。テストはここを差し替える) |
 | `app/db.py` | 接続。1 リクエスト = 1 トランザクション |
 | `app/errors.py` | `ApiError` と、契約どおりの `{code, message}` に揃える例外ハンドラ |
-| `app/security.py` | セッション Cookie の署名(パスワードの検証は J-023) |
+| `app/access.py` | ログイン。Cloudflare Access の JWT を確かめてメールアドレスを取る(03 §5 の B 案)。いまの利用者を決めるのは `app/api/deps.py` |
+| `app/security.py` | 署名と暗号化の鍵、`WORKS_AUTH=dev` のセッション Cookie |
 | `app/meta/tables.py` | **システム表だけ**の定義(`workspace` / `users` / `meta_*` / `ddl_log` / `activity_mentions`) |
 | `app/meta/ddl.py` | メタデータ → 実テーブルの DDL。**DDL を流す経路はここ 1 本**。`DROP` は作らない(02 §4) |
 | `app/meta/seed.py` | 初期メタデータの投入。正は `app/seed/*.json`(画面の fixtures と同じ。`tests/test_seed.py` が突き合わせる) |
@@ -33,7 +34,9 @@ docker compose --profile backend up -d --build     # api + db(リポジトリの
 | 変数 | 何に使うか |
 |---|---|
 | `WORKS_DB_PASSWORD` | PostgreSQL のパスワード。db と api の両方が読む |
-| `WORKS_SECRET_KEY` | セッション Cookie の署名。空だと再起動のたびにログインし直しになる |
+| `WORKS_SECRET_KEY` | 署名と Google の鍵の暗号化。空だと再起動のたびに Google の繋ぎ直しになる |
+| `WORKS_AUTH` | `access`(既定。Access の JWT で利用者を決める)か `dev`(メールアドレスだけ。Access の無い手元だけ) |
+| `WORKS_ACCESS_TEAM_DOMAIN` / `WORKS_ACCESS_AUD` | Access のチームと、Access アプリの AUD タグ。`scripts/cloudflare-tunnel-setup.py` が書く。空なら access ではだれも入れない(503) |
 | `WORKS_ADMIN_EMAIL` / `WORKS_ADMIN_NAME` | 最初の管理者。初回の `app.cli init` だけが使う |
 | `WORKS_GOOGLE_CLIENT_ID` / `WORKS_GOOGLE_CLIENT_SECRET` | Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は `docs/runbook/01` §6 |
 | `WORKS_GOOGLE_REDIRECT_URI` | 許可のあとに Google が戻す先。既定は `https://works.sanei-clover.com/api/v1/google/callback`。**GCP に登録した URL と 1 文字も違ってはいけない** |

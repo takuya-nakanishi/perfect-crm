@@ -1,6 +1,6 @@
-"""セッションの Cookie。いまは署名だけで、パスワードの検証は J-023 で足す。
+"""署名と暗号化の鍵、および `WORKS_AUTH=dev` のセッション Cookie。
 
-外側の門は Cloudflare Access(03 §5)。ここはアプリ自身の「誰として書いたか」を決める層。
+本番のログインは Cloudflare Access の JWT(app/access.py。03 §5 の B 案)で、Cookie は使わない。
 """
 
 import hmac

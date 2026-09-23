@@ -55,7 +55,12 @@ services:
     environment:
       WORKS_DB_HOST: db
       WORKS_DB_PASSWORD: ${WORKS_DB_PASSWORD:-}
-      WORKS_SECRET_KEY: ${WORKS_SECRET_KEY:-} # 空だと再起動のたびにログインし直しになる
+      WORKS_SECRET_KEY: ${WORKS_SECRET_KEY:-} # 空だと再起動のたびに Google の繋ぎ直しになる
+      # ログイン(03 §5 の B 案)。access = Cloudflare Access の JWT で利用者を決める。dev は Access の無い手元だけ
+      WORKS_AUTH: ${WORKS_AUTH:-access}
+      WORKS_ACCESS_TEAM_DOMAIN: ${WORKS_ACCESS_TEAM_DOMAIN:-} # scripts/cloudflare-tunnel-setup.py が書く
+      WORKS_ACCESS_AUD: ${WORKS_ACCESS_AUD:-}
+      WORKS_SECURE_COOKIE: ${WORKS_SECURE_COOKIE:-true} # dev を http で開くときだけ false
       WORKS_ADMIN_EMAIL: ${WORKS_ADMIN_EMAIL:-} # 最初の管理者(初回だけ作る)
       WORKS_ADMIN_NAME: ${WORKS_ADMIN_NAME:-管理者}
       # Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は docs/runbook/01 §6

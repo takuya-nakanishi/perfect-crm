@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,9 +29,18 @@ class Settings(BaseSettings):
     admin_email: str = ""
     admin_name: str = "管理者"
 
-    # セッション Cookie の署名鍵(.env の WORKS_SECRET_KEY)。空なら起動ごとのランダム
+    # --- ログイン(03 §5 の B 案。app/access.py)-----------------------------
+    # access = Cloudflare Access が付ける JWT で利用者を決める(本番。ログイン画面は出さない)
+    # dev = メールアドレスだけで入れる(Access の無い手元の E2E とテスト用。**公開する場所では使わない**)
+    auth: Literal["access", "dev"] = "access"
+    # Access のチーム(例 https://<チーム名>.cloudflareaccess.com)と、Access アプリの AUD タグ。
+    # scripts/cloudflare-tunnel-setup.py が .env に書く。空のままだと access ではだれも入れない(503)
+    access_team_domain: str = ""
+    access_aud: str = ""
+
+    # 署名と暗号化の鍵(.env の WORKS_SECRET_KEY)。空なら起動ごとのランダム
     secret_key: str = ""
-    # Cookie に Secure を付ける(https で配るとき。開発の http では false)
+    # dev のセッション Cookie に Secure を付ける(https で配るとき。開発の http では false)
     secure_cookie: bool = True
 
     # SQL をログに出す(開発用)

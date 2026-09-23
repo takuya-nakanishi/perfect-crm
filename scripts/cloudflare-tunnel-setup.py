@@ -4,7 +4,8 @@
   python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール>[,<メール>] --app-name Works
 
 やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ Access の One-time PIN →
-Access アプリ(セッション長は --session)→ 許可ポリシー(メール)→ 直下の .env の CLOUDFLARE_TUNNEL_TOKEN を更新。
+Access アプリ(セッション長は --session)→ 許可ポリシー(メール)→ 直下の .env の CLOUDFLARE_TUNNEL_TOKEN と
+WORKS_ACCESS_TEAM_DOMAIN / WORKS_ACCESS_AUD(api がログインの JWT を確かめるのに使う)を更新。
 そのあと `docker compose --profile public up -d` で cloudflared が起動する。手順の全体は docs/runbook/01-operations.md。
 
 --allow を省くと Access を置かない(素通し。アプリ自身の認証だけで守ることになるので、画面がモックの間は使わない)。
@@ -87,6 +88,12 @@ else:
         print('ポリシー: allow', len(emails), '件のメールアドレス')
     else:
         print('ポリシー既存:', [(p['name'], p['decision']) for p in pols])
+
+    # 5a. アプリ(api)が Access の JWT を確かめるための 2 つを .env へ(03 §5 の B 案。backend/app/access.py)。
+    #     チームのドメインは発行元(iss)と公開鍵の置き場、AUD タグは宛先(aud)。どちらも値は表示しない
+    org = cf.api(f'/accounts/{aid}/access/organizations')
+    for key, value in (('WORKS_ACCESS_TEAM_DOMAIN', f'https://{org["auth_domain"]}'), ('WORKS_ACCESS_AUD', app['aud'])):
+        print(f'.env の {key}:', {'added': '追記', 'updated': '置き換え', 'unchanged': 'そのまま'}[cf.set_env(key, value)])
 
     # 5b. Access を素通しにするパス。エージェントは PIN の画面を通れないので、
     #     アプリ自身の認証(API キー等)で守られているパスだけを指定する

@@ -11,9 +11,9 @@
 ## 現状(2026-09-21)
 
 **画面のモックが `https://works.sanei-clover.com` で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access)。
-データはブラウザ内の擬似 DB。バックエンド(Python)・PostgreSQL・本物のログインはこれから。
+データはブラウザ内の擬似 DB。バックエンド(Python)と PostgreSQL は `backend/` にあり、画面を http モードへ切り替えるのはこれから(J-024)。ログインは Cloudflare Access を信頼する(`docs/design/03` §5)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
-バックエンドのフレームワークは未決(Q-034。比較と推奨は `docs/design/03` §4)。決まるまで `backend/` を作り始めない。
+バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 
 - `.env` は直下に 1 つ。値を出力・コミット・外部送出しない(スクリプトも値を表示しない)
 - **Docker は WSL2 の中の Docker Engine を使う。Windows 側の Docker Desktop は使わない**
@@ -47,7 +47,7 @@ cd frontend && npm run e2e                 # 実ブラウザ(開発サーバを�
 ## スタック
 
 確定: 画面は Vite + React + TypeScript + Tailwind CSS v4(+ React Router、TanStack Query、zustand、@dnd-kit/react、lucide)。配信は Caddy、公開は Cloudflare Tunnel + Access、DB は PostgreSQL 18、全体は Docker Compose。
-未決: バックエンドのフレームワーク(Python。Q-034)。
+バックエンドは FastAPI(Q-034)。ログインは Cloudflare Access の JWT を確かめる(03 §5)。
 採用したライブラリと非推奨の確認結果は `docs/design/03` §9。**新しく足すときは、非推奨でないことを一次資料で確かめてから。**
 
 ## 作業の仕方

@@ -95,7 +95,11 @@ def seed(conn: Connection) -> None:
 
 
 def ensure_user(conn: Connection, *, name: str, email: str, admin: bool = False, id: str | None = None) -> Any:
-    """利用者を 1 人用意する(既にいれば その ID を返す)。本物のログインは J-023。"""
+    """利用者を 1 人用意する(既にいれば その ID を返す)。
+
+    メールアドレスは小文字で持つ(ログインは Access の JWT のメールアドレスを小文字にして引く。03 §5)。
+    """
+    email = email.strip().lower()
     found = conn.execute(select(users.c.id).where(users.c.email == email)).scalar_one_or_none()
     if found is not None:
         return found
