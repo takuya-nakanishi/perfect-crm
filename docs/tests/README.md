@@ -3,6 +3,7 @@
 自作 CRM「Works」のテストの土台と、それに沿って起こしたケースの一覧。**設計の正は `docs/design/`**(01〜08)で、
 ここは「その仕様を、誰の目線で・どの段階を・どの性質について・どの層で確かめるか」に落とした表。
 表の `—` の行(まだテストが無い行)のうち L1・L2 は、無人ループ(`loops/tests/`。[`../runbook/02-loop.md`](../runbook/02-loop.md))が実装する。
+**「API の資産」の列**は、同じ L2 の行を本物の HTTP API に向けて確かめる pytest で、`loops/api/` のループが埋める。
 
 ## 1. 領域と優先順位
 
@@ -43,10 +44,12 @@
 | L1 | `frontend/src/lib/*.ts` の純関数(フィルタの評価、日付、書式、読み取り、洗浄、下書き) | 対象の隣の `*.test.ts` | `cd frontend && npm test`(Vitest) | 無人ループ |
 | L2 | モックのエンジン(`frontend/src/mocks/*.ts`)。**バックエンドができるまで、サーバの振る舞いの正**。検証・既定値・業務ルール・時系列の合成・テーブル設定の決まり・CSV・受け口 | 対象の隣の `*.test.ts` | 同上 | 無人ループ |
 | L3 | 実ブラウザの画面(Playwright)。ログインから環境設定まで通しで | `frontend/e2e/smoke.mjs` の検査(`ok(…, 'ラベル')`) | `npm run e2e`(開発サーバ・コンテナ・公開 URL のどれにも) | 人と、人が起こしたセッション |
-| L4 | PostgreSQL の制約・トリガ・RLS(J-022 のあと) | (未定) | — | — |
+| L4 | PostgreSQL の制約・トリガ・RLS | `backend/tests/` の pytest(実物の DB に対して回る) | `cd backend && uv run pytest` | 人と、人が起こしたセッション |
 | L5 | 公開 URL(Access 越し)、スマホの実機 | `scripts/cloudflare-access-check.py --exec` | 人 | 人 |
 
-**L2 のテストは、バックエンド(J-021〜)ができたら同じケースを HTTP に向けて流す**(04 の契約が同じなので、期待値はそのまま使える)。
+**L2 のテストは、同じケースを HTTP にも向けて流す**(04 の契約が同じなので、期待値はそのまま使える)。
+バックエンドの pytest は表の「API の資産」列で追い、関数の名前を `test_<ID>_…`(例 `test_IO_001_ne_は_NULL_を含む`)にする。
+埋めるのは `loops/api` のループ([`../runbook/02-loop.md`](../runbook/02-loop.md) §10)。
 モックの `localStorage` は Vitest では happy-dom が持つ。テストは `resetTables()` / `resetSchema()` で毎回初期状態にする。
 
 ### テストの書き方
@@ -62,7 +65,8 @@
 | ID | 領域の接頭辞 + 連番。**欠番を埋めない**(消えたケースの ID は再利用しない) |
 | 視点・段階・性質・層 | §2 |
 | ケース | 「**〈視点〉: 〈操作〉 → 〈期待〉**」 |
-| 対応する資産 | 実在するテスト。無い行は **—**。書いたら名前をその行に入れる(行は消さない) |
+| 対応する資産 | 実在するテスト(Vitest・E2E)。無い行は **—**。書いたら名前をその行に入れる(行は消さない) |
+| API の資産 | 同じ行を**本物の HTTP API**に向けて確かめる pytest(`backend/tests/`)。L2 の行だけが対象で、`loops/api` のループが埋める |
 
 資産の書き方: 単体は `filter.test.ts`(ファイル名。`frontend/src/` 配下を `--check` が探す)、E2E は `smoke.mjs「ラベル」`(`ok()` の 2 つめの引数。`node scripts/loop-next.mjs --labels` で一覧できる)、部分的なら `smoke.mjs「…」(部分)` + 何が足りないかを備考に。
 

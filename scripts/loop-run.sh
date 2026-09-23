@@ -7,6 +7,7 @@
 #   scripts/loop-run.sh --land auto     1 件。検証が通れば main へ着地まで行う
 #   scripts/loop-run.sh --max 3         最大 3 件を続けて回す
 #   scripts/loop-run.sh --dry-run       次の 1 件と依頼文を出すだけ(エージェントを起動しない)
+#   scripts/loop-run.sh --queue api     バックエンドを実装するキュー(既定は tests。loops/<名前>/README.md)
 #
 # 止め方: touch ~/.cache/perfect-crm/loop/HALT(消すまで起動しない。連続失敗でも自動で立つ)
 #
@@ -16,16 +17,22 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-LAND="hold"; MAX=1; DRY=0
+LAND="hold"; MAX=1; DRY=0; QUEUE="tests"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --land) [ "$#" -ge 2 ] || { echo "NG: --land に値がありません" >&2; exit 64; }; LAND="$2"; shift 2 ;;
     --max) [ "$#" -ge 2 ] || { echo "NG: --max に値がありません" >&2; exit 64; }; MAX="$2"; shift 2 ;;
+    --queue) [ "$#" -ge 2 ] || { echo "NG: --queue に値がありません" >&2; exit 64; }; QUEUE="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     *) echo "NG: 不明な引数: $1" >&2; exit 64 ;;
   esac
 done
 case "$LAND" in hold|auto) ;; *) echo "NG: --land は hold か auto" >&2; exit 64 ;; esac
+case "$QUEUE" in
+  tests) QUEUE_DIR="loops/tests"; WT_PREFIX="loop-" ;;
+  api)   QUEUE_DIR="loops/api";   WT_PREFIX="loop-api-" ;;
+  *) echo "NG: --queue は tests か api" >&2; exit 64 ;;
+esac
 echo "$MAX" | grep -qE '^[1-9][0-9]*$' || { echo "NG: --max は 1 以上の整数" >&2; exit 64; }
 
 CLAUDE_BIN="${LOOP_CLAUDE_BIN:-$HOME/.local/bin/claude}"
@@ -66,14 +73,14 @@ should_stop() {
 }
 should_stop && exit 0
 
-# 失敗・保留の記録を loops/tests/<ID>.md に残して着地させる(次の周が同じ失敗を繰り返さないための記憶)
+# 失敗・保留の記録を loops/<キュー>/<ID>.md に残して着地させる(次の周が同じ失敗を繰り返さないための記憶)
 record_attempt() { # wt id state note
-  local wt="$1" id="$2" state="$3" note="$4" file="loops/tests/$2.md"
+  local wt="$1" id="$2" state="$3" note="$4" file="$QUEUE_DIR/$2.md"
   ( cd "$wt" || exit 1
     # 書く役の成果物は捨てる(未追跡のファイルも)。あとで見られるよう差分だけログに残す
     git add -A -- . ':!frontend/node_modules' >/dev/null 2>&1; git diff --cached origin/main > "$STATE_DIR/logs/$id-discarded.patch" 2>/dev/null
     git reset -q --hard origin/main; git clean -fdq -e frontend/node_modules
-    mkdir -p loops/tests
+    mkdir -p "$QUEUE_DIR"
     [ -f "$file" ] || printf '# %s\n\n- 状態: 未着手\n\n## 試行の記録\n\n' "$id" > "$file"
     local n; n="$(grep -c '^- \[' "$file" || true)"; n=$((n + 1))
     [ "$state" = "失敗" ] && [ "$n" -ge "$MAX_ATTEMPTS" ] && state="保留" && note="$note(試行 $n 回で通らず、人へ返す)"
@@ -89,21 +96,21 @@ while [ "$DONE" -lt "$MAX" ]; do
   [ "$DONE" -gt 0 ] && should_stop && break
   git fetch -q origin main || { say "fetch に失敗"; exit 1; }
   PICK_DIR="$(mktemp -d)"
-  git archive "$PICK_REF" docs/tests loops scripts/loop-next.mjs frontend/e2e 2>/dev/null | tar -x -C "$PICK_DIR" 2>/dev/null
+  git archive "$PICK_REF" docs/tests loops scripts/loop-next.mjs frontend/e2e backend/tests 2>/dev/null | tar -x -C "$PICK_DIR" 2>/dev/null
   [ -f "$PICK_DIR/scripts/loop-next.mjs" ] || { say "$PICK_REF に scripts/loop-next.mjs がありません"; rm -rf "$PICK_DIR"; exit 1; }
   MAIN_TREE="$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')"
   mkdir -p "$PICK_DIR/.claude"; ln -s "$MAIN_TREE/.claude/worktrees" "$PICK_DIR/.claude/worktrees"
-  NEXT="$(node "$PICK_DIR/scripts/loop-next.mjs")"
+  NEXT="$(node "$PICK_DIR/scripts/loop-next.mjs" --queue "$QUEUE")"
   ID="$(node -e 'console.log(JSON.parse(process.argv[1]).id ?? "")' "$NEXT")"
   AREA_TABLE="$(node -e 'console.log(JSON.parse(process.argv[1]).table ?? "")' "$NEXT")"
   if [ -z "$ID" ]; then say "取れる行がありません: $NEXT"; rm -rf "$PICK_DIR"; break; fi
-  PROMPT="$(node "$PICK_DIR/scripts/loop-next.mjs" --prompt)"
+  PROMPT="$(node "$PICK_DIR/scripts/loop-next.mjs" --queue "$QUEUE" --prompt)"
   rm -rf "$PICK_DIR"
 
-  say "対象: $ID"
+  say "対象: $ID(キュー: $QUEUE)"
   if [ "$DRY" = 1 ]; then echo "$NEXT"; echo "-----"; echo "$PROMPT"; exit 0; fi
 
-  NAME="loop-$(echo "$ID" | tr 'A-Z' 'a-z')"
+  NAME="$WT_PREFIX$(echo "$ID" | tr 'A-Z' 'a-z')"
   WT="$ROOT/.claude/worktrees/$NAME"
   bash scripts/wt-new.sh "$NAME" >"$STATE_DIR/logs/$ID-wt-new.log" 2>&1 || { say "worktree を作れません"; ledger "$ID" failed "wt-new"; exit 1; }
 
@@ -117,28 +124,30 @@ while [ "$DONE" -lt "$MAX" ]; do
   if [ -z "$FAIL" ] && [ -n "$(git -C "$WT" status --porcelain | grep -v '^?? frontend/node_modules$')" ]; then FAIL="未コミットの変更を残して終わった"; fi
   CHANGED="$(git -C "$WT" diff --name-only origin/main...HEAD)"
   if [ -z "$FAIL" ] && [ -z "$CHANGED" ]; then FAIL="コミットが無い"; fi
+  # 触ってよいパス(キューの定義。loops/<名前>/README.md)。ここから外れたら不合格
   if [ -z "$FAIL" ]; then
     while IFS= read -r f; do
-      case "$f" in
-        "loops/tests/$ID.md"|"$AREA_TABLE") ;;
-        frontend/src/*.test.ts|frontend/src/*.test.tsx) ;;
+      case "$QUEUE:$f" in
+        "$QUEUE:$QUEUE_DIR/$ID.md"|"$QUEUE:$AREA_TABLE") ;;
+        tests:frontend/src/*.test.ts|tests:frontend/src/*.test.tsx) ;;
+        api:backend/*) ;;
         *) FAIL="触ってはいけないパスを変更した: $f"; break ;;
       esac
     done <<< "$CHANGED"
   fi
 
   HELD=0
-  if [ -z "$FAIL" ] && grep -q '^- 状態: 保留' "$WT/loops/tests/$ID.md" 2>/dev/null; then
+  if [ -z "$FAIL" ] && grep -q '^- 状態: 保留' "$WT/$QUEUE_DIR/$ID.md" 2>/dev/null; then
     HELD=1
-    [ "$CHANGED" = "loops/tests/$ID.md" ] || FAIL="保留なのに状態ファイル以外も変更している"
+    [ "$CHANGED" = "$QUEUE_DIR/$ID.md" ] || FAIL="保留なのに状態ファイル以外も変更している"
   fi
 
   if [ -z "$FAIL" ] && [ "$HELD" = 0 ]; then
     say "verify を実行"
     if ! ( cd "$WT" && bash scripts/verify.sh ) >"$STATE_DIR/logs/$ID-verify.log" 2>&1; then
       FAIL="verify が red: $(grep -E '\| red \|' "$STATE_DIR/logs/$ID-verify.log" | sed 's/ *| */ /g' | tr '\n' ';' | cut -c1-200)"
-    elif ! grep -q "^- 状態: 完了" "$WT/loops/tests/$ID.md" 2>/dev/null; then
-      FAIL="loops/tests/$ID.md が完了になっていない"
+    elif ! grep -q "^- 状態: 完了" "$WT/$QUEUE_DIR/$ID.md" 2>/dev/null; then
+      FAIL="$QUEUE_DIR/$ID.md が完了になっていない"
     fi
   fi
 
@@ -146,7 +155,7 @@ while [ "$DONE" -lt "$MAX" ]; do
     say "失敗: $FAIL"; ledger "$ID" failed "$FAIL"
     record_attempt "$WT" "$ID" "失敗" "$FAIL" || say "試行の記録を着地できませんでした($STATE_DIR/logs/$ID-record-land.log)。worktree を残します: $WT"
   elif [ "$HELD" = 1 ]; then
-    say "保留(エージェントの判断)。理由を着地させます"; ledger "$ID" held "$(grep -m1 '^- 状態:' "$WT/loops/tests/$ID.md")"
+    say "保留(エージェントの判断)。理由を着地させます"; ledger "$ID" held "$(grep -m1 '^- 状態:' "$WT/$QUEUE_DIR/$ID.md")"
     ( cd "$WT" && bash scripts/wt-land.sh ) >"$STATE_DIR/logs/$ID-land.log" 2>&1 || say "着地に失敗。worktree を残します: $WT"
   elif [ "$LAND" = "auto" ]; then
     if ( cd "$WT" && bash scripts/wt-land.sh ) >"$STATE_DIR/logs/$ID-land.log" 2>&1; then
@@ -162,4 +171,4 @@ while [ "$DONE" -lt "$MAX" ]; do
   fi
   DONE=$((DONE + 1))
 done
-say "終了(${DONE} 件)"
+say "終了(${DONE} 件。キュー: $QUEUE)"
