@@ -1,0 +1,30 @@
+"""レコードの読み取り(04 §2)。一覧が POST なのは、入れ子のフィルタが URL に収まらないため。"""
+
+from typing import Any
+
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from app.api.deps import Conn, CurrentUser
+from app.records import service
+
+router = APIRouter()
+
+
+class ListParams(BaseModel):
+    # フィルタは入れ子になる(条件 / and / or)。中身の検証は SQL に訳すときに行う(04 §3)
+    filter: dict[str, Any] | None = None
+    sort: list[dict[str, Any]] | None = None
+    q: str | None = None
+    limit: int | None = Field(default=None, ge=0)
+    offset: int | None = Field(default=None, ge=0)
+
+
+@router.post("/objects/{object_key}/records/query")
+def query_records(object_key: str, params: ListParams, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return service.query(conn, object_key, params.model_dump(exclude_none=True), user["id"])
+
+
+@router.get("/objects/{object_key}/records/{record_id}")
+def read_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return service.find(conn, object_key, record_id)

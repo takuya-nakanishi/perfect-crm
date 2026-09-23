@@ -8,7 +8,7 @@
 """
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -21,6 +21,9 @@ from sqlalchemy.engine import Engine
 from app import db
 from app.main import app
 from app.meta import seed as seed_module
+from app.meta import store
+from app.records.normalize import search_text_of
+from app.records.tables import table_of
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 # Compose の db が公開しているポート(docker-compose.yml。127.0.0.1 からだけ届く)
@@ -119,6 +122,19 @@ def client(conn: Connection) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make(conn: Connection) -> Callable[..., str]:
+    """テスト用に 1 行作る。書き込みの API ができるまでの土台(検証も業務ルールも通さない)。"""
+
+    def _make(object_key: str, **values: object) -> str:
+        obj = store.object_meta(conn, object_key)
+        table = table_of(obj)
+        values["search_text"] = search_text_of(obj["fields"], values)
+        return str(conn.execute(table.insert().values(**values).returning(table.c.id)).scalar_one())
+
+    return _make
 
 
 @pytest.fixture

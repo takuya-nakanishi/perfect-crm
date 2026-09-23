@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, FastAPI
 
-from app.api import meta, session
+from app.api import meta, records, session
 from app.errors import install_error_handlers
 
 app = FastAPI(
@@ -17,6 +17,7 @@ install_error_handlers(app)
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(session.router)
 v1.include_router(meta.router)
+v1.include_router(records.router)
 app.include_router(v1)
 
 
