@@ -102,9 +102,13 @@ docker compose logs -f api
 
 ## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
 
-画面の「Google に接続」が動くまでに、**人が GCP で 1 回だけ**やること。使うのは
-**スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト**(sanei-clover.com の Workspace)。
-設計は `docs/design/04` §8。**この手順で作る値は `.env` に入れるだけで、コミットしない。**
+画面の「Google に接続」が動くまでに、**人が GCP で 1 回だけ**やること。設計は `docs/design/04` §8。
+**この手順で作る値(クライアント ID とシークレット)は `.env` に入れるだけで、コミットしない。**
+
+| | |
+|---|---|
+| GCP プロジェクト | `citric-earth-449901-e7`(**スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト**。sanei-clover.com の Workspace) |
+| コンソール | `https://console.cloud.google.com/apis/credentials?project=citric-earth-449901-e7` |
 
 1. **Drive API を有効にする** — 「API とサービス」→「ライブラリ」→ Google Drive API →「有効にする」
 2. **OAuth の同意画面**を「内部」(Internal)で作る。内部にしておくと、`drive.readonly` が制限付きスコープでも
