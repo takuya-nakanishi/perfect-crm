@@ -448,6 +448,16 @@ export interface TimelineResponse {
 // Google ドライブ(drive_files 型の項目)
 // ---------------------------------------------------------------------------
 
+/** GET /api/v1/google/status — いまログインしている利用者の Google の繋がり具合 */
+export interface GoogleStatus {
+  /** この利用者が Google を繋いでいるか */
+  connected: boolean
+  /** 繋いでいる Google のアドレス(繋いでいなければ null) */
+  email: string | null
+  /** 管理者が OAuth クライアント(.env)を入れているか。false なら繋ぐこともできない */
+  configured: boolean
+}
+
 /** ドライブのファイル 1 つ。項目の値は、これを並べた JSON 文字列 */
 export interface DriveFile {
   id: string

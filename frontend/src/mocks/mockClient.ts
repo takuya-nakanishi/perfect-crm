@@ -1,7 +1,7 @@
 import { ApiError, type ApiClient } from '@/api/client'
 import type { Session } from '@/api/types'
 import { exportCsv, importCsv } from './csv'
-import { createDocument, listFiles, resetDrive } from './drive'
+import { connectDrive, createDocument, disconnectDrive, driveStatus, listFiles, resetDrive } from './drive'
 import * as settings from './settings'
 import * as db from './engine'
 
@@ -200,6 +200,21 @@ export function createMockClient(): ApiClient {
       await sleep(WRITE_MS)
       // 受け口は認証なし(公開の Web から呼ばれる)
       return settings.submitForm(key, values)
+    },
+    async googleStatus() {
+      await sleep(READ_MS)
+      requireUser()
+      return driveStatus()
+    },
+    async googleConnect() {
+      await sleep(READ_MS)
+      requireUser()
+      return connectDrive()
+    },
+    async googleDisconnect() {
+      await sleep(WRITE_MS)
+      requireUser()
+      disconnectDrive()
     },
     async listDriveFiles(q) {
       await sleep(READ_MS * 3)

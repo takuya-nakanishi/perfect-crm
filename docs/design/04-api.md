@@ -42,6 +42,10 @@
 | `GET /settings/mcp/tokens` / `POST` / `DELETE …/{id}` | MCP のアクセストークン(管理者)。発行の応答だけ全文(`secret`)を返す。§10 | `McpToken[]` / `McpTokenCreated` / 204 |
 | `GET /settings/forms` / `POST` / `PUT …/{id}` / `DELETE …/{id}` / `POST …/{id}/rotate` | Web フォームの定義(管理者)。§10 | `WebForm` |
 | `POST /forms/{key}` | **Web フォームの受け口(認証なし)**。form-urlencoded か JSON。§10 | `RecordResponse`(HTML のフォームからは `redirect_url` へ 303、無ければ小さな「受け付けました」の画面) |
+| `GET /google/status` | その利用者が Google を繋いでいるか。§8 | `GoogleStatus` |
+| `POST /google/connect` | 許可の画面の URL をもらう。§8 | `{ url }` |
+| `GET /google/callback?code&state` | **Google からの戻り**(ここだけ Cookie を見ない)。§8 | 303 で画面へ(`?google=connected` / `denied` / `error`) |
+| `DELETE /google/connection` | 繋ぎを外す(Google 側の許可も取り消す)。§8 | 204 |
 | `GET /drive/files?q=` | ログインしている利用者のマイドライブを探す。§8 | `DriveFile[]` |
 | `POST /objects/{object}/records/{id}/drive/{field}/document` | 「マイドライブ / CRM / テーブル名 / レコード名」の Google ドキュメントを作り、その項目に付ける。§8 | `RecordResponse` |
 | `GET /search?q=` | 全テーブルの横断検索 | `SearchResponse` |
@@ -120,10 +124,20 @@
 
 ## 8. Google ドライブ(`drive_files` 型の項目)
 
-- 利用者ごとの Google アカウントで Drive API を叩く(バックエンドが OAuth の refresh token を持つ。J-035)。画面はトークンに触れない
+**利用者ごとの Google アカウント**で Drive API を叩く(2026-09-23 に実装。J-035)。画面はトークンに触れない。
+
+| 手順 | 中身 |
+|---|---|
+| 繋ぐ | `POST /google/connect` で許可の画面の URL をもらい、画面はそこへ送り出す。戻り(`GET /google/callback`)でサーバが token を受け取り、**refresh token を暗号化して `google_accounts` に仕舞う**。終わったら `?google=connected` を付けて画面へ 303 |
+| 使う | `GET /drive/files?q=`(名前の部分一致で 20 件。フォルダとゴミ箱は出さない)、`POST …/drive/{field}/document`(下記)。access token は控えを使い回し、切れていれば refresh token で取り直す |
+| 外す | `DELETE /google/connection`。Google 側の許可も取り消し、行を消す。**ドライブのファイルは消さない** |
+
 - `POST …/drive/{field}/document`: 「マイドライブ / CRM / テーブルの表示名」のフォルダを探し、無ければ作り、その中にレコードの表示名の Google ドキュメントを作って、項目の末尾に付ける。応答は更新後のレコード
-- `GET /drive/files?q=`: 名前の部分一致で 20 件まで。画面の「参照」はここから選び、項目の値(`DriveFile[]` の JSON)を `PATCH` で書く。**外してもドライブのファイルは消さない**
-- 本番では Google Picker(画面側の部品)に替える余地がある。契約は「画面が `DriveFile[]` を書く」なので、どちらでも同じ
+- 画面の「参照」は `GET /drive/files` から選び、項目の値(`DriveFile[]` の JSON)を `PATCH` で書く。**外してもドライブのファイルは消さない**
+- **state は署名だけで持つ**(DB にも Cookie にも置かない)。中身は「利用者の ID + 発行時刻 + 使い捨ての値」で、PKCE の verifier も同じ鍵から導く。戻りが自分の出したものかは署名で分かるので、途中の状態を保存しなくてよい。古い state(15 分)は断る
+- スコープは `drive.readonly`(参照)+ `drive.file`(作成)+ `userinfo.email`・`openid`(繋いだアドレスの表示)。`drive.readonly` は制限付きだが、**OAuth アプリを「内部」(Workspace 限定)で公開する限り審査は要らない**(GCP 側の手順は `docs/runbook/01` §6)
+- 繋いでいない・許可が切れた → **409 `google_reauth`**(画面は「Google に接続」を出す)。管理者が `.env` を入れていない → **503 `google_not_configured`**。Google が落ちている → 502
+- Google Picker(画面側の部品)に替える余地はあるが、いまは採っていない。**Caddy の CSP が `script-src 'self'` で、Google のスクリプトと iframe を入れると緩めることになる**ため。契約は「画面が `DriveFile[]` を書く」なので、替えても同じ
 
 ## 9. 時系列(レコードのパネルの「活動」)
 

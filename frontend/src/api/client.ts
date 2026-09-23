@@ -2,6 +2,7 @@ import type {
   AggregateParams,
   AggregateResponse,
   DriveFile,
+  GoogleStatus,
   ImportParams,
   ImportResponse,
   ListParams,
@@ -76,6 +77,12 @@ export interface ApiClient {
   /** 受け口そのもの(認証なし)。画面からは「テスト送信」で使う */
   submitWebForm(key: string, values: Record<string, Scalar>): Promise<RecordResponse>
 
+  /** Google を繋いでいるか(利用者ごと)。繋いでいなければドライブの API は 409 `google_reauth` を返す */
+  googleStatus(): Promise<GoogleStatus>
+  /** 許可の画面の URL をもらう。画面はそこへ送り出すだけで、トークンには触れない */
+  googleConnect(): Promise<{ url: string }>
+  /** 繋ぎを外す(Google 側の許可も取り消す)。**ドライブのファイルは消さない** */
+  googleDisconnect(): Promise<void>
   /** Google ドライブ(ログインしている利用者のアカウント)。マイドライブのファイルを探す */
   listDriveFiles(q: string): Promise<DriveFile[]>
   /**

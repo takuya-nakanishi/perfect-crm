@@ -11,6 +11,7 @@ FastAPI + SQLAlchemy 2(Core)+ Alembic + Pydantic v2 + psycopg 3。パッケー�
 | 場所 | 中身 |
 |---|---|
 | `app/config.py` | 環境変数(`WORKS_*`)。リポジトリ直下の `.env` を読む |
+| `app/google/` | Google ドライブ(04 §8)。`oauth`(繋ぐ)・`store`(鍵を暗号化して持つ)・`drive`(Drive API)・`http`(**唯一の外向きの口**。テストはここを差し替える) |
 | `app/db.py` | 接続。1 リクエスト = 1 トランザクション |
 | `app/errors.py` | `ApiError` と、契約どおりの `{code, message}` に揃える例外ハンドラ |
 | `app/security.py` | セッション Cookie の署名(パスワードの検証は J-023) |
@@ -34,6 +35,8 @@ docker compose --profile backend up -d --build     # api + db(リポジトリの
 | `WORKS_DB_PASSWORD` | PostgreSQL のパスワード。db と api の両方が読む |
 | `WORKS_SECRET_KEY` | セッション Cookie の署名。空だと再起動のたびにログインし直しになる |
 | `WORKS_ADMIN_EMAIL` / `WORKS_ADMIN_NAME` | 最初の管理者。初回の `app.cli init` だけが使う |
+| `WORKS_GOOGLE_CLIENT_ID` / `WORKS_GOOGLE_CLIENT_SECRET` | Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は `docs/runbook/01` §6 |
+| `WORKS_GOOGLE_REDIRECT_URI` | 許可のあとに Google が戻す先。既定は `https://works.sanei-clover.com/api/v1/google/callback`。**GCP に登録した URL と 1 文字も違ってはいけない** |
 
 ## 手元で動かす・テストする
 

@@ -100,7 +100,39 @@ docker compose logs -f api
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
 - 画面から API を使うには `VITE_API_MODE=http` で web を建て直す(`docker compose up -d --build web`)。既定は mock(J-024)
 
-## 6. 版を上げる
+## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
+
+画面の「Google に接続」が動くまでに、**人が GCP で 1 回だけ**やること。使うのは
+**スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト**(sanei-clover.com の Workspace)。
+設計は `docs/design/04` §8。**この手順で作る値は `.env` に入れるだけで、コミットしない。**
+
+1. **Drive API を有効にする** — 「API とサービス」→「ライブラリ」→ Google Drive API →「有効にする」
+2. **OAuth の同意画面**を「内部」(Internal)で作る。内部にしておくと、`drive.readonly` が制限付きスコープでも
+   **審査(CASA)が要らない**。外部にすると審査が要るので、必ず内部のままにする
+3. **OAuth クライアント ID** を「ウェブ アプリケーション」で作り、
+   「承認済みのリダイレクト URI」に `https://works.sanei-clover.com/api/v1/google/callback` を**1 文字も違わず**入れる
+4. スコープに `…/auth/drive.readonly`・`…/auth/drive.file`・`…/auth/userinfo.email`・`openid` を足す
+5. 出てきた ID とシークレットを `.env` に置く(`backend/README.md` の表)
+
+```
+WORKS_GOOGLE_CLIENT_ID=…apps.googleusercontent.com
+WORKS_GOOGLE_CLIENT_SECRET=…
+# 既定は https://works.sanei-clover.com/api/v1/google/callback。変えたら GCP 側も揃える
+WORKS_GOOGLE_REDIRECT_URI=…
+```
+
+6. `docker compose --profile backend up -d --build api` で建て直し、商談のパネルの「資料」から「Google に接続」を押す
+
+つまずいたとき:
+
+| 症状 | 見るところ |
+|---|---|
+| `redirect_uri_mismatch` | GCP のリダイレクト URI と `WORKS_GOOGLE_REDIRECT_URI` の不一致(末尾の `/`・http と https・ホスト名) |
+| 繋いだのに次の日また「Google に接続」が出る | `WORKS_SECRET_KEY` が空だと、再起動のたびに鍵が変わって保存した token を読めない(`.env` に固定する) |
+| 403 `access_denied` で戻る | 同意画面が「内部」で、押した人が Workspace の利用者か。外部アカウント(個人の Gmail)では通らない |
+| Cloudflare Access の画面が Google の戻りで出る | 戻り先も Access の内側。**同じブラウザで Works にログインしたまま**繋ぐ |
+
+## 7. 版を上げる
 
 - 画面のライブラリ: `cd frontend && npm outdated` → 上げる → `npm run build && npm run e2e`。`@dnd-kit/react` は 1.0 前なので、E2E のドラッグの項目を必ず見る。上げる前に非推奨になっていないかを確かめる(共通ルール)
 - バックエンドのライブラリ: `cd backend && uv sync --upgrade` → `scripts/verify.sh`。上げる前に非推奨になっていないかを確かめる(共通ルール)。`pyproject.toml` の `filterwarnings` で名指しして外している警告が、まだ要るかも見る
