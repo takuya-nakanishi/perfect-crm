@@ -20,7 +20,8 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 
 metadata = MetaData()
 
-NOW = text("now()")
+# 行ごとの実時刻。now() はトランザクション開始時刻で、1 回の取り込みの全行が同じ値になる
+NOW = text("clock_timestamp()")
 UUIDV7 = text("uuidv7()")  # PostgreSQL 18 から。時系列順に並ぶ ID(02 §4)
 
 

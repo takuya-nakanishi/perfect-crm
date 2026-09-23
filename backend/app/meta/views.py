@@ -122,7 +122,7 @@ def update_view(conn: Connection, view_id: str, body: dict[str, Any]) -> None:
             type=body["type"],
             config=body.get("config") or {},
             pin=pin,
-            updated_at=func.now(),
+            updated_at=func.clock_timestamp(),
         )
     )
 
@@ -140,7 +140,7 @@ def delete_view(conn: Connection, view_id: str) -> None:
     ).scalar_one()
     if rest == 0:
         raise bad_request("最後のビューは削除できません")
-    conn.execute(meta_views.update().where(meta_views.c.id == view_id).values(deleted_at=func.now()))
+    conn.execute(meta_views.update().where(meta_views.c.id == view_id).values(deleted_at=func.clock_timestamp()))
 
 
 def restore_view(conn: Connection, view_id: str) -> None:

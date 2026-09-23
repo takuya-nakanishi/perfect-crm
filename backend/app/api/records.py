@@ -2,11 +2,12 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import Conn, CurrentUser
 from app.records import service
+from app.records.csv_io import export_csv, import_csv
 from app.records.aggregate import aggregate
 from app.records.search import search
 from app.records.timeline import timeline
@@ -76,3 +77,25 @@ def search_all(q: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
 @router.get("/objects/{object_key}/records/{record_id}/timeline")
 def read_timeline(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
     return timeline(conn, object_key, record_id)
+
+
+class ImportParams(BaseModel):
+    csv: str
+    mapping: dict[str, str | None] | None = None
+    dry_run: bool = False
+
+
+@router.post("/objects/{object_key}/import")
+def import_records(object_key: str, params: ImportParams, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return import_csv(conn, object_key, params.model_dump(), user["id"])
+
+
+@router.post("/objects/{object_key}/export")
+def export_records(object_key: str, params: ListParams, conn: Conn, user: CurrentUser) -> Response:
+    body = export_csv(conn, object_key, params.model_dump(exclude_none=True), user["id"])
+    name = f"{object_key}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
