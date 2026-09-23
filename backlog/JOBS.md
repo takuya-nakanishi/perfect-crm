@@ -19,10 +19,14 @@
 - [ ] **J-023** ログインを本物にする(2026-09-21)
   - 由来: Q-035(Access とアプリの認証の関係が先)。docs/design/03 §5
   - [2026-09-23] PR #1 の「まだ無いもの」。足場のログインは**メールで利用者を引くだけでパスワードを見ない**(`backend/app/api/session.py`)。署名付きの Cookie の器はあるので、残るのは 03 §5 の A / B を決めて検証を足すところ
+  - [2026-09-24] A / B は未決のまま(次の一手を諮った際に選ばれなかった)。設計上の推しは A(引っ越しやすさ。01 D-05、03 §5)
 - [ ] **J-024** 画面を http モードへ切り替え、モックと同じ E2E を通す(2026-09-21)
   - 集計・検索・並び(選択肢の定義順、NULL は末尾)まで揃える。docs/design/03 §3、04
   - [2026-09-23] J-021 が済んだので着手できる。`VITE_API_MODE=http` で web を建て直し、`npm run e2e` を通す。種のデータ(fixtures 相当)をどう入れるかも決める
   - [2026-09-23] PR #1 の「まだ無いもの」。本番も同じ切り替えが要る(`.env` に `WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL` を足し、`--profile backend --profile public` で建て直す)。Caddy の `/api/*` は api へ回る作りが既にある(`frontend/Caddyfile`)
+  - [2026-09-24] 下調べだけ済み(実装は未着手)。E2E は Playwright の設定ファイルを持たず、`frontend/e2e/smoke.mjs` が playwright-core を直に叩く自前のスクリプト。宛先は引数(既定 `http://127.0.0.1:5173`、コンテナへは `-- http://127.0.0.1:8610`)。`VITE_API_MODE` は `client.ts` がビルド時に読むので、compose の build arg を変えて web を建て直す
+  - [2026-09-24] 最初の関門は種のデータ。`backend/app/seed/` はメタデータ(`objects.json`・`views.json`)だけで、レコードは 1 行も入らない。E2E は行がある前提(行の選択・完了・検索)なので、`frontend/src/mocks/fixtures/` の JSON を流し込む口が要る。smoke.mjs は「データはブラウザごとに初期化される」とモック前提で書いてあるが、http では走らせるたびに残るので、流し込みの前に消す手順も要る
+  - [2026-09-24] E2E の最後は Google ドライブを触るが、未接続なら「Google に接続」が出る枝を見るので J-040 の前でも通るはず
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)
   - 由来: Q-040(退避先)。実データを入れる前に、復元を一度実演して runbook に書く
 - [ ] **J-026** 既存データを移行する — 連絡先台帳の CSV → Notion → Google コンタクト → Todoist(2026-09-21)
