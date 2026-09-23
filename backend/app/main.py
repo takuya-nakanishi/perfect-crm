@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, FastAPI
 
-from app.api import meta, records, session, settings
+from app.api import google, meta, records, session, settings
 from app.errors import install_error_handlers
 
 app = FastAPI(
@@ -19,6 +19,7 @@ v1.include_router(session.router)
 v1.include_router(meta.router)
 v1.include_router(records.router)
 v1.include_router(settings.router)
+v1.include_router(google.router)
 app.include_router(v1)
 
 

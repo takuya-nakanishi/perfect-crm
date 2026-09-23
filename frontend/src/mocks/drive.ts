@@ -3,11 +3,15 @@
  * ここでは架空のファイルを数件持ち、「新規」で作ったドキュメントもこの一覧に足す(「参照」で見つかる)。
  */
 import { ApiError } from '@/api/client'
-import type { DriveFile } from '@/api/types'
+import type { DriveFile, GoogleStatus } from '@/api/types'
 import { parseDriveFiles } from '@/lib/drive'
 import { find, normalizeText, objectMeta, update } from './engine'
 
 const STORAGE_KEY = 'works.mock.drive.v1'
+const CONNECTION_KEY = 'works.mock.drive.connection.v1'
+
+/** モックの Google は「繋いだつもり」を localStorage で覚える。本番は利用者ごとの OAuth(04 §8) */
+const MOCK_EMAIL = 'takuya@example.jp'
 
 const MIME = {
   document: 'application/vnd.google-apps.document',
@@ -50,10 +54,33 @@ function save() {
 
 export function resetDrive() {
   localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(CONNECTION_KEY)
   files = load()
 }
 
+/** 繋いでいるか。モックは初めから繋がっている(画面の流れをそのまま試せるように) */
+export function driveStatus(): GoogleStatus {
+  const off = localStorage.getItem(CONNECTION_KEY) === 'off'
+  return { connected: !off, email: off ? null : MOCK_EMAIL, configured: true }
+}
+
+export function connectDrive(): { url: string } {
+  localStorage.removeItem(CONNECTION_KEY)
+  // 本番は Google の許可の画面。モックは繋いだことにして、同じ画面へ戻す
+  return { url: `${location.pathname}?google=connected` }
+}
+
+export function disconnectDrive() {
+  localStorage.setItem(CONNECTION_KEY, 'off')
+}
+
+/** 繋いでいないのにドライブを触ったとき。サーバと同じ符号(409 google_reauth) */
+function requireConnected() {
+  if (!driveStatus().connected) throw new ApiError(409, 'google_reauth', 'Google に繋いでいません。「Google に接続」から繋いでください')
+}
+
 export function listFiles(q: string): DriveFile[] {
+  requireConnected()
   const needle = normalizeText(q)
   const hits = needle ? files.filter((f) => normalizeText(f.name).includes(needle)) : files
   return structuredClone(hits.slice(0, 20))
@@ -61,6 +88,7 @@ export function listFiles(q: string): DriveFile[] {
 
 /** 「マイドライブ / CRM / テーブル名 / レコード名」のドキュメントを作り、項目の末尾に付ける */
 export function createDocument(object: string, id: string, fieldKey: string, me: string | null) {
+  requireConnected()
   const meta = objectMeta(object)
   const field = meta.fields.find((f) => f.key === fieldKey)
   if (!field || field.type !== 'drive_files') throw new ApiError(400, 'invalid', 'Google ドライブの項目ではありません')

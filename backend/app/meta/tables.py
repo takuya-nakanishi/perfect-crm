@@ -158,6 +158,7 @@ SYSTEM_TABLES = frozenset(
         "activity_mentions",
         "mcp_tokens",
         "web_forms",
+        "google_accounts",
         "alembic_version",
     }
 )
@@ -194,4 +195,21 @@ web_forms = Table(
     Column("submissions", Integer, nullable=False, server_default=text("0")),
     Column("last_submitted_at", TIMESTAMP(timezone=True), nullable=True),
     _ts("created_at"),
+)
+
+# 利用者ごとに繋いだ Google アカウント(04 §8)。**refresh token は暗号化して持つ**(`app/google/store.py`)。
+# 1 利用者 1 アカウント。解除したら行ごと消す
+google_accounts = Table(
+    "google_accounts",
+    metadata,
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    # 繋いだ Google のアドレス(画面に出すだけ。突き合わせには使わない)
+    Column("email", Text, nullable=False),
+    Column("refresh_token", Text, nullable=False),
+    # 使い回しのための控え。切れていれば refresh token で取り直す
+    Column("access_token", Text, nullable=True),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("scope", Text, nullable=False),
+    _ts("created_at"),
+    _ts("updated_at"),
 )

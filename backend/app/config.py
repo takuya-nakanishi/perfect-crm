@@ -36,8 +36,22 @@ class Settings(BaseSettings):
     # SQL をログに出す(開発用)
     echo_sql: bool = False
 
+    # --- Google ドライブ(04 §8。利用者ごとの OAuth)-------------------------
+    # OAuth クライアント(種類は「ウェブ アプリケーション」)。GCP のプロジェクトは docs/runbook/01 §6
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # 許可のあとに Google が戻す先。**クライアントに登録した URL と 1 文字も違ってはいけない**
+    google_redirect_uri: str = "https://works.sanei-clover.com/api/v1/google/callback"
+    # 戻したあとに画面のどこを開くか(同じオリジンの中だけ)
+    google_return_path: str = "/"
+
     # 1 リクエストあたりのレコードの上限(04 §12 のページング)
     max_limit: int = Field(default=500, ge=1)
+
+    @property
+    def google_enabled(self) -> bool:
+        """OAuth クライアントが `.env` にあるか。無ければドライブの API は 503 を返す。"""
+        return bool(self.google_client_id and self.google_client_secret)
 
     @property
     def sqlalchemy_url(self) -> str:

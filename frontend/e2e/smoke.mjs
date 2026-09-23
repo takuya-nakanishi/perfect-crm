@@ -282,6 +282,16 @@ ok(await page.locator('aside a[target=_blank]').count() === 3, '「参照」で�
 await page.locator('aside').getByRole('button', { name: '「提案書テンプレート」を外す' }).click(); await wait(300)
 await page.reload(); await page.waitForSelector('aside'); await wait(400)
 ok(await page.locator('aside a[target=_blank]').count() === 2, '外したものは外れたまま残る(再読み込み後)')
+// 繋いでいない人の見え方(モックは繋いでいる状態で始まるので、いったん外す)
+await page.evaluate(() => localStorage.setItem('works.mock.drive.connection.v1', 'off'))
+await page.reload(); await page.waitForSelector('aside'); await wait(500)
+ok(
+  (await page.locator('aside').getByRole('button', { name: 'Google に接続' }).count()) === 1 &&
+    (await page.locator('aside').getByRole('button', { name: '参照' }).count()) === 0,
+  '繋いでいないと「新規」「参照」の代わりに「Google に接続」が出る',
+)
+await page.evaluate(() => localStorage.removeItem('works.mock.drive.connection.v1'))
+await page.reload(); await page.waitForSelector('aside'); await wait(300)
 await page.keyboard.press('Escape'); await wait(200)
 
 // 15. ビューの追加・条件・並び替え・設定・お気に入り・削除(Notion の型)

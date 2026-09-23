@@ -58,6 +58,10 @@ services:
       WORKS_SECRET_KEY: ${WORKS_SECRET_KEY:-} # 空だと再起動のたびにログインし直しになる
       WORKS_ADMIN_EMAIL: ${WORKS_ADMIN_EMAIL:-} # 最初の管理者(初回だけ作る)
       WORKS_ADMIN_NAME: ${WORKS_ADMIN_NAME:-管理者}
+      # Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は docs/runbook/01 §6
+      WORKS_GOOGLE_CLIENT_ID: ${WORKS_GOOGLE_CLIENT_ID:-}
+      WORKS_GOOGLE_CLIENT_SECRET: ${WORKS_GOOGLE_CLIENT_SECRET:-}
+      WORKS_GOOGLE_REDIRECT_URI: ${WORKS_GOOGLE_REDIRECT_URI:-https://works.sanei-clover.com/api/v1/google/callback}
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

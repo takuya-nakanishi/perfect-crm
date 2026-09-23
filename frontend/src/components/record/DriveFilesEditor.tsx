@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ExternalLink, FilePlus2, FolderSearch, X } from 'lucide-react'
+import { ExternalLink, FilePlus2, FolderSearch, LogIn, X } from 'lucide-react'
 import { useState } from 'react'
 import { api, ApiError } from '@/api/client'
 import type { DriveFile, FieldMeta, ObjectMeta, Row, Scalar } from '@/api/types'
@@ -57,7 +57,14 @@ export function DriveFilesEditor({
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const q = useDebounced(query, 150)
-  const candidates = useQuery({ queryKey: ['drive', q], queryFn: () => api.listDriveFiles(q), enabled: anchor !== null, staleTime: 30_000 })
+  // 繋がり具合は利用者ごと。Google から戻ってくるのは画面ごとの読み直しなので、ここでは持ち越さない
+  const google = useQuery({ queryKey: ['google-status'], queryFn: () => api.googleStatus(), staleTime: 60_000 })
+  const candidates = useQuery({
+    queryKey: ['drive', q],
+    queryFn: () => api.listDriveFiles(q),
+    enabled: anchor !== null && google.data?.connected === true,
+    staleTime: 30_000,
+  })
   const isDraft = row.id === 'draft'
 
   const write = (next: DriveFile[]) => onCommit({ [field.key]: next.length ? JSON.stringify(next) : null })
@@ -78,6 +85,16 @@ export function DriveFilesEditor({
     }
   }
 
+  const connect = async () => {
+    try {
+      // 許可の画面はサーバが組み立てる(client_id も scope も画面は知らない)
+      const { url } = await api.googleConnect()
+      location.assign(url)
+    } catch (e) {
+      toast({ message: e instanceof ApiError ? e.message : 'Google に繋げませんでした', tone: 'danger' })
+    }
+  }
+
   const btn = 'inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm text-ink-2 hover:bg-sunken hover:text-ink disabled:opacity-50'
   return (
     <div className="flex min-h-8 flex-wrap items-center gap-1.5 py-0.5">
@@ -86,6 +103,13 @@ export function DriveFilesEditor({
       ))}
       {isDraft ? (
         <span className="px-2 text-sm text-ink-3">作成してから付けられます</span>
+      ) : google.data && !google.data.configured ? (
+        <span className="px-2 text-sm text-ink-3">Google 連携が設定されていません(管理者に頼んでください)</span>
+      ) : google.data && !google.data.connected ? (
+        <button type="button" className={btn} onClick={() => void connect()} title="自分の Google アカウントを繋ぐと、ドライブのファイルを付けられます">
+          <LogIn size={14} aria-hidden />
+          Google に接続
+        </button>
       ) : (
         <>
           <button type="button" className={btn} disabled={creating} onClick={() => void create()} title="マイドライブ / CRM / このテーブル名 / の中に、レコード名のドキュメントを作る">
@@ -133,7 +157,23 @@ export function DriveFilesEditor({
               }
             })}
           />
-          <p className="border-t border-line px-3 py-2 text-xs text-ink-3">押すと付き、もう一度押すと外れます。Esc で閉じる</p>
+          <p className="flex items-center gap-2 border-t border-line px-3 py-2 text-xs text-ink-3">
+            <span className="truncate">押すと付き、もう一度押すと外れます。Esc で閉じる</span>
+            {google.data?.email && (
+              <button
+                type="button"
+                className="ml-auto flex-none underline decoration-line underline-offset-2 hover:text-ink"
+                title={`${google.data.email} の繋ぎを外す(ドライブのファイルは消えません)`}
+                onClick={async () => {
+                  await api.googleDisconnect()
+                  await google.refetch()
+                  setAnchor(null)
+                }}
+              >
+                {google.data.email} を外す
+              </button>
+            )}
+          </p>
         </Popover>
       )}
     </div>

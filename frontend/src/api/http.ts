@@ -67,6 +67,9 @@ export function createHttpClient(): ApiClient {
     deleteWebForm: (id) => request('DELETE', `/settings/forms/${enc(id)}`),
     rotateWebFormKey: (id) => request('POST', `/settings/forms/${enc(id)}/rotate`),
     submitWebForm: (key, values) => request('POST', `/forms/${enc(key)}`, values),
+    googleStatus: () => request('GET', '/google/status'),
+    googleConnect: () => request('POST', '/google/connect'),
+    googleDisconnect: () => request('DELETE', '/google/connection'),
     listDriveFiles: (q) => request('GET', `/drive/files?q=${enc(q)}`),
     createDriveDocument: (object, id, field) => request('POST', `/objects/${enc(object)}/records/${enc(id)}/drive/${enc(field)}/document`),
     exportRecords: async (object, params = {}) => {

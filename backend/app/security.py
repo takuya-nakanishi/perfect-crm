@@ -16,13 +16,16 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 _runtime_secret = secrets.token_hex(32)
 
 
-def _secret() -> str:
-    # .env に無ければ起動ごとのランダム(再起動でログインし直し)
+def app_secret() -> str:
+    """署名と暗号化の元になる鍵(`.env` の `WORKS_SECRET_KEY`)。
+
+    .env に無ければ起動ごとのランダム(再起動でログインし直しになり、Google の繋ぎ直しも要る)。
+    """
     return get_settings().secret_key or _runtime_secret
 
 
 def sign(user_id: str) -> str:
-    mac = hmac.new(_secret().encode(), user_id.encode(), sha256).hexdigest()
+    mac = hmac.new(app_secret().encode(), user_id.encode(), sha256).hexdigest()
     return f"{user_id}.{mac}"
 
 
