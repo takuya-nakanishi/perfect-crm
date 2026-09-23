@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import Conn, CurrentUser
 from app.records import service
+from app.records.aggregate import aggregate
+from app.records.search import search
 
 router = APIRouter()
 
@@ -50,3 +52,21 @@ def delete_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser
 @router.post("/objects/{object_key}/records/{record_id}/restore")
 def restore_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
     return service.restore(conn, object_key, record_id)
+
+
+class AggregateParams(BaseModel):
+    filter: dict[str, Any] | None = None
+    group_by: dict[str, Any] | None = None
+    measure: dict[str, Any]
+    order: str | None = None
+    limit: int | None = Field(default=None, ge=1)
+
+
+@router.post("/objects/{object_key}/aggregate")
+def aggregate_records(object_key: str, params: AggregateParams, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return aggregate(conn, object_key, params.model_dump(exclude_none=True), user["id"])
+
+
+@router.get("/search")
+def search_all(q: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return search(conn, q)
