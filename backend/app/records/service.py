@@ -192,7 +192,7 @@ def remove(conn: Connection, object_key: str, record_id: str) -> None:
     result = conn.execute(
         table.update()
         .where(table.c.id == record_id, table.c.deleted_at.is_(None))
-        .values(deleted_at=func.now(), updated_at=func.now())
+        .values(deleted_at=func.clock_timestamp(), updated_at=func.clock_timestamp())
     )
     if result.rowcount == 0:
         raise not_found("レコードがありません")
@@ -204,7 +204,7 @@ def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]
     result = conn.execute(
         table.update()
         .where(table.c.id == record_id, table.c.deleted_at.isnot(None))
-        .values(deleted_at=None, updated_at=func.now())
+        .values(deleted_at=None, updated_at=func.clock_timestamp())
     )
     if result.rowcount == 0:
         raise not_found("削除されたレコードがありません")

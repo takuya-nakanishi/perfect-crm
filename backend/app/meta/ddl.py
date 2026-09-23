@@ -106,8 +106,10 @@ def create_table_statements(object_key: str, fields: list[dict[str, Any]]) -> li
     key = check_table_name(object_key)
     lines = [
         "id uuid primary key default uuidv7()",
-        "created_at timestamptz not null default now()",
-        "updated_at timestamptz not null default now()",
+        # clock_timestamp()(実時刻)を使う。now() はトランザクション開始時刻なので、
+        # CSV の一括取り込みで全行が同じ時刻になり、一覧の並びが取り込んだ順にならない
+        "created_at timestamptz not null default clock_timestamp()",
+        "updated_at timestamptz not null default clock_timestamp()",
         "deleted_at timestamptz",
         # 検索用の 1 本。ひらがな・カタカナ・全角半角の正規化はアプリが吸収して入れる(02 §4)
         "search_text text",

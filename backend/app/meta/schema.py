@@ -264,7 +264,7 @@ def update_object(conn: Connection, key: str, body: dict[str, Any], user_id: Any
             subtitle_field=obj.get("subtitle_field")
             if any(f["key"] == obj.get("subtitle_field") for f in fields)
             else None,
-            updated_at=func.now(),
+            updated_at=func.clock_timestamp(),
         )
     )
 
@@ -289,7 +289,7 @@ def update_object(conn: Connection, key: str, body: dict[str, Any], user_id: Any
             conn.execute(
                 meta_fields.update()
                 .where(meta_fields.c.object_key == key, meta_fields.c.key == row.key)
-                .values(hidden=True, position=position, updated_at=func.now())
+                .values(hidden=True, position=position, updated_at=func.clock_timestamp())
             )
 
     for field in added:
@@ -313,7 +313,7 @@ def _check_completion_options(obj: dict[str, Any], fields: list[dict[str, Any]])
 def _save_field(
     conn: Connection, object_key: str, field: dict[str, Any], position: int, *, hidden: bool, existing: Any
 ) -> None:
-    values: dict[str, Any] = {"position": position, "hidden": hidden, "updated_at": func.now()}
+    values: dict[str, Any] = {"position": position, "hidden": hidden, "updated_at": func.clock_timestamp()}
     for column in FIELD_COLUMNS:
         values[column] = bool(field.get(column)) if column in FLAG_COLUMNS else field.get(column)
     if existing is None:
@@ -343,7 +343,7 @@ def delete_object(conn: Connection, key: str) -> None:
         raise not_found(f"テーブルがありません: {key}")
     if store.object_meta(conn, key).get("system"):
         raise bad_request("初めから入っているテーブルは削除できません")
-    conn.execute(meta_objects.update().where(meta_objects.c.key == key).values(deleted_at=func.now()))
+    conn.execute(meta_objects.update().where(meta_objects.c.key == key).values(deleted_at=func.clock_timestamp()))
 
 
 def restore_object(conn: Connection, key: str) -> None:

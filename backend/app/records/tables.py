@@ -30,8 +30,8 @@ def table_of(obj: dict[str, Any]) -> Table:
     # 既定値は DDL(app/meta/ddl.py)が付けたものと同じにする。合っていないと insert で警告が出る
     columns: list[Column[Any]] = [
         Column("id", UUID(as_uuid=False), primary_key=True, server_default=text("uuidv7()")),
-        Column("created_at", TIMESTAMP(timezone=True), server_default=text("now()")),
-        Column("updated_at", TIMESTAMP(timezone=True), server_default=text("now()")),
+        Column("created_at", TIMESTAMP(timezone=True), server_default=text("clock_timestamp()")),
+        Column("updated_at", TIMESTAMP(timezone=True), server_default=text("clock_timestamp()")),
         _column("deleted_at", "timestamptz"),
         _column("search_text", "text"),
     ]
