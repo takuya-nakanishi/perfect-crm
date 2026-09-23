@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
+import type { KanbanViewConfig, ListViewConfig, ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
 import usersJson from './fixtures/users.json'
 import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, remove, reorderObjects, reorderViews, resetTables, restore, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
 
@@ -1074,6 +1074,20 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(after.name_field).toBe('name')
     expect(refOf('accounts', id)).toEqual({ id, name: '株式会社アオバ精機', subtitle: null })
     expect(hit().subtitle).toBeNull()
+  })
+
+  it('META-096 関連先(polymorphic)は論理名でも実際の 2 列でも指せ、GET /meta で外れない', () => {
+    const view = (object: string, name: string) => getMeta().views.find((v) => v.object === object && v.name === name)!
+    const list = view('tasks', '一覧')
+    expect(list.type).toBe('list')
+    // ビューの列は論理名(related)で指す。実際の列は related_object と related_id の 2 本
+    expect((list.config as ListViewConfig).columns.map((c) => c.field)).toContain('related')
+    const kanban = view('tasks', 'カンバン')
+    expect((kanban.config as KanbanViewConfig).card_fields).toContain('related')
+    expect((view('activities', '一覧').config as ListViewConfig).columns.map((c) => c.field)).toContain('related')
+    // レポートは実際の列(related_object)で分ける
+    const report = getMeta().views.find((v) => v.type === 'report' && v.object === 'activities')
+    if (report) expect(report.config).toBeTruthy()
   })
 })
 

@@ -2,9 +2,10 @@
 #
 #   docker compose --profile public up -d --build    画面 + Cloudflare Tunnel(https://works.sanei-clover.com)
 #   docker compose up -d --build                     画面だけ(http://127.0.0.1:8610)
+#   docker compose --profile backend up -d --build   API + PostgreSQL(画面から使うには VITE_API_MODE=http で web を建て直す)
 #
 # 手順と落とし穴(イメージの取得でつまずく点など)は docs/runbook/01-operations.md。
-# api(Python バックエンド)は J-002 で足す。db はその準備として定義だけ置いてある(profile backend)。
+# api(Python バックエンド)と db は profile backend。構成は docs/design/03 §4・§10。
 name: works
 
 services:
@@ -45,7 +46,31 @@ services:
       web:
         condition: service_healthy
 
-  # PostgreSQL。バックエンドを足すまでは起動しない。ホストにポートを開けない(触れるのは api だけ)
+  # JSON API(FastAPI)。契約は docs/design/04。画面とは Caddy 越しに同じオリジンで話す
+  api:
+    build: ./backend
+    image: works-api:local
+    restart: unless-stopped
+    profiles: ["backend"]
+    environment:
+      WORKS_DB_HOST: db
+      WORKS_DB_PASSWORD: ${WORKS_DB_PASSWORD:-}
+      WORKS_SECRET_KEY: ${WORKS_SECRET_KEY:-} # 空だと再起動のたびにログインし直しになる
+      WORKS_ADMIN_EMAIL: ${WORKS_ADMIN_EMAIL:-} # 最初の管理者(初回だけ作る)
+      WORKS_ADMIN_NAME: ${WORKS_ADMIN_NAME:-管理者}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # PostgreSQL。ホストへは 127.0.0.1 からだけ開ける(pytest が実物に繋ぐため。scripts/verify.sh)
   db:
     image: postgres:18.6-alpine
     restart: unless-stopped
@@ -54,6 +79,8 @@ services:
       POSTGRES_DB: works
       POSTGRES_USER: works
       POSTGRES_PASSWORD: ${WORKS_DB_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${WORKS_DB_PORT:-55432}:5432" # ホストの中からだけ。外へは出さない
     volumes:
       - db-data:/var/lib/postgresql # 18 系からデータは /var/lib/postgresql/18/docker。/data を指すと空のまま起動する
     healthcheck:

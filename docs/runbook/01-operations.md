@@ -85,7 +85,23 @@ python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'npm --
 | 数字のゼロに全部斜線が入る | 書体(Atkinson Hyperlegible Next)の仕様で、切り替える機能も無い。Figtree に替えた。**書体を替えるときは、金額の並ぶ画面で確かめる** |
 | PostgreSQL 18 が空のまま起動する | 18 からデータの場所が `/var/lib/postgresql/18/docker`。ボリュームは `/var/lib/postgresql` に付ける |
 
-## 5. 版を上げる
+## 5. バックエンド(api + db)
+
+```
+docker compose --profile backend up -d --build     # api(FastAPI)+ db(PostgreSQL)
+docker compose --profile backend up -d db          # DB だけ(pytest が繋ぐ先)
+docker compose logs -f api
+```
+
+- **道具は uv。**入っていなければ `curl -LsSf https://astral.sh/uv/install.sh | sh`(公式の入れ方)。`scripts/verify.sh` は uv が無いと red になる
+- 初回の起動で `python -m app.cli init` が走り、マイグレーション → 初期メタデータ → 管理者まで揃う。**`WORKS_ADMIN_EMAIL` が空だと管理者が作られず、ログインできない**
+- `.env` に要る値は `backend/README.md`(`WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`)
+- **db はホストの 127.0.0.1:55432 に出ている**(pytest が実物に繋ぐため)。外へは出さない
+- テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
+- 画面から API を使うには `VITE_API_MODE=http` で web を建て直す(`docker compose up -d --build web`)。既定は mock(J-024)
+
+## 6. 版を上げる
 
 - 画面のライブラリ: `cd frontend && npm outdated` → 上げる → `npm run build && npm run e2e`。`@dnd-kit/react` は 1.0 前なので、E2E のドラッグの項目を必ず見る。上げる前に非推奨になっていないかを確かめる(共通ルール)
-- イメージ: `docker-compose.yml` と `frontend/Dockerfile` のタグを書き換えて `up -d --build`。`latest` は使わない。`db` を上げるときは、先に `pg_dump` を取る
+- バックエンドのライブラリ: `cd backend && uv sync --upgrade` → `scripts/verify.sh`。上げる前に非推奨になっていないかを確かめる(共通ルール)。`pyproject.toml` の `filterwarnings` で名指しして外している警告が、まだ要るかも見る
+- イメージ: `docker-compose.yml`・`frontend/Dockerfile`・`backend/Dockerfile` のタグを書き換えて `up -d --build`。`latest` は使わない。`db` を上げるときは、先に `pg_dump` を取る

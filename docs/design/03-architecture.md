@@ -22,8 +22,8 @@ Claude Code / Codex ──MCP(これから)────────────�
 |---|---|
 | `frontend/` | 画面。Vite + React + TypeScript + Tailwind CSS v4。ビルドすると静的ファイルになる |
 | `frontend/Dockerfile` / `Caddyfile` | Node でビルドし、Caddy で配る。SPA の戻し、キャッシュ、CSP などのヘッダ、`/healthz` |
-| `backend/`(これから) | Python の JSON API。`/api/v1`(04) |
-| `docker-compose.yml` | `web` / `tunnel`(profile `public`)/ `db`(profile `backend`) |
+| `backend/` | Python の JSON API。`/api/v1`(04)。中身の地図は `backend/README.md` |
+| `docker-compose.yml` | `web` / `tunnel`(profile `public`)/ `api`・`db`(profile `backend`) |
 | `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認。`verify.sh`(検証の関門)、無人ループ(`loop-run.sh`・`loop-next.mjs`)、worktree(`wt-new.sh`・`wt-land.sh`) |
 | `docs/` | 設計(`design/`)、運用手順(`runbook/`。`02-loop.md` が無人ループ)、テストケース表(`tests/`。4 軸で 6 領域) |
 | `backlog/` | 問いと作業(人と、人が起こしたセッションのもの) |
@@ -188,7 +188,7 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 | argon2-cffi | 25.1.0 | 2025-06-03 | パスワードのハッシュ(J-023)と MCP トークンのハッシュ(J-039) |
 | python-multipart | 0.0.32 | 2026-06-04 | Web フォームの受け口(form-urlencoded。04 §10) |
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | 2026-06-19 / 2026-05-26 | テスト |
-| httpx | 0.28.1 | 2024-12-06 | テストから ASGI 越しに HTTP 層ごと叩く。**更新は止まって見えるが非推奨ではなく、FastAPI 公式のテストクライアントが依存する** |
+| httpx2 | 2.13.0 | 2026-09-14 | テストから ASGI 越しに HTTP 層ごと叩く。**`httpx`(0.28.1)は使わない** — starlette 1.6.0 が「`httpx` と一緒に使うのは非推奨。`httpx2` を入れること」と警告する(2026-09-23 に実物の出力で確認) |
 | ruff | 0.16.8 | 2026-09-16 | lint と整形(画面側の oxlint に当たる) |
 | mypy | 2.3.1 | 2026-08-15 | 型検査(画面側の `tsc` に当たる) |
 | uv | 0.12.18 | 2026-09-22 | パッケージ管理と仮想環境 |

@@ -96,7 +96,9 @@ function cleanFilter(filter: Filter | undefined, has: (key: string | undefined) 
 }
 
 function cleanView(view: ViewMeta, object: ObjectMeta): ViewMeta | null {
-  const columns = object.fields.flatMap((f) => (f.columns ? [f.columns.object, f.columns.id] : [f.key]))
+  // polymorphic は、論理名(related)と実際の 2 列(related_object・related_id)のどちらでも指せる。
+  // ビューの列は論理名で、レポートの分け方は related_object で指す
+  const columns = object.fields.flatMap((f) => (f.columns ? [f.key, f.columns.object, f.columns.id] : [f.key]))
   const has = (key: string | undefined) => key !== undefined && columns.includes(key)
   if (view.type === 'list') {
     return {
@@ -117,10 +119,9 @@ function cleanView(view: ViewMeta, object: ObjectMeta): ViewMeta | null {
       },
     }
   }
-  const polymorphicColumns = object.fields.flatMap((f) => (f.columns ? [f.columns.object] : []))
   const widgets = view.config.widgets.filter((w) => {
     const used = [w.measure.field, w.measure.weight_field, w.type === 'stat' ? undefined : w.group_by.field].filter((k): k is string => Boolean(k))
-    return used.every((k) => has(k) || polymorphicColumns.includes(k))
+    return used.every(has)
   })
   return widgets.length > 0 ? { ...view, config: { widgets } } : null
 }
