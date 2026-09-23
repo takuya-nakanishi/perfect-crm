@@ -1,11 +1,13 @@
 """サーバ側の業務ルール(02 §3)。**画面に同じ計算を持たせない**ので、書き込みは必ずここを通る。
 
-正はモックの `applyRules`。繰り返し(次回のタスクを作る)と richtext の洗浄・言及は J-036 で足す。
+正はモックの `applyRules`。繰り返し(次回のタスクを作る)は `recurrence.py`。
 """
 
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from app.records.richtext import mentions_value, sanitize_html
 
 
 def today_in(timezone: str) -> str:
@@ -53,8 +55,15 @@ def apply_rules(
         if not is_done:
             out[at] = None
     timeline = obj.get("timeline")
-    if timeline and not out.get(timeline["date"]):
-        out[timeline["date"]] = today_in(timezone)
+    if timeline:
+        if not out.get(timeline["date"]):
+            out[timeline["date"]] = today_in(timezone)
+        if timeline["body"] in patch or before is None:
+            # 保存前に洗浄し、**その結果から**言及を取る(この順。04 §1)
+            raw = out.get(timeline["body"])
+            body = sanitize_html(raw) if isinstance(raw, str) and raw else None
+            out[timeline["body"]] = body
+            out["mentions"] = mentions_value(body)
     # 商談のフェーズを変えたら、確度をそのフェーズの既定値に(同時に確度を指定したときは尊重する)
     if obj["key"] == "opportunities" and "stage" in patch and "probability" not in patch:
         stage_field = next((f for f in obj["fields"] if f["key"] == "stage"), None)
