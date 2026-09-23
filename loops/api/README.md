@@ -3,7 +3,7 @@
 テストケース表の **L2 の行**(モックのエンジン = サーバの振る舞いの正)を 1 行ずつ、本物の HTTP API に向けて確かめ、
 落ちたら実装を足すキュー。キューの定義の読み方と、記録(`<ID>.md`)の書式は [`../README.md`](../README.md)。
 
-**まだ回せない。**足場(J-021・J-022)が済むまで起動しない。条件は下の「回せるようになる条件」。
+**足場は 2026-09-23 に済んだ**(J-021・J-022・J-033・J-036・J-039)。回せる。残っている穴は下の「まだ無い API」。
 
 | 項目 | このキューの値 |
 |---|---|
@@ -39,15 +39,28 @@
 
 3 つが食い違っていたら、テストを書かずに記録を `保留` にして、どう食い違っているかを書く(人が直す)。
 
-## 回せるようになる条件(足場。J-021・J-022)
+## 回す前に(1 回だけ)
 
-- `backend/` が動く(uv・FastAPI・設定・DB セッション・`{code, message}` のエラー・Alembic の初期リビジョン)
-- **メタデータから SQL を組む層**が通っている(フィルタの真理値表・並び・集計。`docs/design/08` §3 の 2)。ここをループに探させると周ごとに設計がバラけるので、人が先に 1 本通す
-- 論理削除の一括適用、polymorphic の書き込み検証、検索の正規化列 + `pg_trgm`(同 §3 の 3〜5)
-- pytest の土台(Compose の `db` に対して、1 テスト 1 トランザクションでロールバック)
-- `scripts/verify.sh` に `backend:lint`・`backend:types`・`backend:test` が入っている
-- `scripts/loop-run.sh` と `loop-next.mjs` が `--queue` を受ける(いまは `tests` 固定)
-- 索引に「API の資産」列があり、`loop-next.mjs --check` が pytest 側の ID も検査する
+```
+docker compose --profile backend up -d db     # pytest が繋ぐ PostgreSQL(リポジトリのルートで)
+cd backend && uv sync                          # 道具
+```
+
+`scripts/verify.sh` が green になることを確かめてから回す。
+
+## まだ無い API(当たったら保留になる)
+
+- **Google ドライブ**(J-035): `/drive/files` とドキュメントの作成。利用者ごとの Google OAuth が要るので足場に入れていない。
+  `settings` 領域のドライブの行は `保留` になる。人が J-035 を済ませてから解除する
+
+## 足場でできていること(2026-09-23)
+
+- `backend/` が動く(uv・FastAPI・設定・DB セッション・`{code, message}` のエラー・Alembic)
+- **メタデータから SQL を組む層**(フィルタの真理値表・並び・集計。`docs/design/08` §3 の 2)
+- 論理削除、polymorphic の書き込み検証、検索の正規化列 + `pg_trgm`
+- 04 のエンドポイント(session / meta の読み書き / records の読み書き / 集計 / 検索 / 時系列 / CSV / 環境設定 / Web フォームの受け口)
+- pytest の土台(実物の PostgreSQL に対して、1 テスト 1 トランザクション。`_test` で終わる DB にしか繋がない)
+- `scripts/verify.sh` の `backend:lint`・`backend:types`・`backend:test`、`loop-run.sh --queue api`、索引の「API の資産」列
 
 ## 人がすること
 

@@ -92,10 +92,11 @@
 
 | コマンド | すること |
 |---|---|
-| `scripts/loop-run.sh` | 1 周を回す(`--land hold`) |
+| `scripts/loop-run.sh` | 1 周を回す(`--land hold`。既定のキューは `tests`) |
+| `scripts/loop-run.sh --queue api` | バックエンドを実装するキューを 1 周(§10) |
 | `scripts/loop-run.sh --land auto --max 3` | 最大 3 周を続けて回し、合格したら着地まで行う |
 | `scripts/loop-run.sh --dry-run` | 次の 1 件と依頼文を表示するだけ |
-| `node scripts/loop-next.mjs --list` | 実装済み・取れる行・着手中・保留・対象外の件数 |
+| `node scripts/loop-next.mjs --list` | 実装済み・取れる行・着手中・保留・対象外の件数(`--queue api` で API のキュー) |
 | `node scripts/loop-next.mjs --check` | 索引と、実在するテスト・E2E のラベル・記録との食い違いを検査する |
 | `scripts/verify.sh` | ビルド・lint・Vitest・表の整合をまとめて回す |
 
@@ -127,6 +128,9 @@
 守りの本質が「製品に触らせない」から「**契約と、既に緑のテストに触らせない**」へ移るだけで、
 期待値を緩めて通す逃げ道は塞がる。
 
-**足場は人が作る**(J-021・J-022)。ループは 0 から FastAPI を組めないし、`08` §3 の難所(SQL の組み立て層・論理削除・
-polymorphic・検索)を周ごとに探させると設計がバラける。足場で 04 の全エンドポイントを一通り実装してからキューを開くと、
-1 周が「表の 1 行を pytest に写す → 落ちたら直す」の大きさに収まる。
+**足場は人が作った**(2026-09-23。J-021・J-022・J-033・J-036・J-039)。ループは 0 から FastAPI を組めないし、
+`08` §3 の難所(SQL の組み立て層・論理削除・polymorphic・検索)を周ごとに探させると設計がバラける。
+04 のエンドポイントを一通り実装してからキューを開いたので、1 周は「表の 1 行を pytest に写す → 落ちたら直す」の大きさに収まる。
+**Google ドライブ(J-035)だけは足場に入れていない**(利用者ごとの Google OAuth が要る)。その行に当たったら `保留` になる。
+
+回す前に、pytest が繋ぐ PostgreSQL を起動しておくこと(`docker compose --profile backend up -d db`)。
