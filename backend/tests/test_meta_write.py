@@ -58,9 +58,20 @@ def test_管理者でなければテーブルを作れない(member: TestClient)
     assert response.json()["code"] == "forbidden"
 
 
-def test_列名の規則と予約語(admin: TestClient) -> None:
+def test_META_004_列名が規則外のテーブルは_400(admin: TestClient) -> None:
+    """大文字・先頭が数字・40 文字超は作れない(02 §5)。"""
     assert admin.post("/api/v1/meta/objects", json=simple_table("Projects")).status_code == 400
     assert admin.post("/api/v1/meta/objects", json=simple_table("1projects")).status_code == 400
+    assert admin.post("/api/v1/meta/objects", json=simple_table("a" * 41)).status_code == 400
+    # 40 文字ちょうどは通る(境界)
+    assert admin.post("/api/v1/meta/objects", json=simple_table("a" * 40)).status_code == 200
+    # 項目の列名も同じ規則
+    body = simple_table("valid_table")
+    body["fields"][1]["key"] = "Phase"
+    assert admin.post("/api/v1/meta/objects", json=body).status_code == 400
+
+
+def test_予約された名前のテーブルは作れない(admin: TestClient) -> None:
     assert admin.post("/api/v1/meta/objects", json=simple_table("users")).status_code == 400
     assert admin.post("/api/v1/meta/objects", json=simple_table("accounts")).status_code == 400
 
