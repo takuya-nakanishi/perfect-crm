@@ -21,6 +21,10 @@ def bad_request(message: str, code: str = "invalid") -> ApiError:
     return ApiError(400, code, message)
 
 
+def too_many_requests(message: str = "送信が多すぎます。少し待ってからもう一度お試しください") -> ApiError:
+    return ApiError(429, "too_many_requests", message)
+
+
 def unauthorized(message: str = "ログインしていません") -> ApiError:
     return ApiError(401, "unauthorized", message)
 

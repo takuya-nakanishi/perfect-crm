@@ -156,6 +156,42 @@ SYSTEM_TABLES = frozenset(
         "meta_views",
         "ddl_log",
         "activity_mentions",
+        "mcp_tokens",
+        "web_forms",
         "alembic_version",
     }
+)
+
+# MCP(や将来の API)のアクセストークン。**全文は保存しない**(ハッシュだけ。04 §10)
+mcp_tokens = Table(
+    "mcp_tokens",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("name", Text, nullable=False),
+    # 繋いだアプリ(claude-desktop / claude-code / codex / other)
+    Column("client", Text, nullable=False),
+    # 見分けるための先頭 8 文字
+    Column("prefix", Text, nullable=False),
+    Column("token_hash", Text, nullable=False, unique=True),
+    Column("created_by", UUID(as_uuid=True), ForeignKey("users.id"), nullable=True),
+    Column("last_used_at", TIMESTAMP(timezone=True), nullable=True),
+    _ts("created_at"),
+)
+
+# Web フォーム(Salesforce の Web-to-Lead の汎用版)。受け口は認証なし(04 §10)
+web_forms = Table(
+    "web_forms",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("name", Text, nullable=False),
+    Column("object_key", Text, nullable=False),
+    Column("fields", JSONB, nullable=False),
+    Column("defaults", JSONB, nullable=False),
+    # 受け口の URL に入る秘密。漏れたら rotate で作り直す
+    Column("key", Text, nullable=False, unique=True),
+    Column("enabled", Boolean, nullable=False, server_default=text("true")),
+    Column("redirect_url", Text, nullable=True),
+    Column("submissions", Integer, nullable=False, server_default=text("0")),
+    Column("last_submitted_at", TIMESTAMP(timezone=True), nullable=True),
+    _ts("created_at"),
 )
