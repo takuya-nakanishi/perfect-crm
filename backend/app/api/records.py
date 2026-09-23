@@ -9,6 +9,7 @@ from app.api.deps import Conn, CurrentUser
 from app.records import service
 from app.records.aggregate import aggregate
 from app.records.search import search
+from app.records.timeline import timeline
 
 router = APIRouter()
 
@@ -70,3 +71,8 @@ def aggregate_records(object_key: str, params: AggregateParams, conn: Conn, user
 @router.get("/search")
 def search_all(q: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
     return search(conn, q)
+
+
+@router.get("/objects/{object_key}/records/{record_id}/timeline")
+def read_timeline(object_key: str, record_id: str, conn: Conn, user: CurrentUser) -> dict[str, Any]:
+    return timeline(conn, object_key, record_id)

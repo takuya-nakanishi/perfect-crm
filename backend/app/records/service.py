@@ -1,6 +1,7 @@
-"""レコードの読み取り(04 §2 の `records/query` と 1 件)。書き込みは次(J-021 の続き)。"""
+"""レコードの読み書き(04 §2)。**書き込みの経路はここ 1 本**で、画面・取り込み・MCP のどれも通る。"""
 
-from datetime import UTC
+import json
+from datetime import UTC, date
 from typing import Any
 
 from sqlalchemy import Connection, Select, Table, asc, case, desc, func, literal, nullslast, select
@@ -8,15 +9,25 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.errors import bad_request, not_found
 from app.meta import store
-from app.meta.tables import SYSTEM_COLUMNS
+from app.meta.tables import SYSTEM_COLUMNS, activity_mentions
 from app.meta.tables import users as users_table
 from app.records.filters import Context, compile_filter
 from app.records.normalize import normalize_text, search_text_of
+from app.records.recurrence import copy_for_next, due_field_of, next_due
 from app.records.refs import collect_references
-from app.records.rules import apply_rules, defaults_for_insert
+from app.records.richtext import mentions_value
+from app.records.rules import apply_rules, defaults_for_insert, today_in
 from app.records.tables import fields_by_column, table_of
 from app.records.validate import reject_unknown_columns, validate
 from app.records.values import row_to_api, to_db
+
+
+def _with_mentions(obj: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    """活動の行には `mentions`(言及先の `テーブル名:ID`)を添える。**正は `body`** なので、そこから作り直す。"""
+    timeline = obj.get("timeline")
+    if timeline:
+        record["mentions"] = mentions_value(record.get(timeline["body"]))
+    return record
 
 
 def context(conn: Connection, me: str | None) -> Context:
@@ -85,7 +96,7 @@ def query(conn: Connection, object_key: str, params: dict[str, Any], me: str | N
     if params.get("offset"):
         stmt = stmt.offset(int(params["offset"]))
 
-    records = [row_to_api(row, fields) for row in conn.execute(stmt)]
+    records = [_with_mentions(obj, row_to_api(row, fields)) for row in conn.execute(stmt)]
     return {"records": records, "total": total, "references": collect_references(conn, obj, records)}
 
 
@@ -96,7 +107,7 @@ def find(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]:
     row = conn.execute(select(table).where(table.c.id == record_id, table.c.deleted_at.is_(None))).first()
     if row is None:
         raise not_found("レコードがありません")
-    record = row_to_api(row, fields)
+    record = _with_mentions(obj, row_to_api(row, fields))
     return {"record": record, "references": collect_references(conn, obj, [record])}
 
 
@@ -142,6 +153,7 @@ def insert(conn: Connection, object_key: str, values: dict[str, Any], me: str | 
             payload.pop(name, None)
     payload["search_text"] = search_text_of(obj["fields"], row)
     record_id = conn.execute(table.insert().values(**payload).returning(table.c.id)).scalar_one()
+    _sync_mentions(conn, obj, str(record_id), row)
     return find(conn, object_key, str(record_id))
 
 
@@ -168,6 +180,8 @@ def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, A
     payload["updated_at"] = now
     payload["search_text"] = search_text_of(obj["fields"], row)
     conn.execute(table.update().where(table.c.id == record_id).values(**payload))
+    _sync_mentions(conn, obj, record_id, row)
+    _apply_recurrence(conn, obj, {**row, "id": record_id}, patch, me)
     return find(conn, object_key, record_id)
 
 
@@ -195,3 +209,54 @@ def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]
     if result.rowcount == 0:
         raise not_found("削除されたレコードがありません")
     return find(conn, object_key, record_id)
+
+
+def _sync_mentions(conn: Connection, obj: dict[str, Any], record_id: str, row: dict[str, Any]) -> None:
+    """`body` から取った言及を結合表へ写す(時系列 API が引く。捨てて作り直せる導出値)。"""
+    if not obj.get("timeline") or "mentions" not in row:
+        return
+    conn.execute(activity_mentions.delete().where(activity_mentions.c.activity_id == record_id))
+    for ref in json.loads(row["mentions"] or "[]"):
+        object_key, _, target_id = str(ref).partition(":")
+        conn.execute(
+            activity_mentions.insert().values(activity_id=record_id, object_key=object_key, record_id=target_id)
+        )
+
+
+def _apply_recurrence(
+    conn: Connection, obj: dict[str, Any], row: dict[str, Any], patch: dict[str, Any], me: str | None
+) -> None:
+    """繰り返し(02 §3)。完了したら次回を作り、完了を戻したら自動で作った次回を消す。"""
+    completion = obj.get("completion") or {}
+    if not completion.get("repeat_field") or completion["field"] not in patch:
+        return
+    table = table_of(obj)
+    repeat_of = completion.get("repeat_of_field")
+    is_done = row.get(completion["field"]) == completion["done_value"]
+    if not is_done:
+        # この回から自動で作った次回が、まだ未着手ならば消す(だから「戻すと次回が消える」)
+        if repeat_of:
+            conn.execute(
+                table.delete().where(
+                    table.c[repeat_of] == row["id"], table.c[completion["field"]] == completion["open_value"]
+                )
+            )
+        return
+    rule = row.get(completion["repeat_field"])
+    due_key = due_field_of(obj)
+    if not rule or not due_key or not row.get(due_key):
+        return
+    from_completion = bool(
+        completion.get("repeat_from_completion_field") and row.get(completion["repeat_from_completion_field"])
+    )
+    timezone = store.get_workspace(conn)["timezone"]
+    base = date.fromisoformat(today_in(timezone) if from_completion else str(row[due_key])[:10])
+    due = next_due(base, str(rule))
+    if due is None:
+        return
+    # 既に次回がある(二重に完了を送った)なら作らない
+    if repeat_of:
+        found = conn.execute(select(table.c.id).where(table.c[repeat_of] == row["id"])).first()
+        if found is not None:
+            return
+    insert(conn, obj["key"], copy_for_next(obj, row, due), me)
