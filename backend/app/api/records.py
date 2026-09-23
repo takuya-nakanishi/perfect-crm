@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import Conn, CurrentUser
 from app.records import service
-from app.records.csv_io import export_csv, import_csv
 from app.records.aggregate import aggregate
+from app.records.csv_io import export_csv, import_csv
 from app.records.search import search
 from app.records.timeline import timeline
 

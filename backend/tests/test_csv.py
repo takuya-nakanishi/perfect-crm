@@ -30,7 +30,7 @@ def test_列名でも当たる_対応を指定すれば従う(admin: TestClient)
 
 def test_数値と日付とチェックは文字から直す(admin: TestClient, make: Make) -> None:
     make("accounts", name="取引先A")
-    csv = "商談名,取引先,金額,完了予定日\n新規案件,取引先A,\"￥1,200,000\",2026年10月3日\n"
+    csv = '商談名,取引先,金額,完了予定日\n新規案件,取引先A,"￥1,200,000",2026年10月3日\n'
     body = do_import(admin, "opportunities", csv=csv)
     assert body["errors"] == []
     record = admin.post("/api/v1/objects/opportunities/records/query", json={"q": "新規案件"}).json()["records"][0]
@@ -65,9 +65,7 @@ def test_参照は表示名で引き_同名が複数なら行エラー(admin: Te
     make("accounts", name="ふたつある")
     make("accounts", name="ふたつある")
     make("accounts", name="ひとつだけ")
-    body = do_import(
-        admin, "opportunities", csv="商談名,取引先\n曖昧,ふたつある\n明確,ひとつだけ\n"
-    )
+    body = do_import(admin, "opportunities", csv="商談名,取引先\n曖昧,ふたつある\n明確,ひとつだけ\n")
     assert body["valid"] == 1
     assert "2 件あります" in body["errors"][0]["message"]
 
@@ -98,7 +96,8 @@ def test_取り込みも業務ルールを通る(admin: TestClient) -> None:
 def test_CSV_の並びのまま一覧に出る(admin: TestClient) -> None:
     body = do_import(admin, "accounts", csv="取引先名\n1 番目\n2 番目\n3 番目\n")
     assert len(body["created_ids"]) == 3
-    rows = admin.post("/api/v1/objects/accounts/records/query", json={"sort": [{"field": "created_at", "dir": "desc"}]}).json()
+    newest_first = {"sort": [{"field": "created_at", "dir": "desc"}]}
+    rows = admin.post("/api/v1/objects/accounts/records/query", json=newest_first).json()
     assert [r["name"] for r in rows["records"]] == ["1 番目", "2 番目", "3 番目"]
 
 
