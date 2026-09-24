@@ -111,7 +111,7 @@ api は Access が付ける `Cf-Access-Jwt-Assertion` を確かめて(署名 = �
 **2026-09-24 に作った**(J-028)。本人の要望: 「Google スライドなどのカスタム MCP と同じく、Claude のアプリで 1 回設定したら、同じ Claude を使うほかの端末でも使えるようにしたい」。
 
 - **繋ぎ方の本筋は Claude のカスタムコネクタ(リモート MCP + OAuth)。**Claude の設定 › コネクタで URL(`https://works.sanei-clover.com/mcp`)を 1 回足して許可すれば、Claude.ai の Web・デスクトップ・スマホ・Claude Code(claude.ai のコネクタとして)のどれでも使える。コネクタはアカウントに付き、端末ごとの設定が要らないため。一次資料: Claude のコネクタの認証の説明(https://claude.com/docs/connectors/building/authentication、2026-09-24 確認)。「Claude.ai・Desktop・モバイル・Claude Code・Cowork は同じ仕組みを使う」
-- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7
+- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7(Anthropic の送信元からだけ、機械向けの口を素通しにする。2026-09-24 本人が承認)
 - **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Access の内側の画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる(03 §5 の B 案と同じく、利用者は Access の JWT で決まる)
 - **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ
 - 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(こちらは Access のサービストークンも要る。06 §7)
