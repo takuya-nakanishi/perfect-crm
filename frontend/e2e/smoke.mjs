@@ -1,9 +1,10 @@
 // 画面の主要な操作が動くことを、実際のブラウザで確かめる(ログイン → 完了 → 追加 → 検索 → 編集 → カンバン → 作成 → ぱんくず → テーブルの追加と設定 → 活動 → 桁区切りとパネルの幅 → サイドバーの並べ替え → Google ドライブ)。
 //
 //   npm run e2e                                  開発サーバ(http://127.0.0.1:5173)に対して
-//   npm run e2e -- http://127.0.0.1:8610         コンテナの本番ビルドに対して
-//   python3 ../scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'npm --prefix frontend run e2e -- https://works.sanei-clover.com'
-//                                                Cloudflare Access 越しの公開 URL に対して
+//   ../scripts/e2e-http.sh                       本物の API + PostgreSQL(E2E 用の DB を作り直して)に対して
+//
+// **本番(works.sanei-clover.com・127.0.0.1:8610)には流さない。**この E2E はテーブルを足したり消したりする。
+// 本番は 2026-09-24 から http モード + Access のログインなので、流してもログインで止まる(サービストークンは利用者になれない)。
 //
 // ブラウザは Playwright が入れた Chromium を使う(CHROMIUM_PATH で指定。無ければ ~/.cache/ms-playwright から探す)。
 // モックのデータはブラウザごとに初期化されるので、何度走らせても同じ結果になる。

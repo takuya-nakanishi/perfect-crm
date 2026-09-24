@@ -8,10 +8,10 @@
 設計の正は `docs/design/`(01 要件と決定 → 02 データモデル → 03 アーキテクチャ → 04 API → 05 UI → 06 配置 → 07 移行)。
 運用の手順と落とし穴は `docs/runbook/`。問いと作業は `backlog/`(書式は `questions-jobs` skill)。
 
-## 現状(2026-09-21)
+## 現状(2026-09-24)
 
-**画面のモックが `https://works.sanei-clover.com` で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access)。
-データはブラウザ内の擬似 DB。バックエンド(Python)と PostgreSQL は `backend/` にあり、手元では画面を http モードにして同じ E2E が通る(`scripts/e2e-http.sh`)。本番を http へ切り替えるのはこれから。ログインは Cloudflare Access を信頼する(`docs/design/03` §5)。
+**`https://works.sanei-clover.com` は 2026-09-24 から本物の API + PostgreSQL で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access。J-041)。データは空から始まり、実データの移行は J-026。
+モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える)。ログインは Cloudflare Access を信頼する(`docs/design/03` §5)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
 バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 
@@ -43,7 +43,7 @@ scripts/e2e-http.sh                        # 同じ E2E を本物の API + Postg
 テストの土台は `docs/tests/README.md`(4 軸と層)。表の `—` の行(L1・L2)は無人ループが Vitest で埋める(`docs/runbook/02-loop.md`、`loops/`)。**無人ループは `backlog/` を読まない・書かない**(共通ルール)。
 
 画面を変えたら、スクリーンショットで明・暗・スマホ幅を見る(和文の書体を本番と揃える方法は runbook §2)。
-公開 URL まで確かめるなら `python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec '…'`(runbook §3)。
+公開 URL まで確かめるなら `python3 scripts/cloudflare-access-check.py works.sanei-clover.com`(runbook §3。E2E は流さない)。
 
 ## スタック
 

@@ -7,12 +7,6 @@
 
 上から順にやる。ループはこの節の**先頭1件だけ**を取る。
 
-- [ ] **J-041** 本番(`works.sanei-clover.com`)を http モードへ切り替える(2026-09-24)
-  - 由来: J-024(手元では同じ E2E が通った)。J-024 の置き場所をそのまま継ぐ(実データを入れる J-025・J-026 の前に要るため)
-  - やること: `.env` に `WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`(Access のポリシーと同じメールアドレス)、`VITE_API_MODE=http`。`scripts/cloudflare-tunnel-setup.py` を再実行して `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を書かせ、`--profile backend --profile public` で建て直す。runbook 01 §5
-  - 本人の判断が要る: 切り替えた時点で画面のデータは空になる(モックの種は入れない。実データは J-026)。いつ切り替えるか。公開 URL の E2E は、テーブルを足したり消したりするので、本番の DB に向けてはいけない(smoke.mjs を公開 URL へ流すのは、本番がモックの間だけ)
-  - [2026-09-24] 本人の判断: すぐ切り替える。着手
-  - [2026-09-24] `cloudflare-tunnel-setup.py` を再実行し、`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を `.env` に書いた(Tunnel・経路・Access は既存のまま)。最初の管理者は Access を通る唯一のアカウントメンバー。残りの `.env`(DB のパスワード・署名鍵・管理者・`VITE_API_MODE=http`)は本人が入れる(秘密の書き込みはセッションから行わない)
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)
   - 由来: Q-040(退避先)。実データを入れる前に、復元を一度実演して runbook に書く
 - [ ] **J-026** 既存データを移行する — 連絡先台帳の CSV → Notion → Google コンタクト → Todoist(2026-09-21)
@@ -36,6 +30,7 @@
   - 由来: J-035(コードは済み。残りは人が GCP と `.env` を触るところ)。手順は docs/runbook/01 §6
   - [2026-09-23] 使うのは **`citric-earth-449901-e7`**(スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト。sanei-clover.com の Workspace。本人が指定)。runbook §6 に書いてある
   - 同意画面は必ず「内部」にする(`drive.readonly` が制限付きスコープでも審査が要らなくなる)。`WORKS_SECRET_KEY` も同時に入れる(空だと再起動のたびに繋ぎ直しになる)
+- [x] ~~**J-041** 本番(`works.sanei-clover.com`)を http モードへ切り替える(2026-09-24)~~ → 完了(2026-09-24): `.env` に DB・署名鍵・管理者(Access を通る唯一のアカウントメンバー)・`VITE_API_MODE=http`・`WORKS_AUTH=access` と Access の 2 つの値を入れ、`--profile backend --profile public` で建て直した。公開 URL で、未認証は Access へ、サービストークンは JWT を確かめたうえで 401(利用者になれない)を確認。データは空から(実データは J-026)。本番へ E2E を流さない旨を runbook 01 §3 ほかへ
 - [x] ~~**J-020** モック画面を実際に触ってもらい、出た指摘を反映する(2026-09-21)~~ → 完了(2026-09-24): 本人の判断で閉じる(これ以上の指摘は無い)。8 回分の反映は docs/design/05 §8〜§11、02 §3・§5、06 §7、08
 - [x] ~~**J-024** 画面を http モードへ切り替え、モックと同じ E2E を通す(2026-09-21)~~ → 完了(2026-09-24): `scripts/e2e-http.sh` で、E2E 用の DB(`works_e2e`)を fixtures の種で作り直し(`app.cli reset-demo`)、api(dev)と http モードの画面を起こして smoke.mjs が全項目通る。直したのは E2E の側だけ(モード判定、Google 未設定の枝 SET-065、http での 4xx の扱い)で、API の振る舞いの食い違いは出なかった。runbook 01 §2。本番の切り替えは J-041
 - [x] ~~**J-023** ログインを本物にする(2026-09-21)~~ → 完了(2026-09-24): B 案「Access を信頼する」(本人の決定)。api が `Cf-Access-Jwt-Assertion` を確かめ、メールアドレスで `users` を引く。アプリはログイン画面を出さず、Access を通れていない・利用者でないときの案内だけ。手元とテストは `WORKS_AUTH=dev`。人を足すのは `app.cli add-user`。docs/design/03 §5、04 §2、runbook 01 §5

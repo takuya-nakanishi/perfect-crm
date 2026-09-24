@@ -43,7 +43,7 @@
 |---|---|---|---|---|
 | L1 | `frontend/src/lib/*.ts` の純関数(フィルタの評価、日付、書式、読み取り、洗浄、下書き) | 対象の隣の `*.test.ts` | `cd frontend && npm test`(Vitest) | 無人ループ |
 | L2 | モックのエンジン(`frontend/src/mocks/*.ts`)。**バックエンドができるまで、サーバの振る舞いの正**。検証・既定値・業務ルール・時系列の合成・テーブル設定の決まり・CSV・受け口 | 対象の隣の `*.test.ts` | 同上 | 無人ループ |
-| L3 | 実ブラウザの画面(Playwright)。ログインから環境設定まで通しで | `frontend/e2e/smoke.mjs` の検査(`ok(…, 'ラベル')`) | `npm run e2e`(開発サーバ・コンテナ・公開 URL のどれにも) | 人と、人が起こしたセッション |
+| L3 | 実ブラウザの画面(Playwright)。ログインから環境設定まで通しで | `frontend/e2e/smoke.mjs` の検査(`ok(…, 'ラベル')`) | `npm run e2e`(開発サーバ)、`scripts/e2e-http.sh`(本物の API + E2E 用の DB)。本番には流さない | 人と、人が起こしたセッション |
 | L4 | PostgreSQL の制約・トリガ・RLS | `backend/tests/` の pytest(実物の DB に対して回る) | `cd backend && uv run pytest` | 人と、人が起こしたセッション |
 | L5 | 公開 URL(Access 越し)、スマホの実機 | `scripts/cloudflare-access-check.py --exec` | 人 | 人 |
 

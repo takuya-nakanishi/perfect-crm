@@ -2,7 +2,7 @@
 """Cloudflare Access の内側まで届くことを、外から確かめる。
 
   python3 scripts/cloudflare-access-check.py works.sanei-clover.com
-  python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'node frontend/e2e/smoke.mjs https://works.sanei-clover.com'
+  python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c "curl -s -H …"'   (例は docs/runbook/01 §3)
 
 人は PIN の画面を通るが、スクリプトは通れない。そこで確認のあいだだけ使うサービストークンを作り、
 それを通すポリシーを Access アプリに足してから叩き、終わったら(失敗しても)両方を消す。

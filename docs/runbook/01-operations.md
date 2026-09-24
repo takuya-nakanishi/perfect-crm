@@ -62,11 +62,11 @@ FONTCONFIG_FILE=/tmp/fonts.conf npm run e2e     # Playwright で撮るスクリ�
 python3 scripts/cloudflare-api.py                  # API トークンが生きているか
 python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --app-name Works
 python3 scripts/cloudflare-access-check.py works.sanei-clover.com
-python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'npm --prefix frontend run -s e2e -- https://works.sanei-clover.com'
+python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c "curl -s -H \"CF-Access-Client-Id: \$CF_ACCESS_CLIENT_ID\" -H \"CF-Access-Client-Secret: \$CF_ACCESS_CLIENT_SECRET\" https://works.sanei-clover.com/api/v1/session"'
 ```
 
 - `cloudflare-tunnel-setup.py` は何度打っても同じ結果になる。Tunnel を作り直したときは `.env` の `CLOUDFLARE_TUNNEL_TOKEN` を置き換えるので、そのあと `docker compose --profile public up -d` で cloudflared を作り直す
-- `cloudflare-access-check.py` は、未認証が Access へ送られること、認証済みなら画面の HTML まで届くことを外から確かめる。確認のあいだだけサービストークンとポリシーを作り、終わったら消す。`--exec` を付けると、そのトークンを環境変数に入れてコマンドを走らせる(上の例は、公開 URL に対する E2E)
+- `cloudflare-access-check.py` は、未認証が Access へ送られること、認証済みなら画面の HTML まで届くことを外から確かめる。確認のあいだだけサービストークンとポリシーを作り、終わったら消す。`--exec` を付けると、そのトークンを環境変数に入れてコマンドを走らせる。上の例は API が Access の JWT を確かめているかを見るもので、`{"code":"access_required","message":"サービストークンでは画面に入れません"}` が返れば、署名・宛先・発行元・期限まで確かめたうえでサービストークンを弾いている。**本番は http モードなので、公開 URL に E2E(smoke.mjs)を流さない**(本番の DB を書き換える。2026-09-24 まではモックだったので流していた)
 - トークンの値は、どのスクリプトも表示しない。`.env` の中身を画面やログに出さないこと
 
 ## 4. 踏んだ落とし穴
