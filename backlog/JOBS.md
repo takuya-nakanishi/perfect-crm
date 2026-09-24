@@ -24,6 +24,7 @@
   - [2026-09-24] 最初の関門は種のデータ。`backend/app/seed/` はメタデータ(`objects.json`・`views.json`)だけで、レコードは 1 行も入らない。E2E は行がある前提(行の選択・完了・検索)なので、`frontend/src/mocks/fixtures/` の JSON を流し込む口が要る。smoke.mjs は「データはブラウザごとに初期化される」とモック前提で書いてあるが、http では走らせるたびに残るので、流し込みの前に消す手順も要る
   - [2026-09-24] E2E の最後は Google ドライブを触るが、未接続なら「Google に接続」が出る枝を見るので J-040 の前でも通るはず
   - [2026-09-24] J-023 でログインが Access の JWT になった。Access の無い手元で E2E を回すときは api を `WORKS_AUTH=dev` + `WORKS_SECURE_COOKIE=false` で起こす(smoke.mjs のログインのフォームはそのまま使える)。本番へ出すときは `scripts/cloudflare-tunnel-setup.py` を再実行して `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を `.env` へ(runbook 01 §5)
+  - [2026-09-24] 着手
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)
   - 由来: Q-040(退避先)。実データを入れる前に、復元を一度実演して runbook に書く
 - [ ] **J-026** 既存データを移行する — 連絡先台帳の CSV → Notion → Google コンタクト → Todoist(2026-09-21)
