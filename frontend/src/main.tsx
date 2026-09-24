@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
+import { API_MODE } from './api/client'
 import App from './App'
 import { applyTheme, useUI } from './state/ui'
 import './styles/index.css'
@@ -17,6 +18,9 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+// いまのデータの出どころ(mock / http)。E2E が読んで、モック専用の検査を分ける(e2e/smoke.mjs)
+document.documentElement.dataset.apiMode = API_MODE
 
 // OS の明暗が変わったら「自動」のときだけ追従する
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

@@ -47,6 +47,7 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 |---|---|---|---|---|---|---|---|
 | SET-060 | 利用者 | ドライブ | 整合 | L3 | 利用者: 「新規」→ レコード名の Google ドキュメントが付く。「参照」で複数のファイルを付け、外したものは外れたまま | `smoke.mjs「「新規」でレコード名の Google ドキュメントが付く」` / `smoke.mjs「「参照」で複数のファイルを付けられる」` / `smoke.mjs「外したものは外れたまま残る(再読み込み後)」` | — |
 | SET-064 | 利用者 | ドライブ | 整合 | L3 | 繋いでいない利用者: ドライブの項目に「Google に接続」が出て、「新規」「参照」は出ない(04 §8) | `smoke.mjs「繋いでいないと「新規」「参照」の代わりに「Google に接続」が出る」` | — |
+| SET-065 | 利用者 | ドライブ | 整合 | L3 | 管理者が Google の OAuth クライアントを入れていない(http): ドライブの項目に「Google 連携が設定されていません」が出て、「新規」「参照」は出ない(04 §8) | `smoke.mjs「Google 連携が未設定なら、その旨が出て「新規」「参照」は出ない」`(http のときだけ走る) | — |
 | SET-061 | 利用者 | ドライブ | 整合 | L2 | `createDocument`: ドキュメントの名前はレコードの表示名、MIME はドキュメント、項目の末尾に足される。作ったものは `listFiles` で見つかる | `mockClient.test.ts` | `test_google.py` |
 | SET-062 | 利用者 | ドライブ | 整合 | L2 | `createDocument`: ドライブ型でない項目 → 400。無いレコード → 404 | `mockClient.test.ts` | `test_google.py` |
 | SET-063 | 利用者 | ドライブ | 表記 | L2 | `listFiles("テンプレ")`: 名前の部分一致(正規化)。空なら全部、20 件まで | `mockClient.test.ts` | `test_google.py` |

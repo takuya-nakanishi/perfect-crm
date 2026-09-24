@@ -12,7 +12,7 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    // バックエンドができたら /api をそこへ流す(VITE_API_MODE=http のとき使う)
-    proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } },
+    // /api をバックエンドへ流す(VITE_API_MODE=http のとき使う)。宛先は WORKS_API_TARGET で変えられる(scripts/e2e-http.sh)
+    proxy: { '/api': { target: process.env.WORKS_API_TARGET ?? 'http://127.0.0.1:8000', changeOrigin: true } },
   },
 })

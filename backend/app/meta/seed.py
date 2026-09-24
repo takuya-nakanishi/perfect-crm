@@ -94,7 +94,15 @@ def seed(conn: Connection) -> None:
         )
 
 
-def ensure_user(conn: Connection, *, name: str, email: str, admin: bool = False, id: str | None = None) -> Any:
+def ensure_user(
+    conn: Connection,
+    *,
+    name: str,
+    email: str,
+    admin: bool = False,
+    id: str | None = None,
+    avatar_color: str | None = None,
+) -> Any:
     """利用者を 1 人用意する(既にいれば その ID を返す)。
 
     メールアドレスは小文字で持つ(ログインは Access の JWT のメールアドレスを小文字にして引く。03 §5)。
@@ -106,4 +114,6 @@ def ensure_user(conn: Connection, *, name: str, email: str, admin: bool = False,
     values: dict[str, Any] = {"name": name, "email": email, "admin": admin}
     if id:
         values["id"] = id
+    if avatar_color:
+        values["avatar_color"] = avatar_color
     return conn.execute(users.insert().values(**values).returning(users.c.id)).scalar_one()

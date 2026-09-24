@@ -40,6 +40,8 @@ npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtu
 ```
 
 - E2E の向き先は引数で変えられる: `npm run e2e -- http://127.0.0.1:8610`(コンテナの本番ビルド)
+- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=dev`)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる
+- `smoke.mjs` は画面の `<html data-api-mode>` を読み、モック専用の検査(Google ドライブを繋いだ状態、モックのデータの初期化)を http では飛ばす。http では契約どおりの 4xx(ログイン前の 401 など)をブラウザのエラーに数えず、api の 5xx を失敗に数える
 - E2E のブラウザは Playwright の Chromium(`~/.cache/ms-playwright/chromium-*`)。無ければ `npx playwright install chromium`。別の場所にあるなら `CHROMIUM_PATH`
 - モックのデータはブラウザごと。画面の利用者メニュー「モックのデータを初期化」で戻る。メタデータ(`fixtures/objects.json`・`views.json`)は手で直す
 
@@ -101,7 +103,7 @@ docker compose logs -f api
 - `.env` に要る値は `backend/README.md`(`WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`)
 - **db はホストの 127.0.0.1:55432 に出ている**(pytest が実物に繋ぐため)。外へは出さない
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
-- 画面から API を使うには `VITE_API_MODE=http` で web を建て直す(`docker compose up -d --build web`)。既定は mock(J-024)
+- 画面から API を使うには `VITE_API_MODE=http` で web を建て直す(`docker compose up -d --build web`)。既定は mock。手元で通しの確認をするなら `scripts/e2e-http.sh`(§2)
 
 ## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
 

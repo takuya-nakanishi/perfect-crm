@@ -34,6 +34,8 @@ const page = await ctx.newPage()
 const errors = []
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()) })
+// 本物の API の 5xx は、画面が平気そうに見えても失敗にする
+page.on('response', (r) => { if (r.url().includes('/api/') && r.status() >= 500) errors.push(`api: ${r.status()} ${r.request().method()} ${r.url()}`) })
 
 let failed = 0
 const ok = (cond, label, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? '  — ' + extra : ''}`); if (!cond) failed++ }
@@ -47,6 +49,9 @@ ok(page.url().includes('next='), '未ログインで /login へ送られ、戻�
 await page.fill('#email', 'takuya@example.jp'); await page.fill('#password', 'x'); await page.click('button[type=submit]')
 await page.waitForSelector('[role=table]')
 ok(page.url().includes('/o/accounts'), 'ログイン後、元の画面へ戻る')
+// 本物の API に繋がっているか(VITE_API_MODE=http)。画面が <html data-api-mode> に出している(src/main.tsx)
+const HTTP_API = (await page.evaluate(() => document.documentElement.dataset.apiMode)) === 'http'
+console.log(`INFO  データ: ${HTTP_API ? '本物の API(http)' : 'モック'}`)
 
 await page.goto(BASE + '/')
 await page.waitForSelector('[role=row][data-row]')
@@ -272,26 +277,46 @@ ok((await page.locator('[role=tablist]').evaluate((el) => el.offsetHeight - el.c
 }
 await page.goto(BASE + '/o/tasks?view=x'); await page.waitForSelector('[role=row][data-row]')
 await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().click(); await page.waitForSelector('aside'); await wait(400)
-await page.locator('aside').getByRole('button', { name: '新規' }).click(); await wait(900)
-ok(await page.locator('aside a[href*="docs.google.com/document"]').count() === 1, '「新規」でレコード名の Google ドキュメントが付く')
-await page.locator('aside').getByRole('button', { name: '参照' }).click(); await wait(500)
-await page.getByRole('option', { name: /提案書テンプレート/ }).click(); await wait(300)
-await page.getByRole('option', { name: /見積書テンプレート/ }).click(); await wait(300)
-await page.keyboard.press('Escape'); await wait(300)
-ok(await page.locator('aside a[target=_blank]').count() === 3, '「参照」で複数のファイルを付けられる')
-await page.locator('aside').getByRole('button', { name: '「提案書テンプレート」を外す' }).click(); await wait(300)
-await page.reload(); await page.waitForSelector('aside'); await wait(400)
-ok(await page.locator('aside a[target=_blank]').count() === 2, '外したものは外れたまま残る(再読み込み後)')
-// 繋いでいない人の見え方(モックは繋いでいる状態で始まるので、いったん外す)
-await page.evaluate(() => localStorage.setItem('works.mock.drive.connection.v1', 'off'))
-await page.reload(); await page.waitForSelector('aside'); await wait(500)
-ok(
-  (await page.locator('aside').getByRole('button', { name: 'Google に接続' }).count()) === 1 &&
-    (await page.locator('aside').getByRole('button', { name: '参照' }).count()) === 0,
-  '繋いでいないと「新規」「参照」の代わりに「Google に接続」が出る',
-)
-await page.evaluate(() => localStorage.removeItem('works.mock.drive.connection.v1'))
-await page.reload(); await page.waitForSelector('aside'); await wait(300)
+const google = HTTP_API ? await page.evaluate(async () => (await fetch('/api/v1/google/status')).json()) : null
+if (google?.connected) {
+  // 本物の Google に繋いでいる。E2E で本物のドライブにファイルを作らないよう、この節は飛ばす
+  console.log('SKIP  Google ドライブ(本物の Google に繋いでいるため)')
+} else if (HTTP_API && !google.configured) {
+  // 本物の API で、管理者が OAuth クライアントを入れていない(手元の E2E はこちら)
+  ok(
+    (await page.locator('aside').getByText('Google 連携が設定されていません').count()) === 1 &&
+      (await page.locator('aside').getByRole('button', { name: '参照' }).count()) === 0,
+    'Google 連携が未設定なら、その旨が出て「新規」「参照」は出ない',
+  )
+} else if (HTTP_API) {
+  // 本物の API で、設定はあるがまだ繋いでいない。見えるのは「Google に接続」だけ
+  ok(
+    (await page.locator('aside').getByRole('button', { name: 'Google に接続' }).count()) === 1 &&
+      (await page.locator('aside').getByRole('button', { name: '参照' }).count()) === 0,
+    '繋いでいないと「新規」「参照」の代わりに「Google に接続」が出る',
+  )
+} else {
+  await page.locator('aside').getByRole('button', { name: '新規' }).click(); await wait(900)
+  ok(await page.locator('aside a[href*="docs.google.com/document"]').count() === 1, '「新規」でレコード名の Google ドキュメントが付く')
+  await page.locator('aside').getByRole('button', { name: '参照' }).click(); await wait(500)
+  await page.getByRole('option', { name: /提案書テンプレート/ }).click(); await wait(300)
+  await page.getByRole('option', { name: /見積書テンプレート/ }).click(); await wait(300)
+  await page.keyboard.press('Escape'); await wait(300)
+  ok(await page.locator('aside a[target=_blank]').count() === 3, '「参照」で複数のファイルを付けられる')
+  await page.locator('aside').getByRole('button', { name: '「提案書テンプレート」を外す' }).click(); await wait(300)
+  await page.reload(); await page.waitForSelector('aside'); await wait(400)
+  ok(await page.locator('aside a[target=_blank]').count() === 2, '外したものは外れたまま残る(再読み込み後)')
+  // 繋いでいない人の見え方(モックは繋いでいる状態で始まるので、いったん外す)
+  await page.evaluate(() => localStorage.setItem('works.mock.drive.connection.v1', 'off'))
+  await page.reload(); await page.waitForSelector('aside'); await wait(500)
+  ok(
+    (await page.locator('aside').getByRole('button', { name: 'Google に接続' }).count()) === 1 &&
+      (await page.locator('aside').getByRole('button', { name: '参照' }).count()) === 0,
+    '繋いでいないと「新規」「参照」の代わりに「Google に接続」が出る',
+  )
+  await page.evaluate(() => localStorage.removeItem('works.mock.drive.connection.v1'))
+  await page.reload(); await page.waitForSelector('aside'); await wait(300)
+}
 await page.keyboard.press('Escape'); await wait(200)
 
 // 15. ビューの追加・条件・並び替え・設定・お気に入り・削除(Notion の型)
@@ -389,7 +414,10 @@ await page.getByRole('button', { name: 'ログアウト' }).click()
 await page.waitForURL(/\/login/)
 ok(true, 'ログアウトでログイン画面へ戻る')
 
-if (errors.length) { console.log('\nブラウザのエラー:\n' + errors.join('\n')); failed++ }
+// 本物の API の 4xx は契約どおりの応答で、画面が受け止める(ログイン前の /session の 401、完了を戻して消えた次回の 404 など)。
+// ブラウザはそれも「Failed to load resource」として出すので、http のときだけ数えない(5xx は上で別に拾う)
+const counted = HTTP_API ? errors.filter((e) => !/Failed to load resource: the server responded with a status of 4\d\d/.test(e)) : errors
+if (counted.length) { console.log('\nブラウザのエラー:\n' + counted.join('\n')); failed++ }
 console.log(failed ? `\n${failed} 件の失敗` : '\nすべて通過')
 await browser.close()
 process.exit(failed ? 1 : 0)

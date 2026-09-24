@@ -2,6 +2,7 @@
 
   python -m app.cli init                         マイグレーション → 初期メタデータ → 最初の管理者
   python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す(画面ができるまでの口。J-038)
+  python -m app.cli reset-demo                   E2E 用の DB(名前が _e2e で終わる)を、モックと同じ種のデータで作り直す
 
 ログインは Cloudflare Access(03 §5)。Access のポリシーで通したうえで、ここで Works の利用者に足す。
 """
@@ -51,6 +52,12 @@ def main(argv: list[str]) -> int:
         return 0
     if argv[1:2] == ["add-user"]:
         return add_user(argv[2:])
+    if argv[1:2] == ["reset-demo"]:
+        from app import demo
+
+        demo.reset(get_engine())
+        print("ok")
+        return 0
     print(__doc__, file=sys.stderr)
     return 2
 

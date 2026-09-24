@@ -11,7 +11,7 @@
 ## 現状(2026-09-21)
 
 **画面のモックが `https://works.sanei-clover.com` で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access)。
-データはブラウザ内の擬似 DB。バックエンド(Python)と PostgreSQL は `backend/` にあり、画面を http モードへ切り替えるのはこれから(J-024)。ログインは Cloudflare Access を信頼する(`docs/design/03` §5)。
+データはブラウザ内の擬似 DB。バックエンド(Python)と PostgreSQL は `backend/` にあり、手元では画面を http モードにして同じ E2E が通る(`scripts/e2e-http.sh`)。本番を http へ切り替えるのはこれから。ログインは Cloudflare Access を信頼する(`docs/design/03` §5)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
 バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 
@@ -37,6 +37,7 @@
 ```
 scripts/verify.sh                          # ビルド + lint + Vitest + テストケース表の整合(無人ループと着地の関門)
 cd frontend && npm run e2e                 # 実ブラウザ(開発サーバを起動してから)
+scripts/e2e-http.sh                        # 同じ E2E を本物の API + PostgreSQL で(DB は works_e2e を作り直す)
 ```
 
 テストの土台は `docs/tests/README.md`(4 軸と層)。表の `—` の行(L1・L2)は無人ループが Vitest で埋める(`docs/runbook/02-loop.md`、`loops/`)。**無人ループは `backlog/` を読まない・書かない**(共通ルール)。

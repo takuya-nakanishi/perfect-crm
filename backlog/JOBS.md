@@ -16,15 +16,10 @@
   - [2026-09-22] 6 回目: 環境設定(テーブルの定義とサイドバーの表示、Web フォーム = Web-to-Lead の汎用版、MCP のトークンと繋ぎ方)。管理者だけ。権限の設計は J-038。次の指摘待ち
   - [2026-09-22] 5 回目: ビューを画面から作る・直す(J-034。Notion の型)
   - [2026-09-22] 4 回目: 完了済みタスクが時系列に無い → 活動への複製をやめ、サーバが合成する時系列 API に変えた(04 §9)。@ の言及(言及先の時系列にも出る)。親子レコードの問いは Q-043。次の指摘待ち
-- [ ] **J-024** 画面を http モードへ切り替え、モックと同じ E2E を通す(2026-09-21)
-  - 集計・検索・並び(選択肢の定義順、NULL は末尾)まで揃える。docs/design/03 §3、04
-  - [2026-09-23] J-021 が済んだので着手できる。`VITE_API_MODE=http` で web を建て直し、`npm run e2e` を通す。種のデータ(fixtures 相当)をどう入れるかも決める
-  - [2026-09-23] PR #1 の「まだ無いもの」。本番も同じ切り替えが要る(`.env` に `WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL` を足し、`--profile backend --profile public` で建て直す)。Caddy の `/api/*` は api へ回る作りが既にある(`frontend/Caddyfile`)
-  - [2026-09-24] 下調べだけ済み(実装は未着手)。E2E は Playwright の設定ファイルを持たず、`frontend/e2e/smoke.mjs` が playwright-core を直に叩く自前のスクリプト。宛先は引数(既定 `http://127.0.0.1:5173`、コンテナへは `-- http://127.0.0.1:8610`)。`VITE_API_MODE` は `client.ts` がビルド時に読むので、compose の build arg を変えて web を建て直す
-  - [2026-09-24] 最初の関門は種のデータ。`backend/app/seed/` はメタデータ(`objects.json`・`views.json`)だけで、レコードは 1 行も入らない。E2E は行がある前提(行の選択・完了・検索)なので、`frontend/src/mocks/fixtures/` の JSON を流し込む口が要る。smoke.mjs は「データはブラウザごとに初期化される」とモック前提で書いてあるが、http では走らせるたびに残るので、流し込みの前に消す手順も要る
-  - [2026-09-24] E2E の最後は Google ドライブを触るが、未接続なら「Google に接続」が出る枝を見るので J-040 の前でも通るはず
-  - [2026-09-24] J-023 でログインが Access の JWT になった。Access の無い手元で E2E を回すときは api を `WORKS_AUTH=dev` + `WORKS_SECURE_COOKIE=false` で起こす(smoke.mjs のログインのフォームはそのまま使える)。本番へ出すときは `scripts/cloudflare-tunnel-setup.py` を再実行して `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を `.env` へ(runbook 01 §5)
-  - [2026-09-24] 着手
+- [ ] **J-041** 本番(`works.sanei-clover.com`)を http モードへ切り替える(2026-09-24)
+  - 由来: J-024(手元では同じ E2E が通った)。J-024 の置き場所をそのまま継ぐ(実データを入れる J-025・J-026 の前に要るため)
+  - やること: `.env` に `WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`(Access のポリシーと同じメールアドレス)、`VITE_API_MODE=http`。`scripts/cloudflare-tunnel-setup.py` を再実行して `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を書かせ、`--profile backend --profile public` で建て直す。runbook 01 §5
+  - 本人の判断が要る: 切り替えた時点で画面のデータは空になる(モックの種は入れない。実データは J-026)。いつ切り替えるか。公開 URL の E2E は、テーブルを足したり消したりするので、本番の DB に向けてはいけない(smoke.mjs を公開 URL へ流すのは、本番がモックの間だけ)
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)
   - 由来: Q-040(退避先)。実データを入れる前に、復元を一度実演して runbook に書く
 - [ ] **J-026** 既存データを移行する — 連絡先台帳の CSV → Notion → Google コンタクト → Todoist(2026-09-21)
@@ -48,6 +43,7 @@
   - 由来: J-035(コードは済み。残りは人が GCP と `.env` を触るところ)。手順は docs/runbook/01 §6
   - [2026-09-23] 使うのは **`citric-earth-449901-e7`**(スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト。sanei-clover.com の Workspace。本人が指定)。runbook §6 に書いてある
   - 同意画面は必ず「内部」にする(`drive.readonly` が制限付きスコープでも審査が要らなくなる)。`WORKS_SECRET_KEY` も同時に入れる(空だと再起動のたびに繋ぎ直しになる)
+- [x] ~~**J-024** 画面を http モードへ切り替え、モックと同じ E2E を通す(2026-09-21)~~ → 完了(2026-09-24): `scripts/e2e-http.sh` で、E2E 用の DB(`works_e2e`)を fixtures の種で作り直し(`app.cli reset-demo`)、api(dev)と http モードの画面を起こして smoke.mjs が全項目通る。直したのは E2E の側だけ(モード判定、Google 未設定の枝 SET-065、http での 4xx の扱い)で、API の振る舞いの食い違いは出なかった。runbook 01 §2。本番の切り替えは J-041
 - [x] ~~**J-023** ログインを本物にする(2026-09-21)~~ → 完了(2026-09-24): B 案「Access を信頼する」(本人の決定)。api が `Cf-Access-Jwt-Assertion` を確かめ、メールアドレスで `users` を引く。アプリはログイン画面を出さず、Access を通れていない・利用者でないときの案内だけ。手元とテストは `WORKS_AUTH=dev`。人を足すのは `app.cli add-user`。docs/design/03 §5、04 §2、runbook 01 §5
 - [x] ~~**J-035** Google ドライブ連携をバックエンドに実装する — 利用者ごとの Google OAuth、`/drive/files`、ドキュメントの作成(2026-09-22)~~ → 完了(2026-09-23): 利用者ごとの OAuth(PKCE・state は署名だけ・refresh token は暗号化して `google_accounts`)、`/google/status|connect|callback|connection`、`/drive/files`、ドキュメントの作成(マイドライブ / CRM / テーブル名)。画面は未接続なら「Google に接続」。契約は docs/design/04 §8、GCP 側の手順は docs/runbook/01 §6、pytest は `test_google.py`(SET-061〜063)。GCP と `.env` は J-040
 - [x] ~~**J-034** ビュー(列・並び・絞り込み・カンバンの分け方)を画面から編集できるようにする(2026-09-22)~~ → 完了(2026-09-22): Notion の型で、タブの追加・名前・複製・削除、条件(型ごとの値の欄、かつ / または)、並び替え、表示項目の出し入れと並べ替え、カンバンの分け方・合計・隠す列、お気に入り。変えるとその場で保存。docs/design/05 §10、04 §2・§6。レポートの部品は J-037、バックエンドは J-033

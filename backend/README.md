@@ -18,6 +18,7 @@ FastAPI + SQLAlchemy 2(Core)+ Alembic + Pydantic v2 + psycopg 3。パッケー�
 | `app/security.py` | 署名と暗号化の鍵、`WORKS_AUTH=dev` のセッション Cookie |
 | `app/meta/tables.py` | **システム表だけ**の定義(`workspace` / `users` / `meta_*` / `ddl_log` / `activity_mentions`) |
 | `app/meta/ddl.py` | メタデータ → 実テーブルの DDL。**DDL を流す経路はここ 1 本**。`DROP` は作らない(02 §4) |
+| `app/demo.py` | E2E の種のデータ。画面の fixtures を今日基準にずらして入れる。**名前が `_e2e` で終わる DB にしか入れない**(`python -m app.cli reset-demo`、`scripts/e2e-http.sh`) |
 | `app/meta/seed.py` | 初期メタデータの投入。正は `app/seed/*.json`(画面の fixtures と同じ。`tests/test_seed.py` が突き合わせる) |
 | `app/meta/store.py` | `meta_*` を読んで `GET /meta` の形に。もう無いものを指す定義は**返すときだけ**外す(02 §5) |
 | `app/api/` | ルータ。`deps.py` がいまの利用者を決める |
