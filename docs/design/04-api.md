@@ -40,6 +40,8 @@
 | `POST /objects/{object}/import` | CSV の取り込み(本文に `ImportParams`)。§7 | `ImportResponse` |
 | `POST /objects/{object}/export` | CSV の書き出し(本文に `ListParams`。省けば全件) | `text/csv` |
 | `GET /settings/mcp/tokens` / `POST` / `DELETE …/{id}` | MCP のアクセストークン(管理者)。発行の応答だけ全文(`secret`)を返す。§10 | `McpToken[]` / `McpTokenCreated` / 204 |
+| `GET /settings/mcp/connections` / `DELETE …/{id}` | OAuth で許可したアプリ(Claude のカスタムコネクタ。管理者)。切ると、その許可のトークンが消え、次の呼び出しから 401。§13 | `McpConnection[]` / 204 |
+| `GET /oauth/requests/{id}` / `POST`(`{ approve }`) | 許可の画面(`/oauth/consent`)。依頼の中身を見せ、決めたら Claude の戻り先を返す。無い・期限切れは 404。§13 | `OAuthRequest` / `{ redirect_url }` |
 | `GET /settings/forms` / `POST` / `PUT …/{id}` / `DELETE …/{id}` / `POST …/{id}/rotate` | Web フォームの定義(管理者)。§10 | `WebForm` |
 | `POST /forms/{key}` | **Web フォームの受け口(認証なし)**。form-urlencoded か JSON。§10 | `RecordResponse`(HTML のフォームからは `redirect_url` へ 303、無ければ小さな「受け付けました」の画面) |
 | `GET /google/status` | その利用者が Google を繋いでいるか。§8 | `GoogleStatus` |
@@ -178,4 +180,21 @@
 
 - ページング: いまは全件を返している(モックは数十件)。`limit` / `offset` は契約にあるが、画面は使っていない。数百件を超える前に、一覧の仮想スクロールと併せて入れる
 - 変更の記録(誰が・いつ・何を)と、その参照 API
-- MCP とチャットが使うコマンド層を、この HTTP API と同じ関数にどう揃えるか(03 §6・§7)
+- チャット(03 §7)が使うコマンド層。MCP は `app/records/service.py` などを直に呼ぶ形にした(§13)ので、チャットも同じ関数を呼ぶのが素直
+
+## 13. MCP と、Claude のカスタムコネクタの OAuth(03 §6)
+
+`/api/v1` の外にある口。どれも公開 URL の直下(`WORKS_PUBLIC_URL`。既定は手元の web)で、Caddy が api へ流す。
+
+| 口 | 誰が叩くか | 中身 |
+|---|---|---|
+| `POST /mcp` | Claude(Anthropic のクラウド)、トークンを付けたアプリ | MCP(Streamable HTTP、stateless、JSON の応答)。`Authorization: Bearer <OAuth の access token か wks_>`。無ければ 401 + `WWW-Authenticate: Bearer resource_metadata=…` |
+| `GET /.well-known/oauth-protected-resource/mcp` | Claude | 資源のメタデータ(RFC 9728)。`resource` は `<公開 URL>/mcp` と 1 文字も違わない |
+| `GET /.well-known/oauth-authorization-server` | Claude | 認可サーバのメタデータ(RFC 8414)。発行元は公開 URL。`code_challenge_methods_supported: ["S256"]`、`registration_endpoint` あり |
+| `POST /register` | Claude | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)でなければ 400 `invalid_redirect_uri` |
+| `GET /authorize` | 本人のブラウザ(Access の内側) | 依頼を置き(10 分で切れる)、画面の `/oauth/consent?request=…` へ送る |
+| `POST /token` | Claude | 認可コード(1 回きり、5 分)→ access(1 時間)+ refresh(90 日)。refresh は使うたびに新しい組に替え、古いものは `invalid_grant` |
+| `POST /revoke` | Claude | その許可ごと消す |
+
+- 許可(`oauth_grants`)が環境設定の「接続中のアプリ」の 1 行。コードとトークンは sha256 だけを持つ。利用者を消すと、その人の許可も消える
+- ツールの呼び出しは、許可した人を「誰として」にして、画面と同じ関数を通る(既定値の「担当は自分」も同じ)。失敗は 400 の文(`定義に無い列です` など)をツールのエラーとして返し、AI が読んで直せるようにする

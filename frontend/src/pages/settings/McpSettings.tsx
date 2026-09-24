@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
-import { useOutletContext } from 'react-router'
+import { Check, Copy, KeyRound, Plug, Plus, Trash2, Unplug } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useOutletContext, useSearchParams } from 'react-router'
 import { api, ApiError } from '@/api/client'
 import type { McpToken, MetaResponse } from '@/api/types'
 import { Avatar, Button, IconButton, Tag } from '@/components/ui/basics'
@@ -19,6 +19,8 @@ const CLIENTS: { value: McpToken['client']; label: string }[] = [
   { value: 'other', label: 'その他' },
 ]
 const clientLabel = (c: McpToken['client']) => CLIENTS.find((x) => x.value === c)?.label ?? c
+// 繋ぎ方のタブ。Claude はカスタムコネクタ(上)が本筋なので、トークンの例は Codex を先に出す
+const TOKEN_CLIENTS = [...CLIENTS.filter((c) => c.value === 'codex' || c.value === 'other'), ...CLIENTS.filter((c) => c.value.startsWith('claude'))]
 
 /**
  * 繋ぎ方。アプリごとに、貼るだけの形で出す。トークンは発行直後だけ本物が入る。
@@ -131,18 +133,70 @@ function IssueDialog({ onClose, onIssued }: { onClose: () => void; onIssued: (se
   )
 }
 
+/** Claude のカスタムコネクタの足し方(04 §13)。1 回足せば、同じ Claude アカウントのどの端末でも使える */
+const CONNECTOR_STEPS = [
+  'Claude(claude.ai かデスクトップ版)で、設定 › コネクタ を開き「カスタムコネクタを追加」を押す',
+  '名前に「Works」、URL に上の接続先を入れて「追加」する(OAuth の欄は空のまま)',
+  '足したコネクタの「連携」(Connect)を押すと、この Works の許可の画面が開く。中身を確かめて「許可する」',
+  '以後は同じ Claude アカウントの Web・デスクトップ・スマホ・Claude Code で使える。会話の「+」› コネクタで Works を ON にする',
+]
+
+function Connections() {
+  const qc = useQueryClient()
+  const toast = useUI((s) => s.toast)
+  const connections = useQuery({ queryKey: ['mcp-connections'], queryFn: () => api.listMcpConnections() })
+  const [now] = useState(() => Date.now())
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.revokeMcpConnection(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['mcp-connections'] })
+      toast({ message: '接続を切りました。そのアプリからは、繋ぎ直すまで使えません' })
+    },
+  })
+  const all = connections.data ?? []
+  if (all.length === 0) return <p className="text-sm text-ink-3">まだありません。左の手順で Claude に足すと、ここに出ます</p>
+  return (
+    <ul className="m-0 list-none divide-y divide-line rounded-lg p-0 shadow-[inset_0_0_0_1px_var(--line)]">
+      {all.map((c) => {
+        const live = c.last_used_at && now - new Date(c.last_used_at).getTime() < 7 * 86400000
+        return (
+          <li key={c.id} className="flex items-center gap-3 px-3 py-2.5">
+            <span className={cx('grid size-8 flex-none place-items-center rounded-full', live ? 'bg-accent-wash text-accent-ink' : 'bg-sunken text-ink-3')}>
+              <Plug size={15} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <span className="truncate font-bold">{c.client_name}</span>
+                <Tag color={live ? 'green' : 'gray'}>カスタムコネクタ</Tag>
+              </span>
+              <span className="block truncate text-sm text-ink-3">
+                {c.user_name} · {c.last_used_at ? `最終利用 ${formatDateTime(c.last_used_at)}` : 'まだ使われていません'} · 許可 {formatDateTime(c.created_at)}
+              </span>
+            </span>
+            <IconButton label={`「${c.client_name}」の接続を切る`} className="hover:bg-danger-wash hover:text-danger" onClick={() => revoke.mutate(c.id)}>
+              <Unplug size={14} />
+            </IconButton>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 /**
- * MCP の設定。Claude Desktop・Claude Code・Codex から、このワークスペースのレコードを読み書きするための入口。
- * 認証はトークン(利用者ごと・アプリごと)。どのアプリから繋がっているかは、トークンの最終利用で見える
+ * MCP の設定。Claude(Web・デスクトップ・スマホ・Claude Code)や Codex から、このワークスペースのレコードを読み書きするための入口。
+ * - Claude はカスタムコネクタ(OAuth)。1 回足せば全端末に広がる。許可は Access の内側の画面で本人が行う
+ * - ヘッダを自分で付けるアプリ(Codex など)はトークン。どのアプリから繋がっているかは、最終利用で見える
  */
 export function McpSettings() {
   const meta = useOutletContext<MetaResponse>()
   const qc = useQueryClient()
   const toast = useUI((s) => s.toast)
+  const [params, setParams] = useSearchParams()
   const tokens = useQuery({ queryKey: ['mcp-tokens'], queryFn: () => api.listMcpTokens() })
   const [issuing, setIssuing] = useState(false)
   const [issued, setIssued] = useState<{ secret: string; client: McpToken['client'] } | null>(null)
-  const [tab, setTab] = useState<McpToken['client']>('claude-desktop')
+  const [tab, setTab] = useState<McpToken['client']>('codex')
   const endpoint = `${location.origin}/mcp`
   // 「7 日以内に使われたか」の基準。描画のたびに変わらないよう 1 回だけ取る
   const [now] = useState(() => Date.now())
@@ -153,32 +207,63 @@ export function McpSettings() {
       toast({ message: 'トークンを失効しました。そのアプリからは繋がらなくなります' })
     },
   })
+  // モックの許可の画面は、決めたあとここへ戻す(本物は Claude へ戻る)
+  const outcome = params.get('oauth')
+  const told = useRef(false)
+  useEffect(() => {
+    // 開発時の StrictMode は副作用を 2 回走らせるので、知らせるのは 1 回だけにする
+    if (!outcome || told.current) return
+    told.current = true
+    toast({ message: outcome === 'approved' ? 'Claude と繋ぎました' : '接続を断りました' })
+    setParams((p) => {
+      p.delete('oauth')
+      return p
+    }, { replace: true })
+  }, [outcome, setParams, toast])
   const all = tokens.data ?? []
   const snippet = snippets(endpoint, issued?.secret ?? null)
 
   return (
     <>
-      <SectionHeader title="MCP" hint="Claude Desktop・Claude Code・Codex から、このワークスペースのレコードを読み書きできます。画面と同じ経路を通るので、業務ルールも同じです">
-        <Button variant="primary" onClick={() => setIssuing(true)}>
-          <Plus size={15} strokeWidth={2.5} aria-hidden />
-          トークンを発行
-        </Button>
-      </SectionHeader>
+      <SectionHeader title="MCP" hint="Claude(Web・デスクトップ・スマホ・Claude Code)や Codex から、このワークスペースのレコードを読み書きできます。画面と同じ経路を通るので、業務ルールも同じです" />
 
       <div className="grid gap-8 px-5 pb-10 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="min-w-0">
-          <h3 className="mb-2 font-bold">接続先</h3>
+          <h3 className="mb-2 font-bold">Claude で使う — カスタムコネクタ</h3>
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 shadow-[inset_0_0_0_1px_var(--line)]">
             <code className="min-w-0 flex-1 truncate font-sans text-base">{endpoint}</code>
             <IconButton label="接続先をコピー" onClick={() => void copyText(endpoint, '接続先をコピーしました')}>
               <Copy size={14} />
             </IconButton>
           </div>
-          <p className="mt-1.5 text-sm text-ink-3">Streamable HTTP。経路は画面と同じ(Cloudflare Access の内側)。アプリは Access のサービストークンをヘッダで渡して門を通り、上のトークンで利用者になります。サービストークンは Cloudflare の Zero Trust で発行し、右の設定の 2 か所に入れます</p>
+          <ol className="mt-3 grid list-decimal gap-1.5 pl-5 text-ink-2">
+            {CONNECTOR_STEPS.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <p className="mt-2 text-sm text-ink-3">Claude のサーバから直接繋ぐので、ほかの設定(トークンや Access のサービストークン)は要りません。許可するのは、いま Access でログインしている人です</p>
+        </div>
 
-          <h3 className="mt-8 mb-2 font-bold">繋がっているアプリ</h3>
+        <div className="min-w-0">
+          <h3 className="mb-2 font-bold">接続中のアプリ</h3>
+          <Connections />
+          <p className="mt-1.5 text-sm text-ink-3">7 日以内に使われたものを緑で出します。心当たりの無いものは切ってください</p>
+        </div>
+
+      </div>
+
+      <div className="grid gap-8 border-t border-line px-5 pt-8 pb-10 md:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="min-w-0 flex-1 font-bold">ほかのアプリ — トークンで繋ぐ</h3>
+            <Button onClick={() => setIssuing(true)}>
+              <Plus size={15} strokeWidth={2.5} aria-hidden />
+              トークンを発行
+            </Button>
+          </div>
+          <p className="mb-3 text-sm text-ink-3">Codex など、ヘッダを自分で付けるアプリ向け。経路は画面と同じ(Cloudflare Access の内側)なので、Access のサービストークンもヘッダで渡します。サービストークンは Cloudflare の Zero Trust で発行します</p>
           {all.length === 0 ? (
-            <p className="text-sm text-ink-3">まだありません。トークンを発行して、アプリに設定してください</p>
+            <p className="text-sm text-ink-3">まだありません</p>
           ) : (
             <ul className="m-0 list-none divide-y divide-line p-0 shadow-[inset_0_0_0_1px_var(--line)] rounded-lg">
               {all.map((t) => {
@@ -207,7 +292,6 @@ export function McpSettings() {
               })}
             </ul>
           )}
-          <p className="mt-1.5 text-sm text-ink-3">7 日以内に使われたものを緑で出します。心当たりの無いものは失効してください</p>
         </div>
 
         <div className="min-w-0">
@@ -228,7 +312,7 @@ export function McpSettings() {
             </div>
           )}
           <div role="tablist" aria-label="アプリ" className="mb-2 flex gap-0.5">
-            {CLIENTS.map((c) => (
+            {TOKEN_CLIENTS.map((c) => (
               <button
                 key={c.value}
                 type="button"
@@ -243,7 +327,7 @@ export function McpSettings() {
           </div>
           <Snippet title={snippet[tab].title} body={snippet[tab].body} />
           <ol className="mt-3 grid gap-1 pl-5 text-sm text-ink-2">
-            <li>上の設定をアプリに貼る(トークンは発行したものに置き換える)</li>
+            <li>上の設定をアプリに貼る(トークンは発行したものに、サービストークンは Zero Trust で発行したものに置き換える)</li>
             <li>アプリを再起動するか、MCP を読み直す</li>
             <li>「取引先を一覧して」などと頼むと、このワークスペースを読み書きできる。使われると、左の一覧の最終利用が更新される</li>
           </ol>

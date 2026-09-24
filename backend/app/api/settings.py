@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.api.deps import Admin, Conn
 from app.errors import ApiError
+from app.mcpserver import oauth
 from app.meta.tables import web_forms
 from app.settings import forms as form_service
 from app.settings import service
@@ -34,6 +35,17 @@ def create_token(body: TokenBody, conn: Conn, admin: Admin) -> dict[str, Any]:
 @router.delete("/settings/mcp/tokens/{token_id}", status_code=204)
 def revoke_token(token_id: str, conn: Conn, admin: Admin) -> None:
     service.revoke_token(conn, token_id)
+
+
+@router.get("/settings/mcp/connections")
+def list_connections(conn: Conn, admin: Admin) -> list[dict[str, Any]]:
+    """Claude のカスタムコネクタなど、OAuth で許可したアプリ(04 §13)。"""
+    return oauth.list_connections(conn)
+
+
+@router.delete("/settings/mcp/connections/{grant_id}", status_code=204)
+def revoke_connection(grant_id: str, conn: Conn, admin: Admin) -> None:
+    oauth.revoke_connection(conn, grant_id)
 
 
 @router.get("/settings/forms")

@@ -1,5 +1,5 @@
 # 画面(ビルド済みの静的ファイル)を配る。TLS と認証は手前の Cloudflare(Tunnel + Access)が持つので、ここは平文の HTTP だけ。
-# /api/* は api(FastAPI)へ流す。画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ。
+# /api/* と MCP・OAuth の口は api(FastAPI)へ流す。画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ。
 {
 	admin off
 	auto_https off
@@ -26,6 +26,13 @@
 
 	# API(profile backend で起動する。起動していなければ 502。画面が mock モードなら呼ばない)
 	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# MCP と、Claude のカスタムコネクタが通る OAuth の口(docs/design/03 §6・04 §13)。Host はそのまま api へ渡す
+	# (api が公開 URL のホストかを確かめる)。/oauth/consent は画面のページなので、ここには含めない
+	@mcp path /mcp /mcp/* /authorize /token /register /revoke /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
+	handle @mcp {
 		reverse_proxy api:8000
 	}
 

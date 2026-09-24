@@ -171,6 +171,25 @@ export function createMockClient(): ApiClient {
       settings.requireAdmin(requireUser())
       settings.revokeToken(id)
     },
+    async listMcpConnections() {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return settings.listConnections()
+    },
+    async revokeMcpConnection(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      settings.revokeConnection(id)
+    },
+    async getOAuthRequest(id) {
+      await sleep(READ_MS)
+      requireUser()
+      return settings.getRequest(id)
+    },
+    async decideOAuthRequest(id, approve) {
+      await sleep(WRITE_MS)
+      return settings.decideRequest(id, approve, requireUser())
+    },
     async listWebForms() {
       await sleep(READ_MS)
       settings.requireAdmin(requireUser())

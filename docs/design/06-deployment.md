@@ -75,3 +75,19 @@ Tunnel をやめて ALB などで直接受けるなら、TLS と認証(03 §5 �
 - **MCP**: Claude Desktop(`headers`)・Claude Code(`--header`)・Codex(`http_headers`)はどれも任意のヘッダを送れるので、サービストークン + アプリのトークンの 2 つを付ける。環境設定の「繋ぎ方」はその形で出す(05 §11)。サービストークンは Zero Trust で発行し、Access のポリシーに「Service Auth」として足す(`scripts/cloudflare-access-check.py` が一時的にやっていることを、恒久のトークンで行う)
 - **Web フォーム**: 訪問者のブラウザは Access のヘッダを付けられない(付けさせると秘密が漏れる)。だから**送るのは Web サイトのサーバ**(問い合わせフォームの送信先。WordPress のプラグイン、サーバレス関数など)で、サービストークンを付けて受け口へ転送する。環境設定の「サーバから送る」がその形。静的なサイトからブラウザで直接送りたい場合だけ、受け口のパスを Access の外に出す(別の判断。いまは持たない)
 - 管理 API(`/settings/*`)と画面は、これまでどおり Access の内側で人だけが通る
+
+### Claude のカスタムコネクタのための例外(2026-09-24 案。**本人の判断待ち**。03 §6)
+
+Claude のカスタムコネクタは、端末ではなく **Anthropic のクラウドから** Works を叩く。サービストークンのヘッダは付けられない(送れるヘッダ名は Anthropic の承認制)。
+だから上の「素通しの経路は作らない」を、次の範囲でだけ破る案にした。
+
+| パス | 素通しにする送信元 | 守るもの |
+|---|---|---|
+| `/mcp`、`/token`、`/register`、`/revoke`、`/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource` | **Anthropic の送信元だけ**(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses) | Works の OAuth(トークンが無ければ 401) |
+| `/authorize`、`/oauth/consent`、画面、`/api/*` | 素通しにしない(これまでどおり Access の内側) | Access(人) |
+
+- **鍵を渡すのは、Access を通った本人だけ。**素通しの口で Claude がアプリを登録しても、`/authorize` と許可の画面は Access の内側なので、アカウントのメンバーが「許可する」を押さない限りトークンは出ない
+- ほかの送信元から素通しのパスへ来たものは、そのパスの Access アプリで止まる(PIN の画面にも行かない)。Codex などがトークンで `/mcp` を使うときは、その Access アプリに「Service Auth」のポリシーを足す
+- Anthropic の送信元は「告知なしには変えない」とされている。変わったら `scripts/cloudflare-tunnel-setup.py` の `ANTHROPIC_EGRESS` を直して再実行する
+- 素通しにしたリクエストは Access のログに残らない。記録は api 側(`oauth_grants.last_used_at`、api のログ)
+- 設定は `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --anthropic /mcp,/token,/register,/revoke,/.well-known/oauth-authorization-server,/.well-known/oauth-protected-resource`(再実行しても重複しない)

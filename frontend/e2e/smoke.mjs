@@ -393,6 +393,18 @@ const secret = await page.locator('code').filter({ hasText: /^wks_/ }).first().i
 ok(/^wks_[a-z0-9]{40}$/.test(secret) && (await page.locator('pre').innerText()).includes(secret), 'トークンを発行すると全文が 1 回見えて、繋ぎ方の設定に入る', secret.slice(0, 8))
 await page.getByRole('button', { name: '「E2E」を失効' }).click(); await wait(500)
 ok(await page.getByText('E2E', { exact: true }).count() === 0, 'トークンを失効できる')
+// Claude のカスタムコネクタ(04 §13)。モックには Claude からの依頼が無いので、見本の依頼(demo)で許可の画面を通す
+if (!HTTP_API) {
+  await page.goto(BASE + '/oauth/consent?request=demo'); await page.getByRole('button', { name: '許可する' }).click()
+  await page.waitForURL(/\/settings\/mcp/); await wait(600)
+  const cut = page.getByRole('button', { name: '「Claude」の接続を切る' })
+  ok(await page.getByText('Claude と繋ぎました').count() === 1 && await cut.count() === 2, 'Claude からの接続を許可すると、接続中のアプリに出る')
+  await cut.first().click(); await wait(600)
+  ok(await cut.count() === 1, '接続を切れる')
+}
+await page.goto(BASE + '/oauth/consent?request=nothing'); await wait(800)
+ok(await page.getByText('繋げませんでした').count() === 1, '無い(期限切れの)依頼では、許可の画面が理由を出す')
+await page.goto(BASE + '/settings/mcp'); await page.waitForURL(/mcp/)
 await page.getByRole('link', { name: 'Web フォーム' }).click(); await page.waitForURL(/forms/)
 await page.getByRole('button', { name: 'フォームを作る' }).first().click(); await page.waitForSelector('dialog[open]')
 await page.keyboard.type('セミナー申し込み'); await page.getByLabel('テーブル', { exact: true }).selectOption('accounts')

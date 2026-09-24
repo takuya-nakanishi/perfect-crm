@@ -105,6 +105,23 @@ docker compose logs -f api
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
 - 画面から API を使うには `VITE_API_MODE=http` で web を建て直す(`docker compose up -d --build web`)。既定は mock。手元で通しの確認をするなら `scripts/e2e-http.sh`(§2)
 
+## 5b. Claude から MCP を使う(カスタムコネクタ・2026-09-24)
+
+設計は `docs/design/03` §6、口の一覧は `04` §13、Access の例外は `06` §7。
+
+1. **Access**: Anthropic の送信元からだけ、MCP と OAuth の機械向けの口を素通しにする(06 §7 のコマンド。人が開く `/authorize` と画面は含めない)
+2. **Claude**: claude.ai(かデスクトップ版)の 設定 › コネクタ › カスタムコネクタを追加。名前 `Works`、URL `https://works.sanei-clover.com/mcp`。OAuth の欄は空のまま(Claude が動的登録する)
+3. 足したコネクタの「連携」を押す → Works の許可の画面(Access でログインした本人として)→「許可する」→ Claude に戻る
+4. 以後は同じ Claude アカウントの Web・デスクトップ・スマホ・Claude Code で使える。会話の「+」› コネクタで Works を ON にする。切るのは Works の 環境設定 › MCP › 接続中のアプリ(Claude 側のコネクタの削除とは別)
+
+確かめ方: 手元は `cd backend && .venv/bin/pytest tests/test_mcp.py`(登録 → 許可 → トークン → 読み書き → refresh → 切断を通しで)。公開 URL は、メタデータが Anthropic の送信元以外からは Access で止まることを `curl -s -o /dev/null -w "%{http_code}" https://works.sanei-clover.com/.well-known/oauth-authorization-server`(302 か 403 なら止まっている)。
+
+| 症状 | 原因と対処 |
+|---|---|
+| Claude が「MCP サーバに届かない」 | Access の素通しが無い、または送信元の範囲が古い(06 §7)。api のログに `/mcp` が来ていなければ、手前で止まっている |
+| 許可のあと Claude に戻らず「登録されていません」 | Access でログインしたメールアドレスが Works の利用者にいない(§5 の `add-user`) |
+| `/mcp` が 421 や 400 `Invalid Host` | `WORKS_PUBLIC_URL` が公開 URL と違う(api は Host を公開 URL のホストと突き合わせる) |
+
 ## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
 
 画面の「Google に接続」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §8。

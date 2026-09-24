@@ -22,12 +22,16 @@ p.add_argument('--allow', default='', help='Access で通すメールアドレ�
 p.add_argument('--app-name', default=None, help='Access アプリの表示名(既定はホスト名の先頭)')
 p.add_argument('--session', default='720h', help='Access のセッション長(既定 720h = 30 日。短いと PIN の往復が日常の負担になる)')
 p.add_argument('--bypass', default='', help='Access を素通しにするパス(カンマ区切り。例 /mcp)。アプリ自身の認証で守られているパスだけ')
+p.add_argument('--anthropic', default='', help='Anthropic のクラウド(Claude のカスタムコネクタ)からだけ素通しにするパス(カンマ区切り)。'
+               'アプリ自身の認証(OAuth)で守られているパスだけ。送信元は ANTHROPIC_EGRESS に限る')
 args = p.parse_args()
 
 host, origin = args.host, args.origin
 app_name = args.app_name or host.split('.')[0]
 zone_name = '.'.join(host.split('.')[1:])
 z = cf.zone(zone_name); zid, aid = z['id'], z['account']['id']
+# Anthropic の送信元(Outbound)。変わるときは告知がある: https://platform.claude.com/docs/en/api/ip-addresses(2026-09-24 確認)
+ANTHROPIC_EGRESS = ['160.79.104.0/21']
 name = 'sanei-clover-lan'   # この LAN から外へ出す経路をこの 1 本に集約する(サービスごとに Tunnel を増やさない)
 
 # 1. Tunnel(名前で検索し、無ければ作る)
@@ -106,6 +110,25 @@ else:
             cf.api(f'/accounts/{aid}/access/apps/{bp["id"]}/policies',
                    {'name': 'アプリ自身の認証で守る', 'decision': 'bypass', 'precedence': 1, 'include': [{'everyone': {}}]})
         print('Bypass:', dom, '(既存)' if ex else '(作成)')
+
+    # 5c. Claude のカスタムコネクタ(docs/design/03 §6)。Claude は Anthropic のクラウドから MCP と OAuth の口を叩くので、
+    #     その送信元(https://platform.claude.com/docs/en/api/ip-addresses の Outbound)からだけ門を開ける。
+    #     ほかの送信元はこのパスで止まる(PIN の画面にも行かない)。人が開く /authorize と画面は含めない
+    for path in [p.strip() for p in args.anthropic.split(',') if p.strip()]:
+        dom = host + path
+        ex = [a for a in cf.api(f'/accounts/{aid}/access/apps') if a.get('domain') == dom]
+        ap = ex[0] if ex else cf.api(f'/accounts/{aid}/access/apps', {
+            'name': f'{app_name} {path} (Claude)', 'domain': dom, 'type': 'self_hosted', 'session_duration': '24h', 'app_launcher_visible': False})
+        include = [{'ip': {'ip': r}} for r in ANTHROPIC_EGRESS]
+        pols = cf.api(f'/accounts/{aid}/access/apps/{ap["id"]}/policies')
+        same = [q for q in pols if q['decision'] == 'bypass' and q.get('include') == include]
+        if not same:
+            for q in pols:
+                if q['decision'] == 'bypass':
+                    cf.api(f'/accounts/{aid}/access/apps/{ap["id"]}/policies/{q["id"]}', method='DELETE')
+            cf.api(f'/accounts/{aid}/access/apps/{ap["id"]}/policies',
+                   {'name': 'Anthropic から(アプリの OAuth で守る)', 'decision': 'bypass', 'precedence': 1, 'include': include})
+        print('Claude から素通し:', dom, '(既存)' if ex else '(作成)', '| 送信元', ', '.join(ANTHROPIC_EGRESS))
 
 # 6. cloudflared 用トークンを .env へ。Tunnel を作り直すと値が変わるので、違っていれば置き換える(値は表示しない)
 tok = cf.api(f'/accounts/{aid}/cfd_tunnel/{tun["id"]}/token')

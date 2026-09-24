@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # 戻したあとに画面のどこを開くか(同じオリジンの中だけ)
     google_return_path: str = "/"
 
+    # 外から見た Works の URL(末尾の / なし)。MCP の接続先(`<ここ>/mcp`)と OAuth の発行元になる(03 §6)。
+    # **Claude のコネクタに入れる URL と 1 文字も違ってはいけない**。既定は手元の web(compose が本番の値を渡す)
+    public_url: str = "http://127.0.0.1:8610"
+
     # 1 リクエストあたりのレコードの上限(04 §12 のページング)
     max_limit: int = Field(default=500, ge=1)
 

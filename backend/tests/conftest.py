@@ -9,6 +9,7 @@
 
 import os
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -122,9 +123,12 @@ def client(conn: Connection) -> Iterator[TestClient]:
             nested.commit()
 
     app.dependency_overrides[db.connection] = override
+    # FastAPI の依存を通らない入口(MCP・OAuth)も、同じトランザクションの SAVEPOINT にする
+    db.set_transaction(contextmanager(override))
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    db.set_transaction(None)
 
 
 @pytest.fixture

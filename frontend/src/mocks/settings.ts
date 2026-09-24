@@ -3,7 +3,7 @@
  * トークンの全文は発行時に 1 回だけ返し、保存するのはハッシュだけ(ここでは先頭 8 文字と印のみ)
  */
 import { ApiError } from '@/api/client'
-import type { McpToken, McpTokenCreated, RecordResponse, Scalar, WebForm, WebFormInput } from '@/api/types'
+import type { McpConnection, McpToken, McpTokenCreated, OAuthRequest, RecordResponse, Scalar, WebForm, WebFormInput } from '@/api/types'
 import { coerce } from './csv'
 import { insert, users } from './engine'
 import { liveObjects } from './schema'
@@ -13,6 +13,7 @@ const STORAGE_KEY = 'works.mock.settings.v1'
 interface Store {
   tokens: McpToken[]
   forms: WebForm[]
+  connections?: McpConnection[]
 }
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600000).toISOString()
@@ -90,6 +91,45 @@ export function createToken(name: string, client: McpToken['client'], me: string
   store.tokens.unshift(token)
   save()
   return { token: structuredClone(token), secret }
+}
+
+// --- OAuth の接続(Claude のカスタムコネクタ。04 §13)---------------------------------------
+// モックには Claude から来る本物の依頼が無いので、許可の画面の見た目を確かめるための依頼を 1 つだけ持つ
+
+export const DEMO_REQUEST_ID = 'demo'
+
+function connections(): McpConnection[] {
+  store.connections ??= [
+    { id: 'grant-0001', client_name: 'Claude', user_id: users[0].id, user_name: users[0].name, created_at: hoursAgo(24 * 2), last_used_at: hoursAgo(1) },
+  ]
+  return store.connections
+}
+
+export function listConnections(): McpConnection[] {
+  return structuredClone(connections())
+}
+
+export function revokeConnection(id: string) {
+  const before = connections().length
+  store.connections = connections().filter((c) => c.id !== id)
+  if (store.connections.length === before) throw new ApiError(404, 'not_found', '接続がありません')
+  save()
+}
+
+export function getRequest(id: string): OAuthRequest {
+  if (id !== DEMO_REQUEST_ID) throw new ApiError(404, 'not_found', 'この許可の依頼は見つからないか、期限が切れました。Claude からもう一度繋いでください')
+  return { id, client_name: 'Claude', redirect_host: 'claude.ai', scopes: ['works'] }
+}
+
+export function decideRequest(id: string, approve: boolean, me: string): { redirect_url: string } {
+  getRequest(id)
+  if (approve) {
+    const user = users.find((u) => u.id === me) ?? users[0]
+    connections().unshift({ id: `grant-${random(8)}`, client_name: 'Claude', user_id: user.id, user_name: user.name, created_at: new Date().toISOString(), last_used_at: null })
+    save()
+  }
+  // 本物は Claude の戻り先(https://claude.ai/api/mcp/auth_callback?code=…)。モックは画面の中へ戻す
+  return { redirect_url: approve ? '/settings/mcp?oauth=approved' : '/settings/mcp?oauth=denied' }
 }
 
 export function revokeToken(id: string) {

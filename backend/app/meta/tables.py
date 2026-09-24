@@ -159,6 +159,11 @@ SYSTEM_TABLES = frozenset(
         "mcp_tokens",
         "web_forms",
         "google_accounts",
+        "oauth_clients",
+        "oauth_requests",
+        "oauth_grants",
+        "oauth_codes",
+        "oauth_tokens",
         "alembic_version",
     }
 )
@@ -212,4 +217,62 @@ google_accounts = Table(
     Column("scope", Text, nullable=False),
     _ts("created_at"),
     _ts("updated_at"),
+)
+
+
+# --- MCP を Claude のカスタムコネクタから使うための OAuth(03 §6・04 §13)------------------------
+# Works 自身が認可サーバになる。人の確認は Access の内側の画面で行い、Anthropic からの機械の呼び出し
+# (トークンの交換・MCP)はアプリのトークンで守る。**コードもトークンも全文は保存しない**(sha256 だけ)
+
+# 動的登録(RFC 7591)で来たアプリ。`info` は SDK の OAuthClientInformationFull をそのまま
+oauth_clients = Table(
+    "oauth_clients",
+    metadata,
+    Column("client_id", Text, primary_key=True),
+    Column("info", JSONB, nullable=False),
+    _ts("created_at"),
+)
+
+# 認可の途中。/authorize で受けた中身を置き、画面(Access の内側)で本人が許可するのを待つ。数分で切れる
+oauth_requests = Table(
+    "oauth_requests",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("client_id", Text, ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), nullable=False),
+    Column("params", JSONB, nullable=False),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
+    _ts("created_at"),
+)
+
+# 許可(= 環境設定に並ぶ「接続中のアプリ」)。消すと、その許可から出たコードとトークンも消える
+oauth_grants = Table(
+    "oauth_grants",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("client_id", Text, ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("scopes", JSONB, nullable=False),
+    Column("last_used_at", TIMESTAMP(timezone=True), nullable=True),
+    _ts("created_at"),
+)
+
+oauth_codes = Table(
+    "oauth_codes",
+    metadata,
+    Column("code_hash", Text, primary_key=True),
+    Column("grant_id", UUID(as_uuid=True), ForeignKey("oauth_grants.id", ondelete="CASCADE"), nullable=False),
+    Column("params", JSONB, nullable=False),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
+    _ts("created_at"),
+)
+
+# access(短命)と refresh(使うたびに新しいものへ替える)
+oauth_tokens = Table(
+    "oauth_tokens",
+    metadata,
+    Column("token_hash", Text, primary_key=True),
+    Column("grant_id", UUID(as_uuid=True), ForeignKey("oauth_grants.id", ondelete="CASCADE"), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
+    _ts("created_at"),
 )

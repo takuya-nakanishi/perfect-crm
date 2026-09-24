@@ -6,8 +6,10 @@ import type {
   ImportParams,
   ImportResponse,
   ListParams,
+  McpConnection,
   McpToken,
   McpTokenCreated,
+  OAuthRequest,
   ListResponse,
   MetaResponse,
   ObjectInput,
@@ -68,6 +70,12 @@ export interface ApiClient {
   listMcpTokens(): Promise<McpToken[]>
   createMcpToken(name: string, client: McpToken['client']): Promise<McpTokenCreated>
   revokeMcpToken(id: string): Promise<void>
+  /** OAuth で許可したアプリ(Claude のカスタムコネクタ)。切ると、次の呼び出しから 401 になる */
+  listMcpConnections(): Promise<McpConnection[]>
+  revokeMcpConnection(id: string): Promise<void>
+  /** 許可の画面。approve の結果、戻る先(Claude)の URL を返す。画面はそこへ移る */
+  getOAuthRequest(id: string): Promise<OAuthRequest>
+  decideOAuthRequest(id: string, approve: boolean): Promise<{ redirect_url: string }>
   listWebForms(): Promise<WebForm[]>
   createWebForm(input: WebFormInput): Promise<WebForm>
   updateWebForm(id: string, input: WebFormInput): Promise<WebForm>

@@ -26,6 +26,10 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 | SET-022 | 管理者 | MCP | 整合 | L2 | `createMcpToken` の名前が空 → 400。`revokeMcpToken` で消え、無い id → 404 | `mockClient.test.ts` | — |
 | SET-023 | 管理者 | MCP | 整合 | L2 | `createMcpToken` の `created_by` は自分、`last_used_at` は null | `mockClient.test.ts` | — |
 | SET-024 | 外部 | MCP | 権限 | L5 | AI アプリ(Claude Code): Access のサービストークン + アプリのトークンをヘッダで渡して `/mcp` へ → 門を通り、その利用者として読める(J-028 のあと) | — | — |
+| SET-025 | 管理者 | MCP | 権限 | L3 | 利用者: Claude から来た依頼の許可の画面で「許可する」→ 環境設定の「接続中のアプリ」に出て、切れる | `smoke.mjs「Claude からの接続を許可すると、接続中のアプリに出る」` / `smoke.mjs「接続を切れる」`(モックだけ。本物の流れは `test_mcp.py`) | — |
+| SET-026 | 外部 | MCP | 安全弁 | L3 | 利用者: 無い・期限切れの依頼で許可の画面を開く → 理由が出て、許可のボタンは出ない | `smoke.mjs「無い(期限切れの)依頼では、許可の画面が理由を出す」` | — |
+| SET-027 | 外部 | MCP | 権限 | L4 | Claude(カスタムコネクタ): 登録 → /authorize → 本人が許可 → /token(PKCE)→ /mcp で読み書き → refresh で新しい組、古い refresh は invalid_grant → 接続を切ると 401。Claude 以外の戻り先は登録できない。環境設定のトークン(`wks_`)でも /mcp に入れる | `test_mcp.py`(pytest) | — |
+| SET-028 | 外部 | MCP | 権限 | L5 | Claude.ai にカスタムコネクタを足して許可 → スマホの Claude から「今日のタスクは?」で Works のタスクが返る(公開 URL・Access の素通しを含む) | — | — |
 
 ## 3. Web フォーム
 

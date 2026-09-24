@@ -76,7 +76,7 @@ Claude Code / Codex ──MCP(これから)────────────�
 
 - 決め手は、この CRM の芯が「メタデータから SQL を組み立てる汎用 API」であること。Django の最大の強み(モデルを書けば管理画面も認証も付いてくる)は、モデルをコードに書かないこの作りでは活きにくい
 - MCP と AI チャットを同じプロセスに素直に載せられる
-- 弱みのログインは、利用者 1 名の規模なら小さく書ける(セッション Cookie + argon2)。Q-035 で Access を信頼する形にすれば、さらに小さくなる
+- 弱みのログインは、利用者 1 名の規模なら小さく書ける(セッション Cookie + argon2)。Q-035 で Access を信頼する形にすれば、さらに小さくなる(2026-09-24 に Access を信頼する形にしたので、argon2 は使わず依存から外した。トークンは高いエントロピーの乱数なので sha256)
 - 次点は Django + Django Ninja。「ローンチ後のテーブル追加は JSONB で済ませる」と割り切るなら(Q-036)、認証と管理画面が最初からある利点が勝つ
 
 比較した時点(2026-09-21)の版: fastapi 0.141.1 / litestar 2.24.0 / Django 6.1.1 / django-ninja 1.7.1。
@@ -108,9 +108,15 @@ api は Access が付ける `Cf-Access-Jwt-Assertion` を確かめて(署名 = �
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
-- Claude Code や Codex から、レコードの検索・参照・作成・更新、タスクの追加と完了ができるようにする。公式の Python SDK(`mcp`)で、API と同じプロセスに載せる
-- **ツールは画面と同じ書き込み経路を通す**(検証、業務ルール、記録)。DB を直接触らせない
-- 公開 URL は Access の内側なので、エージェントは PIN の画面を通れない。`/mcp` だけ Access を素通しにしてアプリ側のトークンで守るか、Access のサービストークンを使うかを、着手時に決める(`scripts/cloudflare-tunnel-setup.py` の `--bypass` と、`cloudflare-access-check.py` のサービストークンの作り方が土台になる)
+**2026-09-24 に作った**(J-028)。本人の要望: 「Google スライドなどのカスタム MCP と同じく、Claude のアプリで 1 回設定したら、同じ Claude を使うほかの端末でも使えるようにしたい」。
+
+- **繋ぎ方の本筋は Claude のカスタムコネクタ(リモート MCP + OAuth)。**Claude の設定 › コネクタで URL(`https://works.sanei-clover.com/mcp`)を 1 回足して許可すれば、Claude.ai の Web・デスクトップ・スマホ・Claude Code(claude.ai のコネクタとして)のどれでも使える。コネクタはアカウントに付き、端末ごとの設定が要らないため。一次資料: Claude のコネクタの認証の説明(https://claude.com/docs/connectors/building/authentication、2026-09-24 確認)。「Claude.ai・Desktop・モバイル・Claude Code・Cowork は同じ仕組みを使う」
+- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7
+- **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Access の内側の画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる(03 §5 の B 案と同じく、利用者は Access の JWT で決まる)
+- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ
+- 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(こちらは Access のサービストークンも要る。06 §7)
+- ツールは 6 つ: `list_tables`・`search`・`list_records`・`get_record`(時系列も)・`create_record`・`update_record`。**画面と同じ関数を呼ぶ**(検証、既定値、業務ルール、繰り返し、言及)。DB を直接触らせない。**削除のツールは持たない**(会話の中では「元に戻す」に気づきにくい)。環境設定(テーブル定義など)も MCP からは変えない
+- 状態を持たない形(stateless HTTP + JSON の応答)。1 プロセス・利用者 1〜3 名の前提。プロトコルは SDK が最新版(2026-07-28)と 1 つ前(2025-11-25)の両方を受ける(`backend/tests/test_mcp.py`)
 
 ## 7. サイドバーの AI チャット(ローンチ後・J-029)
 
@@ -195,7 +201,7 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 | pydantic / pydantic-settings | 2.13.5 / 2.15.0 | 2026-08-28 / 2026-08-07 | 入出力の検証、環境変数の読み取り |
 | psycopg | 3.3.6 | 2026-09-18 | PostgreSQL のドライバ |
 | nh3 | 0.3.7 | 2026-08-23 | richtext の洗浄(04 §1)。**`bleach` は非推奨なので使わない** |
-| argon2-cffi | 25.1.0 | 2025-06-03 | MCP トークンのハッシュ(J-039)。ログインは Access(§5)なので、パスワードには使わない |
+| mcp | 2.2.0 | 2026-09-07 | MCP サーバと OAuth の認可サーバの部品(§6。2026-09-24 に足した。PyPI で Production/Stable、`yanked` 無し。`FastMCP` は 2.x で `MCPServer` に改名済み) |
 | PyJWT | 2.15.0 | 2026-09-23 | Access の JWT の検証(§5。2026-09-24 に足した。PyPI で `yanked` 無し、非推奨の表示無し。暗号は既に入っている cryptography を使う) |
 | python-multipart | 0.0.32 | 2026-06-04 | Web フォームの受け口(form-urlencoded。04 §10) |
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | 2026-06-19 / 2026-05-26 | テスト |

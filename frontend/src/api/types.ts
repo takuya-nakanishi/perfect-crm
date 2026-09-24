@@ -166,6 +166,29 @@ export interface McpTokenCreated {
 }
 
 /**
+ * OAuth で許可したアプリ(Claude のカスタムコネクタなど。04 §13)。Claude に 1 回足すと、
+ * Web・デスクトップ・スマホ・Claude Code のどれから使ってもこの 1 行になる
+ */
+export interface McpConnection {
+  id: string
+  /** アプリが登録時に名乗った名前(Claude なら "Claude") */
+  client_name: string
+  user_id: string
+  user_name: string
+  created_at: string
+  last_used_at: string | null
+}
+
+/** 許可の画面(/oauth/consent)に出す、Claude からの接続の依頼 */
+export interface OAuthRequest {
+  id: string
+  client_name: string
+  /** 許可したあとに戻る先のホスト(claude.ai、Claude Code なら localhost) */
+  redirect_host: string
+  scopes: string[]
+}
+
+/**
  * Web フォーム(Salesforce の Web-to-Lead の汎用版)。どのテーブルにも作れる。
  * 受け口は POST /api/v1/forms/{key}(認証なし。本文は form-urlencoded か JSON)。列名 → 値で受け、fields に無い列は捨てる
  */
