@@ -12,6 +12,7 @@
   - やること: `.env` に `WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`(Access のポリシーと同じメールアドレス)、`VITE_API_MODE=http`。`scripts/cloudflare-tunnel-setup.py` を再実行して `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を書かせ、`--profile backend --profile public` で建て直す。runbook 01 §5
   - 本人の判断が要る: 切り替えた時点で画面のデータは空になる(モックの種は入れない。実データは J-026)。いつ切り替えるか。公開 URL の E2E は、テーブルを足したり消したりするので、本番の DB に向けてはいけない(smoke.mjs を公開 URL へ流すのは、本番がモックの間だけ)
   - [2026-09-24] 本人の判断: すぐ切り替える。着手
+  - [2026-09-24] `cloudflare-tunnel-setup.py` を再実行し、`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を `.env` に書いた(Tunnel・経路・Access は既存のまま)。最初の管理者は Access を通る唯一のアカウントメンバー。残りの `.env`(DB のパスワード・署名鍵・管理者・`VITE_API_MODE=http`)は本人が入れる(秘密の書き込みはセッションから行わない)
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)
   - 由来: Q-040(退避先)。実データを入れる前に、復元を一度実演して runbook に書く
 - [ ] **J-026** 既存データを移行する — 連絡先台帳の CSV → Notion → Google コンタクト → Todoist(2026-09-21)
