@@ -35,6 +35,13 @@
   - 由来: J-035(コードは済み。残りは人が GCP と `.env` を触るところ)。手順は docs/runbook/01 §6
   - [2026-09-23] 使うのは **`citric-earth-449901-e7`**(スプレッドシートなどのカスタム MCP を建てたのと同じプロジェクト。sanei-clover.com の Workspace。本人が指定)。runbook §6 に書いてある
   - 同意画面は必ず「内部」にする(`drive.readonly` が制限付きスコープでも審査が要らなくなる)。`WORKS_SECRET_KEY` も同時に入れる(空だと再起動のたびに繋ぎ直しになる)
+- [ ] **J-043** Codex のレビュー(eb634c5..f013a6f・185 コミット)で確かめられた指摘を直す(2026-09-25)
+  - 由来: 2026-09-25 に Codex CLI(読み取り専用)へ 3 区間に分けて投げ、HEAD(f55bc43)で 1 件ずつ裏取りした。18 件が今も成り立つ(ログインの 1 件は J-023 で直り済み)。優先順は裏取りの提案で、並びは本人が決める
+  - データを壊す・500 になる: ①`search_text`・`deleted_at` を列名に使える(`meta/schema.py:18`。`SYSTEM_COLUMNS` から予約を作る。モック・`tableDraft.ts` も)②CSV の `2026-02-30` が事前確認を通り本取り込みで全体が巻き戻る(`records/csv_io.py:100`・`:203`。04 §7)③不正な UUID で 500(`records/validate.py:41`、パスの ID も)④外した参照・利用者項目を戻すと FK 名がぶつかる(`meta/ddl.py:150`)⑤識別子を引用せず `group` などで DDL が 500(`meta/ddl.py:120`)
+  - 契約とモックの食い違い: richtext の洗浄が `timeline.body` だけ(`records/rules.py:57`、モックも。04 §1)/ `value: null` の eq が IS NULL で真、ne も逆(`records/filters.py:162`。04 §3)/ 選択肢の降順で未設定が先頭(`records/service.py:45`。04 §4)/ 小数が銀行丸め、currency は切り捨て(`records/validate.py:137`)/ `submit_form` が async def の中で同期 DB(`api/settings.py:91`。03 §10)/ 参照の確かめで論理削除を見ていない(`records/validate.py:40`)
+  - モックとテスト: `engine.ts:390` が次回のタスク作成に失敗しても元の行を done のまま残す(TASK-049 は件数しか見ていない)/ `engine.ts:116` の `parseList` が壊れた JSON を黙って `[]` にしラベルが消える(TASK-063 の入力が `[` で始まらない)。バックエンドは両方とも正しい
+  - Google 連携(J-040 で本番に繋ぐ前に): refresh の `invalid_grant` が 502 になり 04 §8 の 409 `google_reauth` にならない(`google/http.py:55`)+ 切れても「Google に接続」が戻らず、検索の失敗が「当てはまるものがありません」に見える(`DriveFilesEditor.tsx:62`・`:108`)/ callback で始めた人と戻った人を照合していない(`api/google.py:38`。利用者を足す前に)/ ドキュメント作成と「参照」の並行で添付が消える(`google/service.py:67`)
+  - MCP の OAuth: 同じ同意の並行承認で二重発行(`mcpserver/oauth.py:110`。`DELETE … RETURNING` に揃える)/ refresh token の再利用で後継を失効できない(`oauth.py:325`。Claude の同時 refresh で正しい接続を切らない猶予を先に決める)
 
 ## 完了
 
