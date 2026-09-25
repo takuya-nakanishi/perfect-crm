@@ -56,6 +56,18 @@ users = Table(
     _ts("updated_at"),
 )
 
+# サイドバーのフォルダ(05 §13)。テーブルをまとめて畳む。1 段だけ(フォルダの中にフォルダは入れない)。
+# position はテーブルの position と同じ通し番号(フォルダ → その中のテーブル → 次の…。02 §2)
+meta_folders = Table(
+    "meta_folders",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("label", Text, nullable=False),
+    Column("position", Integer, nullable=False),
+    _ts("created_at"),
+    _ts("updated_at"),
+)
+
 meta_objects = Table(
     "meta_objects",
     metadata,
@@ -67,6 +79,8 @@ meta_objects = Table(
     Column("subtitle_field", Text, nullable=True),
     Column("position", Integer, nullable=False),
     Column("in_sidebar", Boolean, nullable=False, server_default=text("true")),
+    # 入っているサイドバーのフォルダ。フォルダを消すとフォルダの外へ(テーブルは消さない)
+    Column("folder_id", UUID(as_uuid=True), ForeignKey("meta_folders.id", ondelete="SET NULL"), nullable=True),
     # 初めから入っているテーブル。画面から削除できない
     Column("system", Boolean, nullable=False, server_default=text("false")),
     Column("completion", JSONB, nullable=True),

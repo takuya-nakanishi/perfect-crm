@@ -8,6 +8,7 @@ import { findObject, homePath, useMeta, useRecord, useSession, viewsOf } from '@
 import { cx } from '@/lib/cx'
 import { isPlainKey, isTyping, useKeydown } from '@/lib/hotkeys'
 import { recordName } from '@/lib/records'
+import { sidebarObjects } from '@/lib/sidebar'
 import { usePeek } from '@/lib/usePeek'
 import { isOverlayOpen, useUI } from '@/state/ui'
 import { CloverMark } from './CloverMark'
@@ -40,7 +41,8 @@ function useGlobalHotkeys(meta: MetaResponse) {
     }
     if (isTyping(e) || !isPlainKey(e) || isOverlayOpen()) return
 
-    const objects = meta.objects.filter((o) => o.in_sidebar).sort((a, b) => a.position - b.position)
+    // サイドバーで見える順(フォルダの中も、畳んでいても数える)
+    const objects = sidebarObjects(meta)
     const currentKey = /^\/o\/([^/]+)/.exec(location.pathname)?.[1]
     const current = findObject(meta, currentKey)
     const key = e.key.toLowerCase()
@@ -106,7 +108,7 @@ function useGlobalHotkeys(meta: MetaResponse) {
         return input ? input.focus() : toggle?.click()
       }
       default: {
-        // 数字だけ: サイドバーの上から n 番目のテーブルへ(並べ替えた順)
+        // 数字だけ: サイドバーの上から n 番目のテーブルへ(並べ替えた順。畳んだフォルダの中も数える)
         if (!/^[1-9]$/.test(key)) return
         const target = objects[Number(key) - 1]
         if (!target) return

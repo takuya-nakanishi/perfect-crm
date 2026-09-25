@@ -3,10 +3,10 @@
 テーブルの定義は**管理者だけ**が書ける。ビューは**誰でも**(Notion のように使う人が作る。03 §5)。
 """
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.deps import Admin, Conn, CurrentUser
 from app.meta import schema, store, views
@@ -14,8 +14,23 @@ from app.meta import schema, store, views
 router = APIRouter()
 
 
-class KeysBody(BaseModel):
+class SidebarObject(BaseModel):
+    type: Literal["object"]
+    key: str
+
+
+class SidebarFolder(BaseModel):
+    type: Literal["folder"]
+    # UUID かどうかは schema.save_sidebar が確かめる(日本語の文で断るため)
+    id: str
+    label: str
     keys: list[str]
+
+
+class SidebarBody(BaseModel):
+    """サイドバーの並びとフォルダ。上から順に全量で(04 §2、型は frontend の `SidebarItem`)。"""
+
+    items: list[Annotated[SidebarObject | SidebarFolder, Field(discriminator="type")]]
 
 
 class ViewOrderBody(BaseModel):
@@ -34,10 +49,10 @@ def create_object(body: dict[str, Any], conn: Conn, admin: Admin) -> dict[str, A
     return store.meta_response(conn)
 
 
-# 並びの経路は {key} より先に置く(でないと key="order" として読まれる)
-@router.put("/meta/objects/order")
-def reorder_objects(body: KeysBody, conn: Conn, admin: Admin) -> dict[str, Any]:
-    schema.reorder_objects(conn, body.keys)
+# サイドバーはワークスペース共通なので、並びとフォルダも管理者だけ(利用者ごとに持つかは Q-045)
+@router.put("/meta/sidebar")
+def save_sidebar(body: SidebarBody, conn: Conn, admin: Admin) -> dict[str, Any]:
+    schema.save_sidebar(conn, [item.model_dump() for item in body.items])
     return store.meta_response(conn)
 
 

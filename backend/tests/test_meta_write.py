@@ -1,5 +1,6 @@
 """テーブル設定とビューの書き込み(04 §6、決まりは 02 §5)。管理者の制限は 03 §5。"""
 
+import uuid
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -209,11 +210,146 @@ def test_新しいテーブルは活動の関連先にも加わる(admin: TestCl
     assert "projects" in related["targets"]
 
 
-def test_サイドバーの並べ替え(admin: TestClient) -> None:
-    keys = [o["key"] for o in meta(admin)["objects"]]
-    response = admin.put("/api/v1/meta/objects/order", json={"keys": list(reversed(keys))})
-    assert response.status_code == 200
-    assert [o["key"] for o in response.json()["objects"]] == list(reversed(keys))
+# --- サイドバーの並びとフォルダ(PUT /meta/sidebar。05 §13) ---------------------------------
+
+SALES = "0199a000-0000-7000-8000-00000000a001"
+PROJECTS = "0199a000-0000-7000-8000-00000000a002"
+
+
+def sidebar(client: TestClient) -> list[dict[str, Any]]:
+    """GET /meta から組んだサイドバーの並び(画面の `sidebarItems` と同じ規則。同じ番号ならフォルダが先)。"""
+    body = meta(client)
+    folders = sorted(body["folders"], key=lambda f: f["position"])
+    ids = {f["id"] for f in folders}
+    objects = sorted(body["objects"], key=lambda o: o["position"])
+    top: list[tuple[int, dict[str, Any]]] = [
+        (
+            f["position"],
+            {
+                "type": "folder",
+                "id": f["id"],
+                "label": f["label"],
+                "keys": [o["key"] for o in objects if o.get("folder_id") == f["id"]],
+            },
+        )
+        for f in folders
+    ]
+    top += [(o["position"], {"type": "object", "key": o["key"]}) for o in objects if o.get("folder_id") not in ids]
+    return [item for _, item in sorted(top, key=lambda t: t[0])]
+
+
+def ordered_keys(client: TestClient) -> list[str]:
+    return [o["key"] for o in sorted(meta(client)["objects"], key=lambda o: o["position"])]
+
+
+def test_META_024_並びに無いテーブルは元の順で後ろ_無いテーブルは_400(admin: TestClient) -> None:
+    keys = ordered_keys(admin)
+    picked = list(reversed(keys[:3]))
+    response = admin.put("/api/v1/meta/sidebar", json={"items": [{"type": "object", "key": k} for k in picked]})
+    assert response.status_code == 200, response.text
+    after = sorted(response.json()["objects"], key=lambda o: o["position"])
+    assert [o["key"] for o in after] == [*picked, *[k for k in keys if k not in picked]]
+    # 1 から詰めて振り直す
+    assert [o["position"] for o in after] == list(range(1, len(after) + 1))
+    # 無いテーブル・削除中のテーブルを含めれば 400 で、並びは変わらない
+    current = ordered_keys(admin)
+    bad = admin.put("/api/v1/meta/sidebar", json={"items": [{"type": "object", "key": "no_such_table"}]})
+    assert bad.status_code == 400
+    assert admin.post("/api/v1/meta/objects", json=simple_table()).status_code == 200
+    assert admin.delete("/api/v1/meta/objects/projects").status_code == 200
+    trashed = admin.put("/api/v1/meta/sidebar", json={"items": [{"type": "object", "key": "projects"}]})
+    assert trashed.status_code == 400
+    assert ordered_keys(admin) == current
+
+
+def test_META_115_フォルダを作ると中のテーブルに_folder_id_が付き_通し番号になる(admin: TestClient) -> None:
+    inside = ["accounts", "contacts", "opportunities"]
+    rest = [i for i in sidebar(admin) if i["type"] != "object" or i["key"] not in inside]
+    items = [{"type": "folder", "id": SALES, "label": " 営業 ", "keys": inside}, *rest]
+    response = admin.put("/api/v1/meta/sidebar", json={"items": items})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # 名前の前後の空白は落とす
+    assert body["folders"] == [{"id": SALES, "label": "営業", "position": 1}]
+    at = {o["key"]: (o["position"], o.get("folder_id")) for o in body["objects"]}
+    assert [at[k] for k in inside] == [(2, SALES), (3, SALES), (4, SALES)]
+    # フォルダの外のテーブルは folder_id を持たず、中身の後ろから続く
+    assert at["tasks"] == (5, None)
+    assert at["activities"] == (6, None)
+    assert sidebar(admin) == [{**items[0], "label": "営業"}, *rest]
+    # 同じ id のまま名前を変える(フォルダは増えない)
+    renamed = [{**items[0], "label": "営業部"}, *rest]
+    assert admin.put("/api/v1/meta/sidebar", json={"items": renamed}).status_code == 200
+    assert meta(admin)["folders"] == [{"id": SALES, "label": "営業部", "position": 1}]
+
+
+def test_META_116_本文から外したフォルダは消え_送り直すと同じ_id_で戻る(admin: TestClient) -> None:
+    assert admin.post("/api/v1/meta/objects", json=simple_table("dreams")).status_code == 200
+    base = [i for i in sidebar(admin) if i["type"] != "object" or i["key"] not in ("dreams", "tasks")]
+    folder = {"type": "folder", "id": PROJECTS, "label": "プロジェクト", "keys": ["dreams", "tasks"]}
+    assert admin.put("/api/v1/meta/sidebar", json={"items": [*base, folder]}).status_code == 200
+    # 中のテーブルを 1 つ削除しておく(削除中も folder_id を持ったまま)
+    assert admin.delete("/api/v1/meta/objects/dreams").status_code == 200
+    before = sidebar(admin)
+    assert before[-1] == {**folder, "keys": ["tasks"]}
+
+    # フォルダを消す: 中のテーブルはその場所へ出て、folder_id が外れる
+    removed = [*before[:-1], {"type": "object", "key": "tasks"}]
+    assert admin.put("/api/v1/meta/sidebar", json={"items": removed}).status_code == 200
+    body = meta(admin)
+    assert body["folders"] == []
+    assert "folder_id" not in next(o for o in body["objects"] if o["key"] == "tasks")
+    # 削除中だったテーブルも、消えたフォルダを指さない(戻すとフォルダの外)
+    assert admin.post("/api/v1/meta/objects/dreams/restore").status_code == 200
+    assert "folder_id" not in next(o for o in meta(admin)["objects"] if o["key"] == "dreams")
+
+    # 元に戻す: 消す前の並びを送り直すと、同じ id・同じ名前のフォルダに、同じ中身が戻る
+    assert admin.put("/api/v1/meta/sidebar", json={"items": before}).status_code == 200
+    body = meta(admin)
+    assert [(f["id"], f["label"]) for f in body["folders"]] == [(PROJECTS, "プロジェクト")]
+    assert [o["key"] for o in body["objects"] if o.get("folder_id") == PROJECTS] == ["tasks"]
+
+
+def test_META_117_名前が空_id_が_UUID_でない_重複は_400(admin: TestClient) -> None:
+    before = meta(admin)
+    items = sidebar(admin)
+
+    def folder(**patch: Any) -> dict[str, Any]:
+        return {"type": "folder", "id": str(uuid.uuid4()), "label": "営業", "keys": [], **patch}
+
+    cases = {
+        "空の名前": [folder(label="  "), *items],
+        "UUID でない id": [folder(id="sales"), *items],
+        "同じフォルダが 2 回": [folder(id=SALES), folder(id=SALES), *items],
+        "大文字でも同じフォルダ": [folder(id=SALES.upper()), folder(id=SALES), *items],
+        "同じテーブルが 2 回": [folder(keys=["accounts"]), *items],
+        "形が違う": [{"type": "nope"}, *items],
+    }
+    for name, body in cases.items():
+        response = admin.put("/api/v1/meta/sidebar", json={"items": body})
+        assert response.status_code == 400, name
+        assert response.json()["code"] == "invalid", name
+    assert meta(admin) == before
+    # 対照: 正しい形なら通る
+    assert admin.put("/api/v1/meta/sidebar", json={"items": [folder(), *items]}).status_code == 200
+    assert len(meta(admin)["folders"]) == 1
+
+
+def test_META_118_フォルダがあっても作ったテーブルは末尾でフォルダの外(admin: TestClient) -> None:
+    items = [*sidebar(admin), {"type": "folder", "id": PROJECTS, "label": "末尾のフォルダ", "keys": []}]
+    assert admin.put("/api/v1/meta/sidebar", json={"items": items}).status_code == 200
+    body = admin.post("/api/v1/meta/objects", json=simple_table()).json()
+    made = next(o for o in body["objects"] if o["key"] == "projects")
+    assert "folder_id" not in made
+    assert made["position"] > body["folders"][0]["position"]
+    assert sidebar(admin)[-1] == {"type": "object", "key": "projects"}
+
+
+def test_管理者でなければサイドバーを保存できない(member: TestClient) -> None:
+    items = [{"type": "folder", "id": SALES, "label": "営業", "keys": []}, *sidebar(member)]
+    response = member.put("/api/v1/meta/sidebar", json={"items": items})
+    assert response.status_code == 403
+    assert meta(member)["folders"] == []
 
 
 def test_ビューは誰でも作れて直せる(member: TestClient) -> None:

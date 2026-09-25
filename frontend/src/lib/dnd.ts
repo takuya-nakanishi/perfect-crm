@@ -16,3 +16,12 @@ export const clickableSensors = [
   }),
   KeyboardSensor,
 ]
+
+/**
+ * サイドバーの行(リンクとフォルダの見出し)用。キーボードでつまむのは Space だけにする。
+ * 既定は Enter でもつまむので、フォーカスした行を Enter で開けなくなる
+ */
+export const rowSensors = [
+  clickableSensors[0],
+  KeyboardSensor.configure({ keyboardCodes: { ...KeyboardSensor.defaults.keyboardCodes, start: ['Space'] } }),
+]

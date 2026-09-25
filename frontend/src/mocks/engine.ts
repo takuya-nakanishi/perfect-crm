@@ -18,6 +18,7 @@ import type {
   Row,
   Scalar,
   SearchHit,
+  SidebarItem,
   TimelineEntry,
   ViewInput,
 } from '@/api/types'
@@ -711,8 +712,8 @@ export function deleteObject(key: string): MetaResponse {
   return schema.visibleMeta()
 }
 
-export function reorderObjects(keys: string[]): MetaResponse {
-  schema.reorderObjects(keys)
+export function saveSidebar(items: SidebarItem[]): MetaResponse {
+  schema.saveSidebar(items)
   return schema.visibleMeta()
 }
 

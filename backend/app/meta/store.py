@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from app.errors import not_found
-from app.meta.tables import meta_fields, meta_objects, meta_views, users, workspace
+from app.meta.tables import meta_fields, meta_folders, meta_objects, meta_views, users, workspace
 
 # 値が真のときだけ応答に入れる属性(モックの fixtures と同じ形にする)
 TRUE_ONLY = ("required", "readonly", "locked", "all_targets")
@@ -49,6 +49,8 @@ def _object_dict(row: Any, fields: list[dict[str, Any]]) -> dict[str, Any]:
         "position": row.position,
         "in_sidebar": row.in_sidebar,
     }
+    if row.folder_id is not None:
+        obj["folder_id"] = str(row.folder_id)
     if row.subtitle_field is not None:
         obj["subtitle_field"] = row.subtitle_field
     if row.system:
@@ -189,6 +191,12 @@ def all_views(conn: Connection) -> list[dict[str, Any]]:
     return [_view_dict(row) for row in conn.execute(stmt)]
 
 
+def all_folders(conn: Connection) -> list[dict[str, Any]]:
+    """サイドバーのフォルダ(並びの順)。"""
+    stmt = select(meta_folders).order_by(meta_folders.c.position, meta_folders.c.id)
+    return [{"id": str(row.id), "label": row.label, "position": row.position} for row in conn.execute(stmt)]
+
+
 def all_users(conn: Connection) -> list[dict[str, Any]]:
     stmt = select(users).where(users.c.deleted_at.is_(None)).order_by(users.c.created_at)
     out = []
@@ -225,6 +233,7 @@ def meta_response(conn: Connection) -> dict[str, Any]:
     return {
         "workspace": get_workspace(conn),
         "objects": objects,
+        "folders": all_folders(conn),
         "views": views,
         "users": all_users(conn),
     }

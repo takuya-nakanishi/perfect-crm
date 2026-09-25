@@ -85,9 +85,15 @@ export interface ObjectMeta {
   name_field: string
   /** 一覧やリンクで名前の下に添える列(任意) */
   subtitle_field?: string
+  /**
+   * サイドバーの並び。フォルダ(`FolderMeta.position`)と同じ通し番号で、フォルダ → その中のテーブル → 次の…の順に振る。
+   * だから position だけで並べても、フォルダを全部開いたときの見える順になる(02 §2)
+   */
   position: number
   /** サイドバーに出すか */
   in_sidebar: boolean
+  /** 入っているサイドバーのフォルダ。無ければフォルダの外(直下) */
+  folder_id?: string
   fields: FieldMeta[]
   /**
    * チェックで完了にできるテーブル(タスク)。field を done_value にすると完了。
@@ -141,6 +147,27 @@ export interface ObjectInput {
   in_sidebar?: boolean
   fields: FieldInput[]
 }
+
+// ---------------------------------------------------------------------------
+// サイドバーのフォルダと並び
+// ---------------------------------------------------------------------------
+
+/** サイドバーのフォルダ。テーブルをまとめて、畳んだり開いたりする。1 段だけ(フォルダの中にフォルダは入れない) */
+export interface FolderMeta {
+  id: string
+  label: string
+  /** テーブルの position と同じ通し番号(フォルダの直後に、その中のテーブルが続く) */
+  position: number
+}
+
+/**
+ * PUT /api/v1/meta/sidebar の本文の 1 行。サイドバーの並びとフォルダを、上から順に**全量**で送る(05 §13)。
+ * - フォルダの中はテーブルだけ。サイドバーに出していないテーブルも、居場所を保つために含めてよい
+ * - 本文に無いフォルダは消える(中のテーブルはフォルダの外へ)。新しいフォルダの id は画面が振る(UUID)。
+ *   だから「元に戻す」は、前の並びをもう一度送るだけで済む
+ * - 本文に無いテーブル(別の画面で足した直後のものなど)は、末尾にフォルダの外で続く
+ */
+export type SidebarItem = { type: 'object'; key: string } | { type: 'folder'; id: string; label: string; keys: string[] }
 
 // ---------------------------------------------------------------------------
 // 環境設定: MCP のアクセストークン、Web フォーム
@@ -314,6 +341,8 @@ export interface Workspace {
 export interface MetaResponse {
   workspace: Workspace
   objects: ObjectMeta[]
+  /** サイドバーのフォルダ(テーブルをまとめて畳む) */
+  folders: FolderMeta[]
   views: ViewMeta[]
   users: User[]
 }

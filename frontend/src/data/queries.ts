@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api, ApiError } from '@/api/client'
 import type { AggregateParams, ListParams, MetaResponse, ObjectMeta, ViewMeta } from '@/api/types'
+import { sidebarObjects } from '@/lib/sidebar'
 
 /** キャッシュのキー。更新系(mutations.ts)が同じ形で無効化する */
 export const keys = {
@@ -32,7 +33,7 @@ export function useMeta(enabled = true) {
 export function homePath(meta: MetaResponse): string {
   const pinned = meta.views.filter((v) => v.pin).sort((a, b) => (a.pin?.position ?? 0) - (b.pin?.position ?? 0))[0]
   if (pinned) return `/o/${pinned.object}?view=${pinned.id}`
-  const first = meta.objects.filter((o) => o.in_sidebar).sort((a, b) => a.position - b.position)[0]
+  const first = sidebarObjects(meta)[0]
   return first ? `/o/${first.key}` : '/login'
 }
 

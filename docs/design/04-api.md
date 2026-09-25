@@ -19,12 +19,12 @@
 | `GET /session` | いまの利用者 | `Session`。Access を通っていない・JWT が確かめられない → 401 `access_required`。Works の利用者でない → 403 `not_registered`。Access の設定が無い → 503。dev の未ログインは 401 `unauthorized`(画面はログインのフォームを出す) |
 | `POST /session` | ログイン(`email`・`password`)。**dev だけ**(パスワードは見ない)。access では 400 `access_login` | `Session` |
 | `DELETE /session` | ログアウト | access は `{ "logout_url": "/cdn-cgi/access/logout" }`(画面はそこへ移る)。dev は 204 |
-| `GET /meta` | テーブル・項目・ビュー・利用者の定義。起動時に 1 回 | `MetaResponse` |
+| `GET /meta` | テーブル・項目・ビュー・サイドバーのフォルダ・利用者の定義。起動時に 1 回 | `MetaResponse` |
 | `POST /meta/objects` | テーブルを作る(本文に `ObjectInput`)。§6 | `MetaResponse` |
 | `PUT /meta/objects/{key}` | テーブル設定を保存する(本文に `ObjectInput`。項目は全量) | `MetaResponse` |
 | `DELETE /meta/objects/{key}` | テーブルの論理削除 | `MetaResponse` |
 | `POST /meta/objects/{key}/restore` | その取り消し | `MetaResponse` |
-| `PUT /meta/objects/order` | サイドバーの並び(本文 `{ keys: [...] }`。いまあるテーブル全部を順に) | `MetaResponse` |
+| `PUT /meta/sidebar` | サイドバーの並びとフォルダを、上から順に**全量で**(本文 `{ items: [...] }`。1 行はテーブル `{ type: "object", key }` かフォルダ `{ type: "folder", id, label, keys }`)。上から 1 からの通し番号を振る(フォルダ → その中のテーブル → 次の…)。本文に無いフォルダは消え(中のテーブルはフォルダの外へ)、本文に無いテーブルは元の順で末尾に続く(フォルダの外)。新しいフォルダの id は画面が振る(UUID)ので、「元に戻す」は前の並びを送り直すだけ。無い・削除中のテーブル、同じテーブルやフォルダが 2 回、空の名前、UUID でない id は 400。管理者だけ。2026-09-26 に `PUT /meta/objects/order` から替えた。02 §2・05 §13 | `MetaResponse` |
 | `POST /meta/views` | ビューを作る(本文は `ViewInput` + `object`)。§6 | `MetaResponse` |
 | `PUT /meta/views/{id}` | ビューを保存する(本文に `ViewInput`。name・type・config・pin の全量) | `MetaResponse` |
 | `DELETE /meta/views/{id}` / `POST /meta/views/{id}/restore` | ビューの論理削除と取り消し。最後の 1 枚は消せない | `MetaResponse` |

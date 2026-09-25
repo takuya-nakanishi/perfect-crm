@@ -1,11 +1,11 @@
 # メタデータ(META)テストケース表
 
-読み方・資産の書き方・`—` の扱いは [`README.md`](README.md)。仕様は `docs/design/02` §2・§5、`04` §6、`05` §8・§10、棚卸し `08` §1。
+読み方・資産の書き方・`—` の扱いは [`README.md`](README.md)。仕様は `docs/design/02` §2・§5、`04` §6、`05` §8・§10・§13、棚卸し `08` §1。
 
-**段階**: `定義`(テーブルと項目の作成・変更)、`ビュー`(一覧・カンバンの作成・変更)、`削除`(論理削除と復元)、`整合`(無くなった項目を指す定義の扱い)。
+**段階**: `定義`(テーブルと項目の作成・変更)、`ビュー`(一覧・カンバンの作成・変更)、`削除`(論理削除と復元)、`整合`(無くなった項目を指す定義の扱い)、`サイドバー`(並びとフォルダ)。
 この領域は**優先順位の 1 位**(定義が壊れると全画面が壊れる。列の値を別の型で読む事故)。
 
-L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` / `deleteObject` / `restoreObject` / `reorderObjects` / `createView` / `updateView` / `deleteView` / `restoreView` / `reorderViews` / `visibleMeta`)。L1 は `lib/tableDraft.ts`・`lib/viewModel.ts`。
+L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` / `deleteObject` / `restoreObject` / `saveSidebar` / `createView` / `updateView` / `deleteView` / `restoreView` / `reorderViews` / `visibleMeta`)。L1 は `lib/tableDraft.ts`・`lib/viewModel.ts`・`lib/sidebar.ts`。
 
 ## 1. 定義
 
@@ -34,7 +34,7 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-021 | 管理者 | 定義 | 整合 | L2 | 管理者: `label` を変えて保存 → 項目の定義(`semantic`・`in_create_form`・選択肢の `kind`)は保たれる(本文に無い属性を落とさない) | `engine.test.ts` | — |
 | META-022 | 管理者 | 定義 | 整合 | L2 | 管理者: `in_sidebar: false` で保存 → `GET /meta` の `in_sidebar` が false。本文に無ければ変わらない | `engine.test.ts` | — |
 | META-023 | 管理者 | 定義 | 整合 | L2 | 管理者: 新しいテーブルを作る → 活動の関連先(`all_targets`)の `targets` にそのテーブルが加わる | `engine.test.ts` | — |
-| META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `reorderObjects` にサイドバーの 3 件だけ渡す → その順が先頭、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400 | `engine.test.ts` | — |
+| META-024 | 管理者 | 定義 | 整合 | L2 | 管理者: `saveSidebar` にサイドバーの 3 件だけ渡す → その順が先頭、渡さなかったテーブルは元の順で後ろ(フォルダの外)。無いテーブル・削除中のテーブルを含めれば 400 で変わらない(2026-09-26 に `reorderObjects` から替えた) | `engine.test.ts` | `test_meta_write.py` |
 | META-025 | 管理者 | 定義 | 整合 | L1 | `autoFieldKey`: 英字の名前 `Lead Source` → `lead_source`。和文 `見積番号` → `field_1`、2 つめは `field_2`。既にある列名は避ける | `tableDraft.test.ts` | — |
 | META-026 | 管理者 | 定義 | 整合 | L1 | `validateDraft`: 列名の重複・予約語・選択肢の無い選択肢型・参照先の無い参照型を、それぞれ 1 件ずつ数える。名前の無い新しい行は数えない | `tableDraft.test.ts` | — |
 | META-027 | 管理者 | 定義 | 整合 | L1 | `toInput`: 名前の無い新しい行を落とし、表示名の項目は必須にし、文字型以外の `max_length` を送らない | `tableDraft.test.ts` | — |
@@ -92,3 +92,18 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-095 | システム | 整合 | 整合 | L2 | `subtitle_field` の項目を外す → `subtitle_field` が消える(無い項目を指さない) | `engine.test.ts` | — |
 | META-096 | システム | 整合 | 整合 | L2 | 関連先(`polymorphic`)を指すビューの定義 → 論理名(`related`)でも実際の 2 列(`related_object`・`related_id`)でも `GET /meta` で外れない | `engine.test.ts` | — |
 | META-097 | システム | 整合 | 整合 | L2 | 文字の項目を外す → その値では `q` の絞り込みにも横断検索にも当たらない(値は行に残る)。同じ列名で戻せばまた当たる。外しても `updated_at` は動かない | `engine.test.ts` | `test_meta_write.py` |
+
+## 5. サイドバー(並びとフォルダ。05 §13)
+
+| ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 | API の資産 |
+|---|---|---|---|---|---|---|---|
+| META-110 | システム | サイドバー | 整合 | L1 | `sidebarItems`: フォルダとテーブルを `position` の順に組み、フォルダの中も `position` の順。サイドバーに出していないテーブルも居場所ごと含め、無いフォルダを指すテーブルは直下へ。空のフォルダも残る | `sidebar.test.ts` | — |
+| META-111 | 利用者 | サイドバー | キー | L1 | `sidebarObjects`: 出しているテーブルを見える順に(フォルダの中も数える)。出していないテーブルは除く。フォルダの中の順を変えれば、1…9 の順も付いてくる | `sidebar.test.ts` | — |
+| META-112 | 管理者 | サイドバー | 整合 | L1 | `moveInSidebar`: テーブルを行の前後・フォルダの中(末尾)・末尾へ動かし、フォルダは中身ごと直下で動く。フォルダをフォルダの中へ・無い行やフォルダ・自分の前後など変わらない移動は null | `sidebar.test.ts` | — |
+| META-113 | 管理者 | サイドバー | 整合 | L1 | `resolveDrop`: テーブルの行は上半分が前・下半分が後ろ。フォルダの見出しは上 1/4 が前、真ん中が中、下 1/4 は開いていれば中の先頭・畳んでいれば後ろ(開いていても空なら中)。塊は上下半分、空のフォルダの案内は中、余白は末尾 | `sidebar.test.ts` | — |
+| META-114 | 管理者 | サイドバー | 可逆 | L1 | `addFolder` / `renameFolder` / `removeFolder` / `applySidebar`: フォルダを消すと中のテーブルがその場所へ同じ順で出る。`applySidebar` はサーバと同じ通し番号(フォルダ → 中身 → 次)を振り、本文に無いテーブルは末尾でフォルダの外。名前の前後の空白は落とす | `sidebar.test.ts` | — |
+| META-115 | 管理者 | サイドバー | 整合 | L2 | 管理者: `saveSidebar` でフォルダを作る(画面が振った id)→ `GET /meta` の `folders` に出て、中のテーブルに `folder_id`。フォルダ → 中のテーブル → 次の順に通し番号。同じ id で名前を変えられる(フォルダは増えない) | `engine.test.ts` | `test_meta_write.py` |
+| META-116 | 管理者 | サイドバー | 可逆 | L2 | 管理者: 本文から外したフォルダは消え、中のテーブルは `folder_id` が外れる(削除中のテーブルからも)。消す前の並びを送り直す(元に戻す)→ 同じ id・同じ名前のフォルダに同じ中身が戻る | `engine.test.ts` | `test_meta_write.py` |
+| META-117 | 管理者 | サイドバー | 安全弁 | L2 | 管理者: フォルダの名前が空(空白だけ)・id が UUID でない・同じフォルダ(大文字でも)や同じテーブルが 2 回 → 400 で、並びもフォルダも変わらない。正しい形なら通る | `engine.test.ts` | `test_meta_write.py` |
+| META-118 | 管理者 | サイドバー | 整合 | L2 | 管理者: 末尾にフォルダがあるときに `createObject` → 作ったテーブルはフォルダの後ろ(フォルダの外)の末尾 | `engine.test.ts` | `test_meta_write.py` |
+| META-119 | 管理者 | サイドバー | 整合 | L3 | 管理者: 「フォルダを追加」→ 名前 → Enter で空のフォルダ → テーブルを見出しへドラッグすると中に入り、外の行の後ろへドラッグすると出る → 畳むと中が隠れて数が出る(開いているテーブルは見え、1…9 は変わらない)→ 再読み込みしても残る → メニューで名前を変える → 削除すると中は外に残り、「元に戻す」で戻る | `smoke.mjs「フォルダを作ると、空のフォルダが先頭に出る」` / `smoke.mjs「テーブルをフォルダの見出しへドラッグすると中に入る(字下げされ、1…9 も見える順)」` / `smoke.mjs「フォルダの中のテーブルを外の行の後ろへドラッグすると、フォルダから出る」` / `smoke.mjs「フォルダを畳むと中のテーブルが隠れて数が出る。1 は畳んでも同じテーブルへ行き、開いているテーブルは畳んでも見える」` / `smoke.mjs「フォルダと畳んだ状態は再読み込みしても残る」` / `smoke.mjs「フォルダの名前をメニューから変えられる」` / `smoke.mjs「フォルダを削除すると中のテーブルは外に残り、「元に戻す」で戻る」` | — |

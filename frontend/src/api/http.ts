@@ -50,7 +50,7 @@ export function createHttpClient(): ApiClient {
     updateObject: (key, input) => request('PUT', `/meta/objects/${enc(key)}`, input),
     deleteObject: (key) => request('DELETE', `/meta/objects/${enc(key)}`),
     restoreObject: (key) => request('POST', `/meta/objects/${enc(key)}/restore`),
-    reorderObjects: (keys) => request('PUT', '/meta/objects/order', { keys }),
+    saveSidebar: (items) => request('PUT', '/meta/sidebar', { items }),
     createView: (object, input) => request('POST', '/meta/views', { object, ...input }),
     updateView: (id, input) => request('PUT', `/meta/views/${enc(id)}`, input),
     deleteView: (id) => request('DELETE', `/meta/views/${enc(id)}`),

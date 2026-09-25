@@ -5,13 +5,15 @@ DDL を流すのは `ddl.py` 1 本で、`meta_*` の更新と同じトランザ�
 """
 
 import re
+import uuid
 from typing import Any
 
 from sqlalchemy import Connection, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.errors import bad_request, not_found
 from app.meta import ddl, store
-from app.meta.tables import meta_fields, meta_objects, meta_views
+from app.meta.tables import meta_fields, meta_folders, meta_objects, meta_views
 from app.records.search import rebuild_search_text
 
 KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -139,7 +141,10 @@ def create_object(conn: Connection, body: dict[str, Any], user_id: Any = None) -
 
     fields = [build_field({**f, "required": True} if i == 0 else f, None) for i, f in enumerate(given)]
     subtitle = next((f["key"] for f in fields if f["type"] == "select"), None)
-    position = (conn.execute(select(func.max(meta_objects.c.position))).scalar() or 0) + 1
+    # サイドバーの末尾(フォルダの外)。フォルダとテーブルは同じ通し番号なので、両方の後ろへ
+    last_object = conn.execute(select(func.max(meta_objects.c.position))).scalar() or 0
+    last_folder = conn.execute(select(func.max(meta_folders.c.position))).scalar() or 0
+    position = max(last_object, last_folder) + 1
     conn.execute(
         meta_objects.insert().values(
             key=key,
@@ -333,15 +338,72 @@ def _save_field(
     )
 
 
-def reorder_objects(conn: Connection, keys: list[str]) -> None:
-    """渡した順に先頭から並べ、渡さなかったテーブルは元の順で後ろに続ける。"""
+def save_sidebar(conn: Connection, items: list[dict[str, Any]]) -> None:
+    """サイドバーの並びとフォルダを全量で保存する(PUT /meta/sidebar。05 §13)。正はモックの `saveSidebar`。
+
+    - 上から順に 1 からの通し番号を振る(フォルダ → その中のテーブル → 次の…)。position だけで並べても見える順になる
+    - 本文に無いフォルダは消す。中にあったテーブルは(削除中のものも)FK の SET NULL でフォルダの外へ
+    - 本文に無いテーブル(サイドバーに出していないもの、別の画面で足した直後のもの)は、元の順で末尾に続ける(フォルダの外)
+    - 新しいフォルダの id は画面が振る(UUID)。前の並びを送り直せば、同じ id のフォルダが戻る(元に戻す)
+    """
     live = store.all_objects(conn)
     live_keys = {o["key"] for o in live}
-    if any(key not in live_keys for key in keys):
-        raise bad_request("無いテーブルが含まれています")
-    rest = [o["key"] for o in live if o["key"] not in keys]
-    for position, key in enumerate([*keys, *rest], start=1):
-        conn.execute(meta_objects.update().where(meta_objects.c.key == key).values(position=position))
+    seen: set[str] = set()
+
+    def take(key: str) -> None:
+        if key not in live_keys:
+            raise bad_request("無いテーブルが含まれています")
+        if key in seen:
+            raise bad_request(f"同じテーブルが 2 回含まれています: {key}")
+        seen.add(key)
+
+    folders: list[tuple[uuid.UUID, str, int]] = []
+    places: dict[str, tuple[int, uuid.UUID | None]] = {}
+    position = 0
+    for item in items:
+        if item["type"] == "object":
+            take(item["key"])
+            position += 1
+            places[item["key"]] = (position, None)
+            continue
+        try:
+            folder_id = uuid.UUID(str(item["id"]))
+        except ValueError:
+            raise bad_request("フォルダの id が正しくありません") from None
+        if any(f[0] == folder_id for f in folders):
+            raise bad_request("同じフォルダが 2 回含まれています")
+        label = str(item.get("label") or "").strip()
+        if not label:
+            raise bad_request("フォルダの名前を入力してください")
+        position += 1
+        folders.append((folder_id, label, position))
+        for key in item.get("keys") or []:
+            take(key)
+            position += 1
+            places[key] = (position, folder_id)
+    for obj in live:  # 並びの順(position)
+        if obj["key"] not in places:
+            position += 1
+            places[obj["key"]] = (position, None)
+
+    keep = {f[0] for f in folders}
+    gone = set(conn.execute(select(meta_folders.c.id)).scalars()) - keep
+    if gone:
+        conn.execute(meta_folders.delete().where(meta_folders.c.id.in_(gone)))
+    for folder_id, label, folder_position in folders:
+        stmt = pg_insert(meta_folders).values(id=folder_id, label=label, position=folder_position)
+        conn.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[meta_folders.c.id],
+                set_={"label": label, "position": folder_position, "updated_at": func.clock_timestamp()},
+            )
+        )
+    for key, (object_position, object_folder) in places.items():
+        conn.execute(
+            meta_objects.update()
+            .where(meta_objects.c.key == key)
+            .values(position=object_position, folder_id=object_folder)
+        )
 
 
 def delete_object(conn: Connection, key: str) -> None:

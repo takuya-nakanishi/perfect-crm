@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
-import type { KanbanViewConfig, ListViewConfig, ObjectInput, Scalar, SelectOption, TagColor, ViewInput } from '@/api/types'
+import type { KanbanViewConfig, ListViewConfig, ObjectInput, Scalar, SelectOption, SidebarItem, TagColor, ViewInput } from '@/api/types'
+import { removeFolder, renameFolder, sidebarItems } from '@/lib/sidebar'
 import usersJson from './fixtures/users.json'
-import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, remove, reorderObjects, reorderViews, resetTables, restore, restoreObject, restoreView, searchAll, table, timeline, update, updateObject, updateView } from './engine'
+import { aggregate, createObject, createView, deleteObject, deleteView, find, getMeta, insert, query, refOf, remove, reorderViews, resetTables, restore, restoreObject, restoreView, saveSidebar, searchAll, table, timeline, update, updateObject, updateView } from './engine'
 
 // テストケース表: docs/tests/meta.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -454,7 +455,7 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(targets('tasks')).toEqual(['accounts', 'opportunities'])
   })
 
-  it('META-024 reorderObjects にサイドバーの 3 件だけ渡すと、その順が先頭で、出していないテーブルは元の順で後ろ。無いテーブルを含めれば 400', () => {
+  it('META-024 saveSidebar にサイドバーの 3 件だけ渡すと、その順が先頭で、渡さなかったテーブルは元の順で後ろ(フォルダの外)。無いテーブル・削除中のテーブルを含めれば 400 で変わらない', () => {
     // サイドバーに出していないテーブルを 2 つ足す(並びの末尾に付く)
     expect(statusOf(() => createObject({ ...input('hidden_a'), in_sidebar: false }))).toBeNull()
     expect(statusOf(() => createObject({ ...input('hidden_b'), in_sidebar: false }))).toBeNull()
@@ -464,17 +465,99 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     expect(sidebar.length).toBeGreaterThanOrEqual(3)
     // サイドバーの 3 件を逆順にして渡す
     const picked = sidebar.slice(0, 3).reverse()
-    expect(statusOf(() => reorderObjects(picked))).toBeNull()
+    expect(statusOf(() => saveSidebar(picked.map((key) => ({ type: 'object', key }))))).toBeNull()
     const after = ordered()
     expect(after.map((o) => o.key)).toEqual([...picked, ...before.filter((k) => !picked.includes(k))])
     // position は 1 から詰めて振り直す
     expect(after.map((o) => o.position)).toEqual(after.map((_, i) => i + 1))
     // 無いテーブル・削除したテーブルを含めれば 400 で、並びは変わらない
     const current = after.map((o) => o.key)
-    expect(statusOf(() => reorderObjects([sidebar[0], 'no_such_table']))).toBe(400)
+    expect(statusOf(() => saveSidebar([{ type: 'object', key: sidebar[0] }, { type: 'object', key: 'no_such_table' }]))).toBe(400)
     expect(statusOf(() => deleteObject('hidden_b'))).toBeNull()
-    expect(statusOf(() => reorderObjects(['hidden_b', sidebar[1]]))).toBe(400)
+    expect(statusOf(() => saveSidebar([{ type: 'object', key: 'hidden_b' }, { type: 'object', key: sidebar[1] }]))).toBe(400)
     expect(ordered().map((o) => o.key)).toEqual(current.filter((k) => k !== 'hidden_b'))
+  })
+
+  it('META-115 saveSidebar でフォルダを作ると GET /meta の folders に出て、中のテーブルに folder_id が付き、フォルダ → 中のテーブル → 次の順に通し番号。同じ id で名前を変えられる', () => {
+    const sales = crypto.randomUUID()
+    const inside = ['accounts', 'contacts', 'opportunities']
+    const rest = sidebarItems(getMeta()).filter((i) => i.type !== 'object' || !inside.includes(i.key))
+    const items: SidebarItem[] = [{ type: 'folder', id: sales, label: ' 営業 ', keys: inside }, ...rest]
+    expect(statusOf(() => saveSidebar(items))).toBeNull()
+
+    const meta = getMeta()
+    // 名前の前後の空白は落とす
+    expect(meta.folders).toEqual([{ id: sales, label: '営業', position: 1 }])
+    const at = (key: string) => {
+      const o = meta.objects.find((x) => x.key === key)!
+      return [o.position, o.folder_id ?? null]
+    }
+    expect(inside.map(at)).toEqual([
+      [2, sales],
+      [3, sales],
+      [4, sales],
+    ])
+    // フォルダの外のテーブルは folder_id を持たず、中身の後ろから続く
+    expect(at('tasks')).toEqual([5, null])
+    expect(at('activities')).toEqual([6, null])
+    // 組み立て直すと、保存した並びそのもの
+    expect(sidebarItems(meta)).toEqual([{ ...items[0], label: '営業' }, ...rest])
+
+    // 同じ id のまま名前を変える(フォルダは増えない)
+    expect(statusOf(() => saveSidebar(renameFolder(sidebarItems(getMeta()), sales, '営業部')))).toBeNull()
+    expect(getMeta().folders).toEqual([{ id: sales, label: '営業部', position: 1 }])
+  })
+
+  it('META-116 本文から外したフォルダは消え、中のテーブルは folder_id が外れる(削除中のテーブルからも)。消す前の並びを送り直すと、同じ id のフォルダと中身が戻る', () => {
+    const projects = crypto.randomUUID()
+    expect(statusOf(() => createObject(input('dreams')))).toBeNull()
+    const base = sidebarItems(getMeta()).filter((i) => i.type !== 'object' || !['dreams', 'tasks'].includes(i.key))
+    expect(statusOf(() => saveSidebar([...base, { type: 'folder', id: projects, label: 'プロジェクト', keys: ['dreams', 'tasks'] }]))).toBeNull()
+    // 中のテーブルを 1 つ削除しておく(削除中も folder_id を持ったまま)
+    expect(statusOf(() => deleteObject('dreams'))).toBeNull()
+    const before = sidebarItems(getMeta())
+    expect(before.at(-1)).toEqual({ type: 'folder', id: projects, label: 'プロジェクト', keys: ['tasks'] })
+
+    // フォルダを消す: 中のテーブルはその場所へ出て、folder_id が外れる
+    expect(statusOf(() => saveSidebar(removeFolder(before, projects)))).toBeNull()
+    expect(getMeta().folders).toEqual([])
+    expect(getMeta().objects.find((o) => o.key === 'tasks')?.folder_id).toBeUndefined()
+    expect(sidebarItems(getMeta()).at(-1)).toEqual({ type: 'object', key: 'tasks' })
+    // 削除中だったテーブルも、消えたフォルダを指さない(戻すとフォルダの外)
+    expect(statusOf(() => restoreObject('dreams'))).toBeNull()
+    expect(getMeta().objects.find((o) => o.key === 'dreams')?.folder_id).toBeUndefined()
+
+    // 元に戻す: 消す前の並びを送り直すと、同じ id・同じ名前のフォルダに、同じ中身が戻る
+    expect(statusOf(() => saveSidebar(before))).toBeNull()
+    expect(getMeta().folders.map((f) => [f.id, f.label])).toEqual([[projects, 'プロジェクト']])
+    expect(getMeta().objects.filter((o) => o.folder_id === projects).map((o) => o.key)).toEqual(['tasks'])
+  })
+
+  it('META-117 フォルダの名前が空(空白だけ)・id が UUID でない・同じフォルダや同じテーブルが 2 回 → 400 で、並びもフォルダも変わらない', () => {
+    const before = getMeta()
+    const items = sidebarItems(before)
+    const folder = (patch: Partial<Extract<SidebarItem, { type: 'folder' }>> = {}): SidebarItem => ({ type: 'folder', id: crypto.randomUUID(), label: '営業', keys: [], ...patch })
+    expect(statusOf(() => saveSidebar([folder({ label: '  ' }), ...items])), '空の名前').toBe(400)
+    expect(statusOf(() => saveSidebar([folder({ id: 'sales' }), ...items])), 'UUID でない id').toBe(400)
+    const twice = folder()
+    expect(statusOf(() => saveSidebar([twice, twice, ...items])), '同じフォルダが 2 回').toBe(400)
+    expect(statusOf(() => saveSidebar([folder({ keys: ['accounts'] }), ...items])), '同じテーブルが 2 回').toBe(400)
+    expect(getMeta()).toEqual(before)
+    // 対照: 正しい形なら通る
+    expect(statusOf(() => saveSidebar([folder(), ...items]))).toBeNull()
+    expect(getMeta().folders).toHaveLength(1)
+  })
+
+  it('META-118 フォルダがあっても、作ったテーブルはサイドバーの末尾(フォルダの外)に付く', () => {
+    const last = crypto.randomUUID()
+    // 末尾にフォルダを置く(番号がいちばん大きいのがフォルダ)
+    expect(statusOf(() => saveSidebar([...sidebarItems(getMeta()), { type: 'folder', id: last, label: '末尾のフォルダ', keys: [] }]))).toBeNull()
+    expect(statusOf(() => createObject(input('trial')))).toBeNull()
+    const meta = getMeta()
+    const made = meta.objects.find((o) => o.key === 'trial')!
+    expect(made.folder_id).toBeUndefined()
+    expect(made.position).toBeGreaterThan(meta.folders[0].position)
+    expect(sidebarItems(meta).at(-1)).toEqual({ type: 'object', key: 'trial' })
   })
 
   it('META-048 createView の名前が空(空白だけも)なら 400。無い項目を列・並び・条件(入れ子も)に指しても 400 で、ビューは増えない', () => {

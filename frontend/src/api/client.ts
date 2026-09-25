@@ -15,6 +15,7 @@ import type {
   ObjectInput,
   RecordResponse,
   Row,
+  SidebarItem,
   ViewInput,
   Scalar,
   SearchResponse,
@@ -42,8 +43,11 @@ export interface ApiClient {
   /** 論理削除。レコードとビューは残り、restoreObject で戻せる */
   deleteObject(key: string): Promise<MetaResponse>
   restoreObject(key: string): Promise<MetaResponse>
-  /** サイドバーの並び。keys の順に position を振り直す */
-  reorderObjects(keys: string[]): Promise<MetaResponse>
+  /**
+   * サイドバーの並びとフォルダを、上から順に全量で保存する(PUT /meta/sidebar)。
+   * 本文に無いフォルダは消え、新しいフォルダの id は画面が振る。「元に戻す」は前の並びをもう一度送る
+   */
+  saveSidebar(items: SidebarItem[]): Promise<MetaResponse>
   /** ビュー(タブ)。どれも変更後のメタデータ全体を返す */
   createView(object: string, input: ViewInput): Promise<MetaResponse>
   updateView(id: string, input: ViewInput): Promise<MetaResponse>

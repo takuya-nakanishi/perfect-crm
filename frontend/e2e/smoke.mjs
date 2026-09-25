@@ -1,4 +1,4 @@
-// 画面の主要な操作が動くことを、実際のブラウザで確かめる(ログイン → 完了 → 追加 → 検索 → 編集 → カンバン → 作成 → ぱんくず → テーブルの追加と設定 → 活動 → 桁区切りとパネルの幅 → 一覧の列の幅 → サイドバーの並べ替え → Google ドライブ)。
+// 画面の主要な操作が動くことを、実際のブラウザで確かめる(ログイン → 完了 → 追加 → 検索 → 編集 → カンバン → 作成 → ぱんくず → テーブルの追加と設定 → 活動 → 桁区切りとパネルの幅 → 一覧の列の幅 → サイドバーの並べ替えとフォルダ → Google ドライブ)。
 //
 //   npm run e2e                                  開発サーバ(http://127.0.0.1:5173)に対して
 //   ../scripts/e2e-http.sh                       本物の API + PostgreSQL(E2E 用の DB を作り直して)に対して
@@ -346,6 +346,55 @@ await page.goto(BASE + '/o/contacts'); await page.waitForSelector('[role=row][da
   ok(page.url().includes('/o/opportunities'), '1 は並べ替え後の先頭へ')
   await page.reload(); await page.waitForSelector('nav[aria-label=メイン]'); await wait(300)
   ok((await nav.locator('a[href^="/o/"]:not([href*="?"])').first().getAttribute('href')) === '/o/opportunities', '並びは保存される')
+}
+
+// 14b. サイドバーのフォルダ: 作る → ドラッグで入れる・出す → 畳む(1…9 は変わらない)→ 再読み込み → 名前の変更 → 削除と元に戻す
+{
+  const nav = page.locator('nav[aria-label=メイン]')
+  const link = (key) => nav.locator(`a[href="/o/${key}"]`)
+  const order = () => nav.locator('a[href^="/o/"]:not([href*="?"])').evaluateAll((els) => els.map((e) => e.getAttribute('href').slice(3)))
+  const indented = (key) => link(key).evaluate((el) => el.classList.contains('pl-9'))
+  // 行をつまんで、落とす先の行の高さ ratio(上端 0 〜 下端 1)で離す
+  const dragTo = async (source, target, ratio = 0.5) => {
+    const s = await source.boundingBox()
+    await page.mouse.move(s.x + 40, s.y + s.height / 2); await page.mouse.down()
+    await page.mouse.move(s.x + 40, s.y + s.height / 2 + 6, { steps: 3 })
+    const t = await target.boundingBox()
+    await page.mouse.move(t.x + 60, t.y + t.height * ratio, { steps: 12 }); await wait(150)
+    await page.mouse.up(); await wait(700)
+  }
+  await nav.getByRole('button', { name: 'フォルダを追加' }).click(); await wait(200)
+  await page.keyboard.type('営業'); await page.keyboard.press('Enter'); await wait(600)
+  const folder = nav.locator('button[aria-expanded]').filter({ hasText: '営業' })
+  ok(await folder.count() === 1 && await nav.getByText('テーブルをドラッグして入れる').count() === 1, 'フォルダを作ると、空のフォルダが先頭に出る')
+  await dragTo(link('accounts'), folder)
+  await dragTo(link('contacts'), folder)
+  const inFolder = (await order()).join(' ')
+  await page.keyboard.press('1'); await wait(400)
+  const one = new URL(page.url()).pathname
+  await page.keyboard.press('3'); await wait(400)
+  ok(inFolder === 'accounts contacts opportunities tasks' && await indented('accounts') && await indented('contacts') && !(await indented('opportunities')) && one === '/o/accounts' && page.url().includes('/o/opportunities'),
+    'テーブルをフォルダの見出しへドラッグすると中に入る(字下げされ、1…9 も見える順)', `${inFolder} / 1 → ${one}`)
+  await dragTo(link('contacts'), link('tasks'), 0.8)
+  ok((await order()).join(' ') === 'accounts opportunities tasks contacts' && !(await indented('contacts')), 'フォルダの中のテーブルを外の行の後ろへドラッグすると、フォルダから出る', (await order()).join(' '))
+  // いまは商談を開いている。畳むと、中の取引先は隠れて数が出る(触れているあいだは数の代わりに「⋯」なので、指を外してから見る)
+  await folder.click(); await page.mouse.move(700, 400); await wait(300)
+  const hidden = await link('accounts').count() === 0 && (await folder.innerText()).includes('1') && (await folder.getAttribute('aria-expanded')) === 'false'
+  await page.keyboard.press('1'); await wait(400)
+  ok(hidden && page.url().includes('/o/accounts') && await link('accounts').count() === 1,
+    'フォルダを畳むと中のテーブルが隠れて数が出る。1 は畳んでも同じテーブルへ行き、開いているテーブルは畳んでも見える')
+  await page.reload(); await page.waitForSelector('nav[aria-label=メイン]'); await wait(400)
+  ok(await folder.count() === 1 && (await folder.getAttribute('aria-expanded')) === 'false' && (await order()).join(' ') === 'accounts opportunities tasks contacts',
+    'フォルダと畳んだ状態は再読み込みしても残る', (await order()).join(' '))
+  await folder.click(); await wait(300)
+  await nav.getByRole('button', { name: 'フォルダ「営業」のメニュー' }).click(); await page.getByRole('menuitem', { name: '名前を変更' }).click(); await wait(200)
+  await page.keyboard.type('営業部'); await page.keyboard.press('Enter'); await wait(600)
+  const renamed = nav.locator('button[aria-expanded]').filter({ hasText: '営業部' })
+  ok(await renamed.count() === 1, 'フォルダの名前をメニューから変えられる')
+  await nav.getByRole('button', { name: 'フォルダ「営業部」のメニュー' }).click(); await page.getByRole('menuitem', { name: 'フォルダを削除' }).click(); await wait(600)
+  const removed = await renamed.count() === 0 && await link('accounts').count() === 1 && !(await indented('accounts'))
+  await page.getByRole('button', { name: '元に戻す' }).click(); await wait(700)
+  ok(removed && await renamed.count() === 1 && await indented('accounts'), 'フォルダを削除すると中のテーブルは外に残り、「元に戻す」で戻る')
 }
 await page.goto(BASE + '/o/tasks?view=x'); await page.waitForSelector('[role=row][data-row]')
 await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().click(); await page.waitForSelector('aside'); await wait(400)

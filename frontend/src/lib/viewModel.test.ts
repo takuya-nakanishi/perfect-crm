@@ -121,6 +121,7 @@ describe('フィルタのチップの言い方(lib/viewModel.ts describe)', () =
   const meta: MetaResponse = {
     workspace: { id: 'w1', name: '架空の会社', timezone: 'Asia/Tokyo' },
     objects: [],
+    folders: [],
     views: [],
     users: [
       { id: 'u1', name: '山田 太郎', email: 'yamada@example.com', avatar_color: 'blue' },

@@ -38,7 +38,7 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     resetSettings()
   })
 
-  it('SET-002 管理者でない利用者の createObject / updateObject / deleteObject / reorderObjects は 403 で、テーブルの定義は変わらない', async () => {
+  it('SET-002 管理者でない利用者の createObject / updateObject / deleteObject / saveSidebar は 403 で、テーブルの定義は変わらない', async () => {
     const api = createMockClient()
     await api.login(member.email, 'x')
     const before = getMeta().objects
@@ -48,14 +48,16 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
     expect(await statusOf(() => api.createObject(input('set_trial'))), 'createObject').toBe(403)
     expect(await statusOf(() => api.updateObject(first.key, { ...input(first.key), label: '書き換え' })), 'updateObject').toBe(403)
     expect(await statusOf(() => api.deleteObject(first.key)), 'deleteObject').toBe(403)
-    expect(await statusOf(() => api.reorderObjects([...keys].reverse())), 'reorderObjects').toBe(403)
+    const reversed = [...keys].reverse().map((key) => ({ type: 'object' as const, key }))
+    expect(await statusOf(() => api.saveSidebar(reversed)), 'saveSidebar').toBe(403)
+    expect(await statusOf(() => api.saveSidebar([{ type: 'folder', id: crypto.randomUUID(), label: '営業', keys: [] }])), 'saveSidebar(フォルダ)').toBe(403)
     expect(getMeta().objects).toEqual(before)
 
     // 対照: 管理者なら同じ呼び出しが通る(403 は管理者かどうかで決まっている)
     await api.logout()
     await api.login(admin.email, 'x')
     expect(await statusOf(() => api.createObject(input('set_trial'))), 'createObject(管理者)').toBeNull()
-    expect(await statusOf(() => api.reorderObjects(getMeta().objects.map((o) => o.key).reverse())), 'reorderObjects(管理者)').toBeNull()
+    expect(await statusOf(() => api.saveSidebar(getMeta().objects.map((o) => ({ type: 'object' as const, key: o.key })).reverse())), 'saveSidebar(管理者)').toBeNull()
   })
 
   it('SET-003 管理者でない利用者の listMcpTokens / createMcpToken / listWebForms / createWebForm は 403 で、トークンとフォームは増えない', async () => {

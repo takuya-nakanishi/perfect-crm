@@ -20,6 +20,8 @@ export interface QuickAddSeed {
 interface UIState {
   theme: Theme
   sidebarCollapsed: boolean
+  /** 畳んだサイドバーのフォルダの id(端末ごと。localStorage に覚える。05 §13) */
+  collapsedFolders: string[]
   mobileNavOpen: boolean
   paletteOpen: boolean
   shortcutsOpen: boolean
@@ -34,6 +36,7 @@ interface UIState {
 
   setTheme(theme: Theme): void
   toggleSidebar(): void
+  toggleFolder(id: string): void
   setMobileNav(open: boolean): void
   setPalette(open: boolean): void
   setShortcuts(open: boolean): void
@@ -51,10 +54,20 @@ interface UIState {
 
 const THEME_KEY = 'works.theme'
 const SIDEBAR_KEY = 'works.sidebar'
+const FOLDERS_KEY = 'works.sidebar.folders'
 
 function storedTheme(): Theme {
   const v = localStorage.getItem(THEME_KEY)
   return v === 'light' || v === 'dark' ? v : 'system'
+}
+
+function storedFolders(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(FOLDERS_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 /** <html data-theme> に反映する。index.html の先頭のスクリプトと同じ判定 */
@@ -68,6 +81,7 @@ let toastSeq = 0
 export const useUI = create<UIState>((set, get) => ({
   theme: storedTheme(),
   sidebarCollapsed: localStorage.getItem(SIDEBAR_KEY) === 'collapsed',
+  collapsedFolders: storedFolders(),
   mobileNavOpen: false,
   paletteOpen: false,
   shortcutsOpen: false,
@@ -87,6 +101,12 @@ export const useUI = create<UIState>((set, get) => ({
     const collapsed = !get().sidebarCollapsed
     localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'open')
     set({ sidebarCollapsed: collapsed })
+  },
+  toggleFolder(id) {
+    const current = get().collapsedFolders
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(next))
+    set({ collapsedFolders: next })
   },
   setMobileNav: (open) => set({ mobileNavOpen: open }),
   setPalette: (open) => set({ paletteOpen: open }),

@@ -82,11 +82,11 @@ export function createMockClient(): ApiClient {
       settings.requireAdmin(requireUser())
       return db.restoreObject(key)
     },
-    async reorderObjects(keys) {
+    async saveSidebar(items) {
       await sleep(WRITE_MS)
-      // テーブルの定義は管理者だけ(03 §5)。ビューは誰でも(共有ビューと個人ビューの区別は J-038)
+      // サイドバーの並びとフォルダはワークスペース共通なので、管理者だけ(03 §5。利用者ごとに持つかは Q-045)
       settings.requireAdmin(requireUser())
-      return db.reorderObjects(keys)
+      return db.saveSidebar(items)
     },
     async createView(object, input) {
       await sleep(WRITE_MS)

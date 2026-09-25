@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/overlay'
 import { useSearch, useSession } from '@/data/queries'
 import { cx } from '@/lib/cx'
 import { VIEW_ICONS } from '@/lib/icons'
+import { sidebarObjects } from '@/lib/sidebar'
 import { useDebounced } from '@/lib/useDebounced'
 import { usePeek } from '@/lib/usePeek'
 import { useUI } from '@/state/ui'
@@ -44,7 +45,7 @@ export function SearchPalette({ meta }: { meta: MetaResponse }) {
   const admin = Boolean(useSession().data?.user.admin)
   const commands: Item[] = useMemo(() => {
     const ui = useUI.getState()
-    const objects = meta.objects.filter((o) => o.in_sidebar).sort((a, b) => a.position - b.position)
+    const objects = sidebarObjects(meta)
     const pinned = meta.views.filter((v) => v.pin).sort((a, b) => (a.pin?.position ?? 0) - (b.pin?.position ?? 0))
     const dark = document.documentElement.dataset.theme === 'dark'
     return [

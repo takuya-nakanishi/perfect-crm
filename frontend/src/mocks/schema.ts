@@ -8,7 +8,8 @@
  *   だから「元に戻す」は、前の定義をもう一度保存するだけで済む
  */
 import { ApiError } from '@/api/client'
-import type { FieldInput, FieldMeta, FieldType, Filter, MetaResponse, ObjectInput, ObjectMeta, TagColor, User, ViewInput, ViewMeta, Workspace } from '@/api/types'
+import type { FieldInput, FieldMeta, FieldType, Filter, FolderMeta, MetaResponse, ObjectInput, ObjectMeta, SidebarItem, TagColor, User, ViewInput, ViewMeta, Workspace } from '@/api/types'
+import { numberSidebar } from '@/lib/sidebar'
 import objectsJson from './fixtures/objects.json'
 import usersJson from './fixtures/users.json'
 import viewsJson from './fixtures/views.json'
@@ -21,6 +22,8 @@ export const workspace = workspaceJson.workspace as Workspace
 
 interface Schema {
   objects: ObjectMeta[]
+  /** サイドバーのフォルダ(以前に保存したデータには無い) */
+  folders?: FolderMeta[]
   views: ViewMeta[]
   /** 論理削除したテーブルの key */
   trashed: string[]
@@ -155,14 +158,16 @@ function cleanView(view: ViewMeta, object: ObjectMeta): ViewMeta | null {
 
 /** GET /meta の応答 */
 export function visibleMeta(): MetaResponse {
-  const objects = liveObjects()
+  const folders = [...(schema.folders ?? [])].sort((a, b) => a.position - b.position)
+  // 無いフォルダを指すテーブルは、フォルダの外として返す
+  const objects = liveObjects().map(({ folder_id, ...o }) => (folder_id && folders.some((f) => f.id === folder_id) ? { ...o, folder_id } : o))
   const views = schema.views.flatMap((v) => {
     if (schema.trashedViews?.includes(v.id)) return []
     const object = objects.find((o) => o.key === v.object)
     const cleaned = object ? cleanView(v, object) : null
     return cleaned ? [cleaned] : []
   })
-  return structuredClone({ workspace, objects, views, users })
+  return structuredClone({ workspace, objects, folders, views, users })
 }
 
 // --- 検証 -------------------------------------------------------------------
@@ -310,7 +315,8 @@ export function createObject(input: ObjectInput): { purged: string | null } {
     color: input.color,
     name_field: fields[0].key,
     subtitle_field: fields.find((f) => f.type === 'select')?.key,
-    position: Math.max(0, ...schema.objects.map((o) => o.position)) + 1,
+    // サイドバーの末尾(フォルダの外)。フォルダとテーブルは同じ通し番号なので、両方の後ろへ
+    position: Math.max(0, ...schema.objects.map((o) => o.position), ...(schema.folders ?? []).map((f) => f.position)) + 1,
     in_sidebar: input.in_sidebar ?? true,
     fields: [...fields, ...structuredClone(SYSTEM_FIELDS)],
   }
@@ -388,14 +394,45 @@ function liveField(f: FieldMeta): boolean {
   return f.type !== 'relation' || isLive(f.target)
 }
 
-/** 渡した順に先頭から並べ、渡さなかったテーブル(サイドバーに出していないもの)は元の順で後ろに続ける */
-export function reorderObjects(keys: string[]) {
-  const live = liveObjects()
-  if (keys.some((k) => !live.some((o) => o.key === k))) invalid('無いテーブルが含まれています')
-  const rest = live.filter((o) => !keys.includes(o.key)).sort((a, b) => a.position - b.position).map((o) => o.key)
-  ;[...keys, ...rest].forEach((k, i) => {
-    objectMeta(k).position = i + 1
-  })
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * サイドバーの並びとフォルダを全量で保存する(PUT /meta/sidebar。05 §13)。
+ * - 上から順に 1 からの通し番号を振る(フォルダ → その中のテーブル → 次の…。lib/sidebar.ts の numberSidebar)
+ * - 本文に無いフォルダは消す。中にあったテーブルは(削除中のものも)フォルダの外へ
+ * - 本文に無いテーブル(サイドバーに出していないもの、別の画面で足した直後のもの)は、元の順で末尾に続ける(フォルダの外)
+ * - 新しいフォルダの id は画面が振る(UUID)。前の並びを送り直せば、同じ id のフォルダが戻る(元に戻す)
+ */
+export function saveSidebar(items: SidebarItem[]) {
+  const keys = new Set<string>()
+  const ids = new Set<string>()
+  const take = (key: string) => {
+    if (!isLive(key)) invalid('無いテーブルが含まれています')
+    if (keys.has(key)) invalid(`同じテーブルが 2 回含まれています: ${key}`)
+    keys.add(key)
+  }
+  for (const item of items) {
+    if (item.type === 'object') {
+      take(item.key)
+      continue
+    }
+    if (!UUID_PATTERN.test(item.id)) invalid('フォルダの id が正しくありません')
+    if (ids.has(item.id)) invalid('同じフォルダが 2 回含まれています')
+    ids.add(item.id)
+    if (!item.label.trim()) invalid('フォルダの名前を入力してください')
+    item.keys.forEach(take)
+  }
+
+  const { folders, places, last } = numberSidebar(items)
+  let n = last
+  for (const o of liveObjects().sort((a, b) => a.position - b.position)) if (!places.has(o.key)) places.set(o.key, { position: ++n })
+  for (const o of schema.objects) {
+    const place = places.get(o.key)
+    if (place) o.position = place.position
+    if (place?.folder_id) o.folder_id = place.folder_id
+    else if (place || (o.folder_id && !ids.has(o.folder_id))) delete o.folder_id
+  }
+  schema.folders = folders
   save()
 }
 
