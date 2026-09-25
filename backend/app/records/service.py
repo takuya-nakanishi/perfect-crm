@@ -7,11 +7,18 @@ from typing import Any
 from sqlalchemy import Connection, Select, Table, asc, case, desc, func, literal, nullslast, select
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.errors import bad_request, not_found
+from app.errors import bad_request, conflict, not_found
 from app.meta import store
 from app.meta.tables import SYSTEM_COLUMNS, activity_mentions
 from app.meta.tables import users as users_table
-from app.records.detach import detach, reattach
+from app.records.detach import (
+    detach,
+    holders,
+    in_use_message,
+    missing_on_restore,
+    reattach,
+    restore_message,
+)
 from app.records.filters import Context, compile_filter
 from app.records.normalize import normalize_text, search_text_of
 from app.records.recurrence import copy_for_next, due_field_of, next_due
@@ -187,30 +194,35 @@ def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, A
 
 
 def remove(conn: Connection, object_key: str, record_id: str) -> None:
-    """論理削除(02 §4)。このレコードを指している参照は外して控える(`detach`)。画面の「元に戻す」は `restore`。"""
+    """論理削除(02 §4)。必須の参照で指されていれば 409。ほかの参照は外して控える。画面の「元に戻す」は `restore`。"""
     obj = store.object_meta(conn, object_key)
     table = table_of(obj)
-    result = conn.execute(
-        table.update()
-        .where(table.c.id == record_id, table.c.deleted_at.is_(None))
-        .values(deleted_at=func.clock_timestamp(), updated_at=func.clock_timestamp())
-    )
-    if result.rowcount == 0:
+    alive = [table.c.id == record_id, table.c.deleted_at.is_(None)]
+    if conn.execute(select(table.c.id).where(*alive)).first() is None:
         raise not_found("レコードがありません")
+    found = holders(conn, object_key, record_id)
+    if found:
+        raise conflict(in_use_message(found), "referenced")
+    conn.execute(
+        table.update().where(*alive).values(deleted_at=func.clock_timestamp(), updated_at=func.clock_timestamp())
+    )
     detach(conn, object_key, record_id)
 
 
 def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]:
-    """論理削除を外し、削除のときに外した参照を付け直す(その間に別の値を入れた列はそのまま)。"""
+    """論理削除を外し、削除のときに外した参照を付け直す(その間に別の値を入れた列はそのまま)。
+
+    削除中に必須の参照の相手を消されていたら 409(戻すと必須が空のまま生き返る。相手を先に戻す)。
+    """
     obj = store.object_meta(conn, object_key)
     table = table_of(obj)
-    result = conn.execute(
-        table.update()
-        .where(table.c.id == record_id, table.c.deleted_at.isnot(None))
-        .values(deleted_at=None, updated_at=func.clock_timestamp())
-    )
-    if result.rowcount == 0:
+    gone = [table.c.id == record_id, table.c.deleted_at.isnot(None)]
+    if conn.execute(select(table.c.id).where(*gone)).first() is None:
         raise not_found("削除されたレコードがありません")
+    missing = missing_on_restore(conn, object_key, record_id)
+    if missing:
+        raise conflict(restore_message(conn, missing), "reference_deleted")
+    conn.execute(table.update().where(*gone).values(deleted_at=None, updated_at=func.clock_timestamp()))
     reattach(conn, object_key, record_id)
     return find(conn, object_key, record_id)
 

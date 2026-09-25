@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import type { ListParams, ListResponse, ObjectMeta, RecordResponse, References, Row, Scalar } from '@/api/types'
 import { defaultContext, matchFilter } from '@/lib/filter'
 import { useUI } from '@/state/ui'
@@ -115,13 +115,19 @@ export function useDeleteRecord() {
         message: `${label}を削除しました`,
         action: {
           label: '元に戻す',
-          run: () => void api.restoreRecord(object, row).then(() => refreshAll(qc)),
+          // 削除中に必須の参照の相手を消されていると、サーバが理由を付けて断る(02 §4)
+          run: () =>
+            void api
+              .restoreRecord(object, row)
+              .then(() => refreshAll(qc))
+              .catch((e: unknown) => useUI.getState().toast({ message: e instanceof ApiError ? e.message : '元に戻せませんでした。もう一度試してください', tone: 'danger' })),
         },
       })
     },
-    onError(_error, _vars, context) {
+    onError(error, _vars, context) {
       if (context) restoreLists(qc, context.lists)
-      useUI.getState().toast({ message: '削除できませんでした。もう一度試してください', tone: 'danger' })
+      // 必須の参照で使われているレコードは、サーバが理由を付けて断る(02 §4)
+      useUI.getState().toast({ message: error instanceof ApiError ? error.message : '削除できませんでした。もう一度試してください', tone: 'danger' })
     },
     onSettled: () => refreshAll(qc),
   })

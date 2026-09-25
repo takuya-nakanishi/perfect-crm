@@ -61,6 +61,9 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 | REC-068 | 利用者 | 削除 | 整合 | L2 | `remove` → そのレコードを指していた参照(relation・関連先)が空になる。`find` の `references` にも出ず、絞り込みの「空」に当たる。指していた側の `updated_at` は動かない。`restore` → 付け直す(02 §4。J-044) | `engine.test.ts` | `test_records_write.py` |
 | REC-069 | 利用者 | 削除 | 可逆 | L2 | 削除中に別の値を入れた参照は、`restore` しても上書きしない。先に消した行が指していた参照も外れ、その行を戻しても消えた相手を指さない(相手を戻せば付け直す) | `engine.test.ts` | `test_records_write.py` |
 | REC-070 | システム | 削除 | 整合 | L4 | 起動時の後始末(`app.cli init` の `detach_dangling`): 削除中のレコードを指したまま残っている参照(控えを持つ前に消したもの)を外して控える。2 回目は 0 件。控えがあるので `restore` で付け直す | `test_records_write.py`(pytest) | — |
+| REC-071 | 利用者 | 削除 | 安全弁 | L2 | 必須の参照項目が生きている行から指していれば `remove` は 409 `referenced`(何も変えない)。理由は「削除できません。商談「商談1」ほか 1 件の「取引先」(必須)に指定されています」。付け替えるか、その行を削除すれば消せる(削除中の行は妨げない)。画面から足したテーブルの参照でも同じで、外した項目は妨げない(J-045) | `engine.test.ts` | `test_records_write.py` |
+| REC-072 | 利用者 | 削除 | 可逆 | L2 | 削除中に必須の参照の相手を消された行は、相手が削除中のあいだ `restore` が 409 `reference_deleted`(理由に相手の名前)。相手を先に戻せば、相手を指したまま戻る | `engine.test.ts` | `test_records_write.py` |
+| REC-073 | 利用者 | 削除 | 安全弁 | L3 | 利用者: 商談のある取引先をパネルで削除 → 赤いトーストに理由の全文が出て、取引先は残る | `smoke.mjs「商談に使われている取引先は削除できず、理由が出る」` / `smoke.mjs「削除できなかった取引先は残る」` | — |
 
 ## 5. 検証(サーバの型と参照整合。04 §11)
 

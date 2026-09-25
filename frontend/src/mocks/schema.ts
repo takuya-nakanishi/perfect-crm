@@ -86,20 +86,25 @@ export interface RefColumn {
   column: string
   objectColumn?: string
   target?: string
+  field: FieldMeta
+  /** 画面から触れる列か(外した項目でも、削除中のテーブルの列でもない)。必須の決まりが効くのはこの列だけ */
+  live: boolean
 }
 
 /**
- * 参照を持ちうる全部の列(削除したレコードを指す参照を外すときに使う。engine.ts の detach)。
+ * 参照を持ちうる全部の列(削除するレコードを指す参照を調べる。engine.ts の remove / restore)。
  * 外した項目の列も、削除中のテーブルの列も含める。どちらも戻せるので、戻したときに消えた相手を指さないように
  */
 export function referenceColumns(): RefColumn[] {
-  return schema.objects.flatMap((o) =>
-    [...o.fields, ...Object.values(schema.removedFields?.[o.key] ?? {})].flatMap((f): RefColumn[] => {
-      if (f.type === 'relation' && f.target) return [{ object: o.key, column: f.key, target: f.target }]
-      if (f.type === 'polymorphic' && f.columns) return [{ object: o.key, column: f.columns.id, objectColumn: f.columns.object }]
+  return schema.objects.flatMap((o) => {
+    const live = !schema.trashed.includes(o.key)
+    const removed = Object.values(schema.removedFields?.[o.key] ?? {})
+    return [...o.fields.map((f) => ({ f, live })), ...removed.map((f) => ({ f, live: false }))].flatMap(({ f, live }): RefColumn[] => {
+      if (f.type === 'relation' && f.target) return [{ object: o.key, column: f.key, target: f.target, field: f, live }]
+      if (f.type === 'polymorphic' && f.columns) return [{ object: o.key, column: f.columns.id, objectColumn: f.columns.object, field: f, live }]
       return []
-    }),
-  )
+    })
+  })
 }
 
 /** 無くなった項目を指している部分を外したビュー。成り立たなくなったもの(分ける列の無いカンバン)は null */

@@ -129,6 +129,20 @@ ok(await page.locator('dialog[open]').count() === 0 && /peek=/.test(page.url()),
 await page.keyboard.press('Escape'); await wait(200)
 ok(!/peek=/.test(page.url()), '次の Esc でパネルが閉じる')
 
+// 6c. 必須の参照(商談の取引先)で使われている取引先は削除できず、理由が出る(02 §4)
+const openAoba = async () => {
+  await page.keyboard.press('/'); await page.waitForSelector('dialog[open] input[aria-label=検索]')
+  await page.keyboard.type('あおば'); await wait(500)
+  await page.keyboard.press('Enter'); await page.waitForSelector('aside input')
+}
+await openAoba()
+await page.locator('aside').getByRole('button', { name: '削除', exact: true }).click(); await wait(800)
+const refusal = await page.getByText(/^削除できません。/).innerText()
+ok(/削除できません。商談「.+」ほか 1 件の「取引先」\(必須\)に指定されています/.test(refusal), '商談に使われている取引先は削除できず、理由が出る', refusal)
+await openAoba()
+ok(await page.locator('aside input').first().inputValue() === '株式会社アオバ精機', '削除できなかった取引先は残る')
+await page.keyboard.press('Escape'); await wait(200)
+
 // 7. 3 で商談へ、V → 2 でカンバンへ、ドラッグでフェーズ変更
 await page.keyboard.press('3'); await wait(400)
 ok(page.url().includes('/o/opportunities') && !page.url().includes('view='), '3 で商談へ移動(ビューは切り替わらない)')

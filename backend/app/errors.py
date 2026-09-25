@@ -37,6 +37,11 @@ def not_found(message: str = "見つかりません") -> ApiError:
     return ApiError(404, "not_found", message)
 
 
+def conflict(message: str, code: str) -> ApiError:
+    """いまのデータの状態のせいで、その操作ができない(必須の参照で使われているレコードの削除など)。"""
+    return ApiError(409, code, message)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     def _api_error(_: Request, exc: ApiError) -> JSONResponse:

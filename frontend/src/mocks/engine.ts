@@ -462,11 +462,16 @@ function applyRecurrence(meta: ObjectMeta, row: Row, rows: Row[], index: number,
   }
 }
 
-/** 削除(本番は論理削除)。行は控えへ移し、この行を指している参照を外す(02 §4) */
+/**
+ * 削除(本番は論理削除。02 §4)。必須の参照項目が生きている行からこのレコードを指していれば 409(空にすると必須に反する)。
+ * それ以外は、行を控えへ移し、この行を指している参照を外す
+ */
 export function remove(object: string, id: string): boolean {
   const rows = table(object)
   const index = rows.findIndex((r) => r.id === id)
   if (index < 0) return false
+  const found = holders(object, id)
+  if (found.length) throw new ApiError(409, 'referenced', inUseMessage(found))
   const [row] = rows.splice(index, 1)
   trash.rows[object] = [...(trash.rows[object] ?? []), row]
   detach(object, id)
@@ -474,10 +479,15 @@ export function remove(object: string, id: string): boolean {
   return true
 }
 
-/** 削除の取り消し。控えの行を戻し、外した参照を付け直す。控えに無ければ画面が持っていた行で戻す(控えを持つ前に消したもの) */
+/**
+ * 削除の取り消し。控えの行を戻し、外した参照を付け直す。控えに無ければ画面が持っていた行で戻す(控えを持つ前に消したもの)。
+ * 削除中に必須の参照の相手を消されていたら 409(戻すと必須が空のまま生き返る。相手を先に戻す)
+ */
 export function restore(object: string, row: Row) {
   const rows = table(object)
   if (!rows.some((r) => r.id === row.id)) {
+    const missing = missingOnRestore(object, row.id)
+    if (missing.length) throw new ApiError(409, 'reference_deleted', restoreMessage(missing))
     const kept = trash.rows[object]?.find((r) => r.id === row.id)
     trash.rows[object] = (trash.rows[object] ?? []).filter((r) => r.id !== row.id)
     rows.unshift(kept ?? structuredClone(row))
@@ -485,6 +495,50 @@ export function restore(object: string, row: Row) {
   }
   save()
   return find(object, row.id)!
+}
+
+const nameOf = (object: string, row: Row | undefined) => String(row?.[objectMeta(object).name_field] ?? '')
+
+/** 必須の参照で、このレコードを指している生きている行(テーブルと項目ごと) */
+function holders(object: string, id: string) {
+  return schema
+    .referenceColumns()
+    .filter((ref) => ref.field.required && ref.live && (ref.target === undefined || ref.target === object))
+    .map((ref) => ({
+      ref,
+      // 自分自身を指す行(自己参照)は、一緒に消えるので数えない
+      rows: (tables[ref.object] ?? []).filter((r) => r.id !== id && r[ref.column] === id && (!ref.objectColumn || r[ref.objectColumn] === object)),
+    }))
+    .filter((h) => h.rows.length > 0)
+}
+
+/** 知らせに出す 1 件は、表示名の文字コード順で最初のもの(サーバと同じ順) */
+function inUseMessage(found: ReturnType<typeof holders>): string {
+  const parts = found.map(({ ref, rows }) => {
+    const first = rows.map((r) => nameOf(ref.object, r)).sort()[0]
+    return `${objectMeta(ref.object).label}「${first || '名称未設定'}」${rows.length > 1 ? `ほか ${rows.length - 1} 件` : ''}の「${ref.field.label}」(必須)`
+  })
+  return `削除できません。${parts.join('、')}に指定されています`
+}
+
+/** 戻すと必須の参照が空のまま生き返るもの(削除中に相手を消された。控えが残っていれば、相手はまだ削除中) */
+function missingOnRestore(object: string, id: string) {
+  const required = schema.referenceColumns().filter((ref) => ref.field.required && ref.live)
+  return Object.entries(trash.detached).flatMap(([key, list]) => {
+    const [target, targetId] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)]
+    return list.flatMap((d) => {
+      const ref = d.object === object && d.id === id ? required.find((r) => r.object === d.object && r.column === d.column) : undefined
+      return ref ? [{ ref, target, targetId }] : []
+    })
+  })
+}
+
+function restoreMessage(missing: ReturnType<typeof missingOnRestore>): string {
+  const parts = missing.map(({ ref, target, targetId }) => {
+    const name = nameOf(target, trash.rows[target]?.find((r) => r.id === targetId))
+    return `「${ref.field.label}」(必須)の${objectMeta(target).label}「${name || '名称未設定'}」`
+  })
+  return `元に戻せません。${parts.join('、')}が削除されています。先にそちらを元に戻してください`
 }
 
 /** 表と控えの両方の行。削除中の行が指している参照も外す(その行を戻したときに、消えた相手を指さないように) */

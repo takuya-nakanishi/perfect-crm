@@ -223,6 +223,71 @@ def test_REC_069_削除中に別の値を入れた参照は_元に戻しても�
     assert record_of(admin, "contacts", trashed)["account_id"] == gone
 
 
+def test_REC_071_必須の参照で指されているレコードは削除できない(admin: TestClient) -> None:
+    account = create(admin, "accounts", name="使われている取引先").json()["record"]["id"]
+    other = create(admin, "accounts", name="付け替え先").json()["record"]["id"]
+    deals = [create(admin, "opportunities", name=f"商談{i}", account_id=account).json()["record"]["id"] for i in (1, 2)]
+
+    response = admin.delete(f"/api/v1/objects/accounts/records/{account}")
+    assert response.status_code == 409
+    assert response.json() == {
+        "code": "referenced",
+        "message": "削除できません。商談「商談1」ほか 1 件の「取引先」(必須)に指定されています",
+    }
+    # 何も変わらない
+    assert record_of(admin, "accounts", account)["name"] == "使われている取引先"
+    assert record_of(admin, "opportunities", deals[0])["account_id"] == account
+
+    # 1 件を付け替え、もう 1 件を削除すれば消せる(削除中の行は妨げない)
+    assert patch(admin, "opportunities", deals[0], account_id=other).status_code == 200
+    assert admin.delete(f"/api/v1/objects/opportunities/records/{deals[1]}").status_code == 204
+    assert admin.delete(f"/api/v1/objects/accounts/records/{account}").status_code == 204
+
+    # 画面から足したテーブルの参照でも同じ。外した項目は妨げない
+    quotes: dict[str, Any] = {
+        "key": "quotes",
+        "label": "見積",
+        "icon": "box",
+        "color": "blue",
+        "fields": [
+            {"key": "name", "label": "見積名", "type": "text"},
+            {"key": "deal_id", "label": "商談", "type": "relation", "target": "opportunities", "required": True},
+        ],
+    }
+    assert admin.post("/api/v1/meta/objects", json=quotes).status_code == 200
+    assert create(admin, "quotes", name="見積A", deal_id=deals[0]).status_code == 200
+    response = admin.delete(f"/api/v1/objects/opportunities/records/{deals[0]}")
+    assert response.status_code == 409
+    assert response.json()["message"] == "削除できません。見積「見積A」の「商談」(必須)に指定されています"
+    quotes["fields"] = quotes["fields"][:1]
+    assert admin.put("/api/v1/meta/objects/quotes", json=quotes).status_code == 200
+    assert admin.delete(f"/api/v1/objects/opportunities/records/{deals[0]}").status_code == 204
+
+
+def test_REC_072_必須の参照先が削除中のままでは_元に戻せない(admin: TestClient) -> None:
+    account = create(admin, "accounts", name="あとで消す取引先").json()["record"]["id"]
+    deal = create(admin, "opportunities", name="先に消す商談", account_id=account).json()["record"]["id"]
+    # 商談を先に消せば、取引先も消せる
+    assert admin.delete(f"/api/v1/objects/opportunities/records/{deal}").status_code == 204
+    assert admin.delete(f"/api/v1/objects/accounts/records/{account}").status_code == 204
+
+    # 商談だけ戻すと、必須の取引先が空のまま生き返るので戻せない
+    response = admin.post(f"/api/v1/objects/opportunities/records/{deal}/restore")
+    assert response.status_code == 409
+    assert response.json() == {
+        "code": "reference_deleted",
+        "message": "元に戻せません。「取引先」(必須)の取引先「あとで消す取引先」が削除されています。"
+        "先にそちらを元に戻してください",
+    }
+    assert admin.get(f"/api/v1/objects/opportunities/records/{deal}").status_code == 404
+
+    # 取引先を先に戻せば、商談も取引先を指したまま戻る
+    assert admin.post(f"/api/v1/objects/accounts/records/{account}/restore").status_code == 200
+    back = admin.post(f"/api/v1/objects/opportunities/records/{deal}/restore")
+    assert back.status_code == 200
+    assert back.json()["record"]["account_id"] == account
+
+
 def test_起動時の後始末で_削除済みを指したままの参照を外す(admin: TestClient, make: Make, conn: Any) -> None:
     """REC-070。削除の経路を通らずに消えた行(この決まりより前に消したもの)を指す参照を外し、控えに残す。"""
     account = make("accounts", name="前に消した取引先")

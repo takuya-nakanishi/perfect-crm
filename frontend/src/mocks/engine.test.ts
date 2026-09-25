@@ -2461,7 +2461,8 @@ describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
   })
 
   it('REC-066 remove で行が消えて find は null。restore(消した行)で同じ id のまま戻り、2 回 restore しても 1 行', () => {
-    const id = table('accounts')[0].id as string
+    // 商談(取引先が必須)に使われていない取引先を選ぶ。使われていれば消せない(REC-071)
+    const id = table('accounts').find((a) => !table('opportunities').some((o) => o.account_id === a.id))!.id
     const removed = structuredClone(find('accounts', id)!.record)
     const count = table('accounts').length
 
@@ -2522,6 +2523,78 @@ describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
     restore('accounts', gone)
     expect(find('contacts', moved.id)!.record.account_id).toBe(other.id)
     expect(find('contacts', trashed.id)!.record.account_id).toBe(gone.id)
+  })
+
+  it('REC-071 必須の参照項目が生きている行から指していれば remove は 409(何も変えない)。削除中の行・外した項目は妨げない。画面から足したテーブルの参照でも同じ', () => {
+    const account = insert('accounts', { name: '使われている取引先' }, null).record
+    const other = insert('accounts', { name: '付け替え先' }, null).record
+    const deals = [1, 2].map((i) => insert('opportunities', { name: `商談${i}`, account_id: account.id }, null).record)
+
+    const refused = (fn: () => unknown) => {
+      try {
+        fn()
+      } catch (e) {
+        if (e instanceof ApiError) return { status: e.status, code: e.code, message: e.message }
+        throw e
+      }
+      return null
+    }
+    expect(refused(() => remove('accounts', account.id))).toEqual({
+      status: 409,
+      code: 'referenced',
+      message: '削除できません。商談「商談1」ほか 1 件の「取引先」(必須)に指定されています',
+    })
+    expect(find('accounts', account.id)!.record.name).toBe('使われている取引先')
+    expect(find('opportunities', deals[0].id)!.record.account_id).toBe(account.id)
+
+    // 1 件を付け替え、もう 1 件を削除すれば消せる(削除中の行は妨げない)
+    update('opportunities', deals[0].id, { account_id: other.id }, null)
+    remove('opportunities', deals[1].id)
+    expect(remove('accounts', account.id)).toBe(true)
+
+    // 画面から足したテーブルの参照でも同じ。外した項目は妨げない
+    const quotes: ObjectInput = {
+      key: 'quotes',
+      label: '見積',
+      icon: 'box',
+      color: 'blue',
+      fields: [
+        { key: 'name', label: '見積名', type: 'text' },
+        { key: 'deal_id', label: '商談', type: 'relation', target: 'opportunities', required: true },
+      ],
+    }
+    createObject(quotes)
+    insert('quotes', { name: '見積A', deal_id: deals[0].id }, null)
+    expect(refused(() => remove('opportunities', deals[0].id))?.message).toBe('削除できません。見積「見積A」の「商談」(必須)に指定されています')
+    updateObject('quotes', { ...quotes, fields: quotes.fields.slice(0, 1) })
+    expect(remove('opportunities', deals[0].id)).toBe(true)
+  })
+
+  it('REC-072 削除中に必須の参照の相手を消された行は、相手が削除中のあいだ restore が 409。相手を先に戻せば、相手を指したまま戻る', () => {
+    const account = insert('accounts', { name: 'あとで消す取引先' }, null).record
+    const deal = insert('opportunities', { name: '先に消す商談', account_id: account.id }, null).record
+    // 商談を先に消せば、取引先も消せる
+    remove('opportunities', deal.id)
+    remove('accounts', account.id)
+
+    // 商談だけ戻すと、必須の取引先が空のまま生き返るので戻せない
+    let error: unknown = null
+    try {
+      restore('opportunities', deal)
+    } catch (e) {
+      error = e
+    }
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'reference_deleted',
+      message: '元に戻せません。「取引先」(必須)の取引先「あとで消す取引先」が削除されています。先にそちらを元に戻してください',
+    })
+    expect(find('opportunities', deal.id)).toBeNull()
+
+    // 取引先を先に戻せば、商談も取引先を指したまま戻る
+    restore('accounts', account)
+    expect(restore('opportunities', deal).record.account_id).toBe(account.id)
   })
 })
 

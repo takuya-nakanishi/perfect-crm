@@ -16,7 +16,8 @@ export function Toaster() {
             t.tone === 'danger' ? 'bg-[#a82d28] text-white' : 'bg-[#1d2620] text-[#f0f4f1] dark:bg-[#2b332d]',
           )}
         >
-          <span className="min-w-0 flex-1 truncate">{t.message}</span>
+          {/* 失敗の知らせは理由まで読ませたいので折り返す(削除できない理由など)。ほかは 1 行 */}
+          <span className={cx('min-w-0 flex-1', t.tone !== 'danger' && 'truncate')}>{t.message}</span>
           {t.action && (
             <button
               type="button"

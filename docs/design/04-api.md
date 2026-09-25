@@ -10,7 +10,7 @@
 - ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。認証は Cloudflare Access が付ける JWT(`Cf-Access-Jwt-Assertion`)。画面は何も持たない(03 §5)。`WORKS_AUTH=dev` のときだけセッション Cookie
 - JSON の列名は **DB の列名そのまま**(snake_case)。ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)、金額は円の整数。書式付きの文字(`richtext`)は HTML で、**サーバは保存前に許した要素だけを残し、その結果から `@` の言及を取る**(この順。`frontend/src/lib/richtext.ts` と同じ規則。Python では `nh3` のような現行のライブラリを使い、非推奨の `bleach` は使わない)
 - 参照は ID で返し、表示名は応答の `references` に添える(§2)
-- エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400
+- エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400、いまのデータの状態でできない操作(必須の参照で使われているレコードの削除など)は 409。`message` は人がそのまま読める文で、画面はそれを出す
 
 ## 2. エンドポイント
 
@@ -33,8 +33,8 @@
 | `GET /objects/{object}/records/{id}` | 1 件 | `RecordResponse` |
 | `POST /objects/{object}/records` | 作成(本文は列名 → 値) | `RecordResponse` |
 | `PATCH /objects/{object}/records/{id}` | 更新(変える列だけ) | `RecordResponse` |
-| `DELETE /objects/{object}/records/{id}` | 削除(論理削除)。このレコードを指している参照(relation・関連先)は空になる(02 §4) | 204 |
-| `POST /objects/{object}/records/{id}/restore` | 削除の取り消し。削除のときに外した参照を付け直す(空のままの列だけ) | `RecordResponse` |
+| `DELETE /objects/{object}/records/{id}` | 削除(論理削除)。**必須の参照項目が生きている行からこのレコードを指していれば 409 `referenced`**(理由は `message`)。それ以外で指している参照(relation・関連先)は空になる(02 §4) | 204 |
+| `POST /objects/{object}/records/{id}/restore` | 削除の取り消し。削除のときに外した参照を付け直す(空のままの列だけ)。削除中に必須の参照の相手を消されていれば、相手が削除中のあいだ 409 `reference_deleted` | `RecordResponse` |
 | `POST /objects/{object}/aggregate` | 集計(本文に `AggregateParams`) | `AggregateResponse` |
 | `GET /objects/{object}/records/{id}/timeline` | そのレコードの時系列(活動 + 言及 + 完了したタスク)。§9 | `TimelineResponse` |
 | `POST /objects/{object}/import` | CSV の取り込み(本文に `ImportParams`)。§7 | `ImportResponse` |

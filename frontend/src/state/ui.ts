@@ -102,7 +102,8 @@ export const useUI = create<UIState>((set, get) => ({
   toast(toast) {
     const id = ++toastSeq
     set({ toasts: [...get().toasts.slice(-2), { ...toast, id }] })
-    setTimeout(() => get().dismissToast(id), toast.action ? 7000 : 3500)
+    // 押すもの(元に戻す)と、読ませたい失敗の理由は長めに残す
+    setTimeout(() => get().dismissToast(id), toast.action || toast.tone === 'danger' ? 7000 : 3500)
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }))
