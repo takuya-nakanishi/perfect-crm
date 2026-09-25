@@ -27,7 +27,7 @@ export function ObjectLink({
       to={`/o/${object.key}`}
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
-      title={`G → ${index + 1}。ドラッグで並べ替え`}
+      title={index < 9 ? `${index + 1}。ドラッグで並べ替え` : 'ドラッグで並べ替え'}
       className={cx(
         rowCls,
         active ? 'bg-accent-wash font-bold text-accent-ink' : 'text-ink-2 hover:bg-sunken hover:text-ink',

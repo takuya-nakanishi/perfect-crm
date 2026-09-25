@@ -47,7 +47,7 @@ export const SHORTCUTS: { group: string; items: ShortcutItem[] }[] = [
       { keys: ['Q'], label: 'タスクを追加' },
       { keys: ['/'], label: '検索' },
       { keys: ['Ctrl', 'K'], join: '+', label: '検索とコマンド' },
-      { keys: ['G', '1…9'], join: 'then', label: '上から n 番目のテーブルへ' },
+      { keys: ['1…9'], label: 'サイドバーの上から n 番目のテーブルへ' },
       { keys: ['G', 'H'], join: 'then', label: '今日のタスクへ' },
       { keys: ['M'], label: 'サイドバーを畳む / 開く' },
       { keys: ['?'], label: 'この一覧を開く' },
@@ -56,7 +56,7 @@ export const SHORTCUTS: { group: string; items: ShortcutItem[] }[] = [
   {
     group: 'テーブル',
     items: [
-      { keys: ['1…9'], label: 'ビューを切り替える' },
+      { keys: ['V', '1…9'], join: 'then', label: 'ビュー(タブ)を切り替える' },
       { keys: ['N'], label: 'レコードを作成' },
       { keys: ['F'], label: 'このテーブルを絞り込む' },
     ],

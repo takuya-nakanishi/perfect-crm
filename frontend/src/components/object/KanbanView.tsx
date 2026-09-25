@@ -9,6 +9,7 @@ import { useUpdateRecord } from '@/data/mutations'
 import { useRecords } from '@/data/queries'
 import { useCompletion } from '@/data/useCompletion'
 import { cx } from '@/lib/cx'
+import { clickableSensors } from '@/lib/dnd'
 import { formatYenCompact } from '@/lib/format'
 import { fieldOf, isEmptyValue, recordName } from '@/lib/records'
 import { usePeek } from '@/lib/usePeek'
@@ -198,6 +199,7 @@ export function KanbanView({
 
   return (
     <DragDropProvider
+      sensors={clickableSensors}
       onDragEnd={(event) => {
         if (event.canceled) return
         const { source, target } = event.operation

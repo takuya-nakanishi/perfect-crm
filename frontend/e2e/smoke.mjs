@@ -104,10 +104,10 @@ ok(await page.locator('dialog[open]').count() === 0 && /peek=/.test(page.url()),
 await page.keyboard.press('Escape'); await wait(200)
 ok(!/peek=/.test(page.url()), '次の Esc でパネルが閉じる')
 
-// 7. G→3 で商談へ、2 でカンバンへ、ドラッグでフェーズ変更
-await page.keyboard.press('g'); await page.keyboard.press('3'); await wait(400)
-ok(page.url().includes('/o/opportunities'), 'G → 3 で商談へ移動')
-await page.keyboard.press('2'); await wait(500)
+// 7. 3 で商談へ、V → 2 でカンバンへ、ドラッグでフェーズ変更
+await page.keyboard.press('3'); await wait(400)
+ok(page.url().includes('/o/opportunities') && !page.url().includes('view='), '3 で商談へ移動(ビューは切り替わらない)')
+await page.keyboard.press('v'); await page.keyboard.press('2'); await wait(500)
 const colCount = async (label) => Number(await page.locator(`section[aria-label="${label}"] header span.tabular-nums`).first().innerText())
 const a0 = await colCount('見込み'), b0 = await colCount('ヒアリング')
 const card = page.locator('section[aria-label="見込み"] [role=button]').first()
@@ -118,11 +118,11 @@ await page.mouse.move(cb.x + cb.width / 2 + 30, cb.y + 40, { steps: 5 })
 await page.mouse.move(tb.x + tb.width / 2, tb.y + 200, { steps: 12 }); await wait(150)
 await page.mouse.up(); await wait(800)
 ok(await colCount('見込み') === a0 - 1 && await colCount('ヒアリング') === b0 + 1, 'カードをドラッグするとフェーズが変わる', `見込み ${a0}→${await colCount('見込み')} / ヒアリング ${b0}→${await colCount('ヒアリング')}`)
-await page.keyboard.press('3'); await wait(600)
-ok(await page.getByText('フェーズごとの金額').count() === 1, '3 でレポートへ切り替わる')
+await page.keyboard.press('v'); await page.keyboard.press('3'); await wait(600)
+ok(await page.getByText('フェーズごとの金額').count() === 1, 'V → 3 でレポートへ切り替わる')
 
 // 8. N で新規作成
-await page.keyboard.press('g'); await page.keyboard.press('1'); await wait(400)
+await page.keyboard.press('1'); await wait(400)
 await page.keyboard.press('n')
 await page.waitForSelector('dialog[open]')
 await page.keyboard.type('株式会社イーツーイー商会')
@@ -148,7 +148,7 @@ ok(await page.locator('dialog[open]').getByText('ショートカット').count()
 await page.keyboard.press('Escape'); await wait(200)
 
 // 10. ぱんくず: 取引先 → 関連する取引先責任者 → 途中を押して戻る
-await page.keyboard.press('g'); await page.keyboard.press('1'); await wait(400)
+await page.keyboard.press('1'); await wait(400)
 await page.getByText('株式会社アカツキ運輸').first().click(); await page.waitForSelector('aside')
 await page.locator('aside section').filter({ hasText: '取引先責任者' }).locator('[role=button]').first().click(); await wait(400)
 const trailOf = () => (new URL(page.url()).searchParams.get('peek') ?? '').split(',').filter(Boolean).map((p) => p.split(':')[0]).join(' > ')
@@ -204,7 +204,7 @@ await page.getByRole('button', { name: 'テーブルを削除' }).click(); await
 ok(await page.locator('nav[aria-label=メイン]').getByText('見積', { exact: true }).count() === 0 && await page.locator('dialog[open]').count() === 0, 'テーブルを削除すると、サイドバーから消える')
 
 // 12. 活動: 記録する → 時系列に出る → タスクの完了が活動に残り、戻すと消える
-await page.keyboard.press('g'); await page.keyboard.press('1'); await wait(400)
+await page.keyboard.press('1'); await wait(400)
 await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().click(); await page.waitForSelector('aside')
 await page.locator('aside').getByText('についての活動を記録する').click()
 await page.waitForSelector('aside form input[aria-label=件名]')
@@ -225,7 +225,7 @@ await mention.click(); await wait(700)
 const mentionTrail = /peek=accounts:[^,]+,accounts:/.test(decodeURIComponent(page.url()))
 ok(mentionTrail && await page.locator('aside section[aria-label=活動]').getByText('の活動で言及').count() === 1, '言及先の時系列に「〜の活動で言及」として残り、押すとその先が開く')
 await page.keyboard.press('Escape'); await wait(200)
-await page.keyboard.press('g'); await page.keyboard.press('4'); await wait(400)
+await page.keyboard.press('4'); await wait(400)
 const doneTitle = (await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().innerText()).trim()
 await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().click(); await page.waitForSelector('aside'); await wait(300)
 await page.locator('aside').getByRole('button', { name: /を開く$/ }).first().click(); await wait(500)
@@ -242,7 +242,7 @@ ok(await relatedTimeline.getByText(doneTitle, { exact: true }).count() === doneB
 await page.keyboard.press('Escape'); await wait(300)
 
 // 13. 数値の桁区切りと、パネルの幅
-await page.keyboard.press('g'); await page.keyboard.press('3'); await wait(400)
+await page.keyboard.press('3'); await wait(400)
 await page.locator('[role=row][data-row]').first().locator('[role=cell]').first().click(); await page.waitForSelector('aside'); await wait(400)
 const amount = page.locator('aside input[inputmode=numeric]').first()
 ok(/^¥[\d,]+$/.test(await amount.inputValue()), 'パネルの金額は桁区切りで見える', await amount.inputValue())
@@ -262,17 +262,21 @@ ok(Math.round((await page.locator('aside').boundingBox()).width) === Math.round(
 await page.keyboard.press('Escape'); await wait(200)
 ok((await page.locator('[role=tablist]').evaluate((el) => el.offsetHeight - el.clientHeight)) === 0, 'ビューのタブの行にスクロールバーが出ない')
 
-// 14. サイドバーの並べ替え(G → n も追随)、Google ドライブの項目
+// 14. サイドバーの並べ替え(1…9 も追随)、Google ドライブの項目
 {
   const nav = page.locator('nav[aria-label=メイン]')
   const src = nav.locator('a[href="/o/opportunities"]'), dst = nav.locator('a[href="/o/accounts"]')
+  // ゆっくり押しても(動かさなければ)ドラッグにならず、1 回で開く
+  const slow = await dst.boundingBox()
+  await page.mouse.move(slow.x + 40, slow.y + slow.height / 2); await page.mouse.down(); await wait(450); await page.mouse.up(); await wait(400)
+  ok(new URL(page.url()).pathname === '/o/accounts', 'サイドバーの行はゆっくり押しても 1 回で開く', page.url())
   const s = await src.boundingBox(), d = await dst.boundingBox()
   await page.mouse.move(s.x + 40, s.y + s.height / 2); await page.mouse.down(); await page.mouse.move(s.x + 40, s.y + 5, { steps: 3 }); await page.mouse.move(d.x + 40, d.y + 4, { steps: 10 }); await wait(150); await page.mouse.up(); await wait(600)
   // お気に入り(?view= 付き)は除き、テーブルの行だけを見る
   const order = await nav.locator('a[href^="/o/"]:not([href*="?"])').evaluateAll((els) => els.map((e) => e.getAttribute('href')))
   ok(order[0] === '/o/opportunities' && order[1] === '/o/accounts', 'サイドバーのテーブルをドラッグで並べ替えられる', order.join(' '))
-  await page.keyboard.press('g'); await page.keyboard.press('1'); await wait(400)
-  ok(page.url().includes('/o/opportunities'), 'G → 1 は並べ替え後の先頭へ')
+  await page.keyboard.press('1'); await wait(400)
+  ok(page.url().includes('/o/opportunities'), '1 は並べ替え後の先頭へ')
   await page.reload(); await page.waitForSelector('nav[aria-label=メイン]'); await wait(300)
   ok((await nav.locator('a[href^="/o/"]:not([href*="?"])').first().getAttribute('href')) === '/o/opportunities', '並びは保存される')
 }

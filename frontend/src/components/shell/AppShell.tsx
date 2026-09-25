@@ -28,7 +28,8 @@ function useGlobalHotkeys(meta: MetaResponse) {
   const { peek } = usePeek()
   const peekObject = findObject(meta, peek?.object)
   const peeked = useRecord(peekObject?.key, peek?.id)
-  const pendingG = useRef(0)
+  // G / V に続く 1 打を待つ(押した種類と時刻)
+  const pending = useRef<{ key: 'g' | 'v'; at: number } | null>(null)
 
   useKeydown((e) => {
     const ui = useUI.getState()
@@ -44,24 +45,32 @@ function useGlobalHotkeys(meta: MetaResponse) {
     const current = findObject(meta, currentKey)
     const key = e.key.toLowerCase()
 
-    // G に続く 1 打: テーブルやホームへ移動
-    if (Date.now() - pendingG.current < 1200) {
-      pendingG.current = 0
-      if (key === 'h') {
-        e.preventDefault()
-        navigate(homePath(meta))
-        return
-      }
-      if (/^[1-9]$/.test(key) && objects[Number(key) - 1]) {
-        e.preventDefault()
-        navigate(`/o/${objects[Number(key) - 1].key}`)
-        return
-      }
+    // G / V に続く 1 打: G → H はホームへ、V → n はビュー(タブ)の切り替え
+    const prefix = pending.current && Date.now() - pending.current.at < 1200 ? pending.current.key : null
+    pending.current = null
+    if (prefix === 'g' && key === 'h') {
+      e.preventDefault()
+      navigate(homePath(meta))
+      return
+    }
+    if (prefix === 'v' && /^[1-9]$/.test(key)) {
+      if (!current) return
+      const view = viewsOf(meta, current.key)[Number(key) - 1]
+      if (!view) return
+      e.preventDefault()
+      if (view.id === (params.get('view') ?? viewsOf(meta, current.key)[0]?.id)) return
+      setParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('view', view.id)
+        return next
+      })
+      return
     }
 
     switch (key) {
       case 'g':
-        pendingG.current = Date.now()
+      case 'v':
+        pending.current = { key, at: Date.now() }
         return
       case 'q': {
         e.preventDefault()
@@ -97,15 +106,12 @@ function useGlobalHotkeys(meta: MetaResponse) {
         return input ? input.focus() : toggle?.click()
       }
       default: {
-        if (!current || !/^[1-9]$/.test(key)) return
-        const view = viewsOf(meta, current.key)[Number(key) - 1]
-        if (!view || view.id === params.get('view')) return
+        // 数字だけ: サイドバーの上から n 番目のテーブルへ(並べ替えた順)
+        if (!/^[1-9]$/.test(key)) return
+        const target = objects[Number(key) - 1]
+        if (!target) return
         e.preventDefault()
-        setParams((prev) => {
-          const next = new URLSearchParams(prev)
-          next.set('view', view.id)
-          return next
-        })
+        if (target.key !== currentKey || location.search) navigate(`/o/${target.key}`)
       }
     }
   })

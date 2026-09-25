@@ -82,7 +82,7 @@ export function ViewTabs({
             type="button"
             role="tab"
             aria-selected={active}
-            title={active ? 'もう一度押すとメニュー' : i < 9 ? `${v.name} (${i + 1})` : v.name}
+            title={active ? 'もう一度押すとメニュー' : i < 9 ? `${v.name} (V → ${i + 1})` : v.name}
             onClick={(e) => (active ? setMenu({ view: v, anchor: e.currentTarget }) : onSelect(v.id))}
             onDoubleClick={() => setRenaming({ id: v.id, name: v.name })}
             className={cx(

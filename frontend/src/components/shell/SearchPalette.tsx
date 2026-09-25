@@ -64,7 +64,7 @@ export function SearchPalette({ meta }: { meta: MetaResponse }) {
           group: '移動',
           icon: <ObjectIcon icon={o.icon} color={o.color} size={16} />,
           label: o.label,
-          kbd: `G ${i + 1}`,
+          kbd: i < 9 ? `${i + 1}` : undefined,
           run: () => navigate(`/o/${o.key}`),
         }),
       ),

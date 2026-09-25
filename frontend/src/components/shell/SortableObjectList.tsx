@@ -1,6 +1,7 @@
 import { DragDropProvider } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import type { ObjectMeta } from '@/api/types'
+import { clickableSensors } from '@/lib/dnd'
 import { ObjectLink } from './ObjectLink'
 
 function SortableLink(props: { object: ObjectMeta; index: number; active: boolean; onNavigate: () => void }) {
@@ -8,7 +9,7 @@ function SortableLink(props: { object: ObjectMeta; index: number; active: boolea
   return <ObjectLink {...props} dragRef={ref} dragging={isDragSource} />
 }
 
-/** サイドバーのテーブルの並べ替え(順番は G → n のキーにもそのまま効く) */
+/** サイドバーのテーブルの並べ替え(順番は 1…9 のキーにもそのまま効く) */
 export function SortableObjectList({
   objects,
   activeKey,
@@ -22,6 +23,7 @@ export function SortableObjectList({
 }) {
   return (
     <DragDropProvider
+      sensors={clickableSensors}
       onDragEnd={(event) => {
         const { source } = event.operation
         if (event.canceled || !isSortable(source)) return
