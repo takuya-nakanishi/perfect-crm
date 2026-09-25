@@ -1,4 +1,4 @@
-// 画面の主要な操作が動くことを、実際のブラウザで確かめる(ログイン → 完了 → 追加 → 検索 → 編集 → カンバン → 作成 → ぱんくず → テーブルの追加と設定 → 活動 → 桁区切りとパネルの幅 → サイドバーの並べ替え → Google ドライブ)。
+// 画面の主要な操作が動くことを、実際のブラウザで確かめる(ログイン → 完了 → 追加 → 検索 → 編集 → カンバン → 作成 → ぱんくず → テーブルの追加と設定 → 活動 → 桁区切りとパネルの幅 → 一覧の列の幅 → サイドバーの並べ替え → Google ドライブ)。
 //
 //   npm run e2e                                  開発サーバ(http://127.0.0.1:5173)に対して
 //   ../scripts/e2e-http.sh                       本物の API + PostgreSQL(E2E 用の DB を作り直して)に対して
@@ -261,6 +261,34 @@ await sep.dblclick(); await wait(300)
 ok(Math.round((await page.locator('aside').boundingBox()).width) === Math.round(w0), 'ダブルクリックで元の幅')
 await page.keyboard.press('Escape'); await wait(200)
 ok((await page.locator('[role=tablist]').evaluate((el) => el.offsetHeight - el.clientHeight)) === 0, 'ビューのタブの行にスクロールバーが出ない')
+
+// 13b. 一覧の列の幅(05 §12): 見出しの右端をつまんで変える → ビューに保存 → 狭めても文字は隣の列へはみ出さない(J-042)→ ダブルクリックで中身に合わせる
+await page.goto(BASE + '/o/contacts'); await page.waitForSelector('[role=row][data-row]'); await wait(300)
+{
+  const header = (name) => page.getByRole('columnheader', { name, exact: true })
+  const handle = (name) => page.getByRole('separator', { name: `「${name}」の幅を変える(ダブルクリックで中身に合わせる)` })
+  const width = async (name) => Math.round((await header(name).boundingBox()).width)
+  const drag = async (name, dx) => {
+    await handle(name).scrollIntoViewIfNeeded()
+    const h = await handle(name).boundingBox()
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down()
+    await page.mouse.move(h.x + h.width / 2 + dx, h.y + h.height / 2, { steps: 6 }); await page.mouse.up(); await wait(400)
+  }
+  const w0 = await width('取引先'), next0 = (await header('役職').boundingBox()).x
+  await drag('取引先', 80)
+  ok(Math.abs(await width('取引先') - w0 - 80) <= 2 && Math.abs((await header('役職').boundingBox()).x - next0 - 80) <= 2, '見出しの右端をつまむと列の幅が変わり、右の列がずれる', `${w0} → ${await width('取引先')}`)
+  await page.reload(); await page.waitForSelector('[role=row][data-row]'); await wait(300)
+  ok(Math.abs(await width('取引先') - w0 - 80) <= 2, '列の幅はビューに保存される(再読み込み後も残る)', `${await width('取引先')}`)
+  const index = (await page.locator('[role=columnheader]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).indexOf('最終接触日')
+  // 日付の文字(セルの先頭の要素)がセルの右端を越えている行 / … で切れている行
+  const dates = () => page.locator('[role=row][data-row]').evaluateAll((rows, i) => rows.map((r) => [r.children[i], r.children[i].firstElementChild]).filter(([, text]) => text), index)
+  const spilled = () => page.locator('[role=row][data-row]').evaluateAll((rows, i) => rows.filter((r) => { const cell = r.children[i], text = cell.firstElementChild; return text && text.getBoundingClientRect().right > cell.getBoundingClientRect().right + 0.5 }).length, index)
+  const clipped = () => page.locator('[role=row][data-row]').evaluateAll((rows, i) => rows.filter((r) => { const text = r.children[i].firstElementChild; return text && text.scrollWidth > text.clientWidth + 1 }).length, index)
+  await drag('最終接触日', -300)
+  ok(await width('最終接触日') === 60 && (await dates()).length > 0 && await spilled() === 0 && await clipped() > 0, '最小まで狭めても、日付は列の中で切れる(隣の列へはみ出さない)', `${await width('最終接触日')}px、切れた行 ${await clipped()}`)
+  await handle('最終接触日').dblclick(); await wait(400)
+  ok(await width('最終接触日') > 60 && await clipped() === 0, 'ダブルクリックで中身に合わせる(切れていた日付が全部見える)', `${await width('最終接触日')}px`)
+}
 
 // 14. サイドバーの並べ替え(1…9 も追随)、Google ドライブの項目
 {

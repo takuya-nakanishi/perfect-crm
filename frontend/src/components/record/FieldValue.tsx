@@ -45,7 +45,10 @@ export function RecordChip({
 
 const stop = (e: MouseEvent) => e.stopPropagation()
 
-/** 列の値を型に応じて表示する。一覧のセル・カンバンのカード・パネルの 3 か所で使う */
+/**
+ * 列の値を型に応じて表示する。一覧のセル・カンバンのカード・パネルの 3 か所で使う。
+ * 幅が足りなければ … で省く(置かれた場所の端からはみ出さない)
+ */
 export function FieldValue({
   meta,
   object,
@@ -53,6 +56,7 @@ export function FieldValue({
   row,
   references,
   onOpenRecord,
+  singleLine,
 }: {
   meta: MetaResponse
   object: ObjectMeta
@@ -60,6 +64,8 @@ export function FieldValue({
   row: Row
   references: References
   onOpenRecord?: (object: string, id: string) => void
+  /** 一覧のセル: 複数選択を折り返さず 1 行に並べ、入りきらない分は端で切る */
+  singleLine?: boolean
 }) {
   if (field.type === 'relation' || field.type === 'polymorphic') {
     const hit = refFor(field, row, references)
@@ -90,11 +96,11 @@ export function FieldValue({
       })()
       if (values.length === 0) return null
       return (
-        <span className="flex min-w-0 flex-wrap gap-1">
+        <span className={cx('flex min-w-0 gap-1', singleLine ? 'overflow-hidden' : 'flex-wrap')}>
           {values.map((v) => {
             const option = optionOf(field, v)
             return option ? (
-              <Tag key={String(v)} color={option.color}>
+              <Tag key={String(v)} color={option.color} className={cx(singleLine && 'flex-none')}>
                 {option.label}
               </Tag>
             ) : null
@@ -107,22 +113,22 @@ export function FieldValue({
       return option ? <Tag color={option.color}>{option.label}</Tag> : <span>{String(value)}</span>
     }
     case 'currency':
-      return <span className="tabular-nums">{formatYen(Number(value))}</span>
+      return <span className="truncate tabular-nums">{formatYen(Number(value))}</span>
     case 'number':
-      return <span className="tabular-nums">{formatNumber(Number(value), field.scale)}</span>
+      return <span className="truncate tabular-nums">{formatNumber(Number(value), field.scale)}</span>
     case 'percent':
-      return <span className="tabular-nums">{formatPercent(Number(value), field.scale)}</span>
+      return <span className="truncate tabular-nums">{formatPercent(Number(value), field.scale)}</span>
     case 'date': {
       const iso = String(value)
       const tone = field.semantic === 'deadline' && !isClosed(object, row) ? dueTone(iso) : 'later'
       return (
-        <span className={cx('whitespace-nowrap', tone === 'overdue' && 'text-danger', tone === 'today' && 'font-bold text-accent-ink')}>
+        <span className={cx('truncate', tone === 'overdue' && 'text-danger', tone === 'today' && 'font-bold text-accent-ink')}>
           {formatDue(iso)}
         </span>
       )
     }
     case 'datetime':
-      return <span className="whitespace-nowrap text-ink-2">{formatDateTime(String(value))}</span>
+      return <span className="truncate text-ink-2">{formatDateTime(String(value))}</span>
     case 'checkbox':
       return value ? <Check size={15} className="text-accent" aria-label="はい" /> : null
     case 'email':
@@ -133,7 +139,7 @@ export function FieldValue({
       )
     case 'phone':
       return (
-        <a href={`tel:${String(value)}`} onClick={stop} className="tabular-nums underline-offset-4 hover:underline">
+        <a href={`tel:${String(value)}`} onClick={stop} className="truncate tabular-nums underline-offset-4 hover:underline">
           {String(value)}
         </a>
       )

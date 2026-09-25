@@ -55,7 +55,7 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 
 | 型 | `config` |
 |---|---|
-| `list` | `columns`(列と幅の比)、`filter`、`sort` |
+| `list` | `columns`(列と幅。幅は px で、見出しの右端をつまんで変える。05 §12)、`filter`、`sort` |
 | `kanban` | `group_by`(選択肢の列)、`card_fields`、`sum_field`(列見出しの合計)、`hidden_groups`(出さない列。完了済みなど)、`filter`、`sort` |
 | `report` | `widgets`。`stat`(数字 1 つ。`denominator_filter` で割合、`secondary` で補足、`tone: alert` で注意色)と、`bar` / `column`(`group_by`・`measure`・`color`・`order`・`limit`・`wide`) |
 

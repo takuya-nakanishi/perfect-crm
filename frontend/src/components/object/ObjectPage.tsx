@@ -21,6 +21,7 @@ import {
 } from "react-router";
 import type {
   Filter,
+  ListViewConfig,
   MetaResponse,
   ObjectMeta,
   Sort,
@@ -182,10 +183,14 @@ export function ObjectPage({ meta }: { meta: MetaResponse }) {
     v: ViewMeta,
     patch: { name?: string; pin?: ViewMeta["pin"] },
   ) => viewMutations.save(v, { ...toInput(v), ...patch } as ViewInput);
-  /** 一覧・カンバンの config の一部を変える(フィルター・並び替え) */
+  /** 一覧・カンバンの config の一部を変える(フィルター・並び替え、一覧の列の幅) */
   const saveConfig = (
     v: ViewMeta & { type: "list" | "kanban" },
-    patch: { filter?: Filter; sort?: Sort[] },
+    patch: {
+      filter?: Filter;
+      sort?: Sort[];
+      columns?: ListViewConfig["columns"];
+    },
   ) => {
     const input = toInput(v) as ViewInput & { type: "list" | "kanban" };
     viewMutations.save(v, {
@@ -395,6 +400,7 @@ export function ObjectPage({ meta }: { meta: MetaResponse }) {
           config={view.config}
           q={q}
           viewName={view.name}
+          onColumnsChange={(columns) => saveConfig(view, { columns })}
         />
       )}
       <Suspense fallback={null}>

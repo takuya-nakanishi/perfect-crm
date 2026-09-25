@@ -215,6 +215,7 @@ export type WebFormInput = Pick<WebForm, 'name' | 'object' | 'fields' | 'default
 export type ViewType = 'list' | 'kanban' | 'report'
 
 export interface ListViewConfig {
+  /** 表示する列(この順)。width は px(無ければ 160。画面は 60〜1200 に収めて描く。05 §12) */
   columns: { field: string; width?: number }[]
   filter?: Filter
   sort?: Sort[]
