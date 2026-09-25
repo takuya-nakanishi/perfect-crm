@@ -1,18 +1,19 @@
 import { CalendarDays, CornerDownLeft, Flag, Repeat } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type InputHTMLAttributes } from 'react'
 import type { FieldMeta, MetaResponse, References, Row, Scalar } from '@/api/types'
 import { FieldEditor } from '@/components/record/FieldEditor'
 import { Button, Kbd } from '@/components/ui/basics'
 import { Modal } from '@/components/ui/overlay'
 import { useCreateRecord } from '@/data/mutations'
 import { formatDue } from '@/lib/dates'
-import { parseQuickAdd } from '@/lib/quickAddParser'
+import { parseQuickAdd, splitQuickAdd, type QuickAddToken } from '@/lib/quickAddParser'
+import { optionOf } from '@/lib/records'
 import { usePeek } from '@/lib/usePeek'
 import { useUI, type QuickAddSeed } from '@/state/ui'
 
 /**
  * タスクの追加欄(Q)。どの画面からでも開き、1 行書いて Enter で閉じる。
- * 件名に「明日」「金曜」「9/30」「p1」と書けば、期限と優先度として読み取る。
+ * 件名に「明日」「金曜」「9/30」「p1」と書けば、期限と優先度として読み取り、その単語に色の地を敷く。
  */
 export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAddSeed }) {
   const close = useUI((s) => s.closeQuickAdd)
@@ -85,6 +86,15 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
   const priorityFromText = fields.priority && parsed.priority && !(fields.priority.key in manual) ? parsed.priority : null
   const repeatFromText = fields.repeat && parsed.repeat && !(fields.repeat.key in manual) ? fields.repeat.options?.find((o) => o.value === parsed.repeat) : null
 
+  // 読み取った単語の色の地。期限と繰り返しはアクセントの緑、優先度はその選択肢の色(P1 赤…。完了のチェックの輪と同じ)。
+  // 手で選び直した単語は、件名から外れるだけで値にはならないので、地を敷かずに線で囲む
+  const applied = { due: !!dueFromText, priority: !!priorityFromText, repeat: !!repeatFromText }
+  const priorityColor = fields.priority ? optionOf(fields.priority, parsed.priority)?.color : undefined
+  const toneOf = (kind: QuickAddToken['kind']): CSSProperties =>
+    !applied[kind]
+      ? { boxShadow: 'inset 0 0 0 1px var(--line-strong)' }
+      : { background: kind === 'priority' && priorityColor ? `var(--tag-${priorityColor}-bg)` : 'var(--accent-wash)' }
+
   return (
     <Modal label="タスクを追加" onClose={close} position="top" className="max-w-[640px]">
       <form
@@ -100,9 +110,11 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
         }}
       >
         <div className="px-4 pt-4">
-          <input
+          <TitleInput
             autoFocus
             value={text}
+            tokens={parsed.tokens}
+            toneOf={toneOf}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey) {
@@ -112,7 +124,6 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
             }}
             placeholder="やること(例: 見積を送る 明日 p1)"
             aria-label="件名"
-            className="h-9 w-full bg-transparent text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-3"
           />
           <input
             value={description}
@@ -174,5 +185,77 @@ export function QuickAddTask({ meta, seed }: { meta: MetaResponse; seed: QuickAd
         </footer>
       </form>
     </Modal>
+  )
+}
+
+/**
+ * 色の地を、単語の文字から左右へはみ出させる幅(px)。同じだけ負の余白で打ち消すので、文字の位置は動かない。
+ * 単語の間の空白は 3.8px しかない(16px の Figtree)。広げると「毎週 金曜」の地がつながって 1 つに見える
+ */
+const MARK_PAD = 1
+
+/**
+ * 件名の欄。読み取った単語の後ろに色の地を敷く(Todoist の追加欄と同じ見せ方)。
+ * 文字は入力欄がそのまま描き、色の地だけを、同じ書体・大きさ・太さで組んだ後ろの層に並べる。
+ * 文字まで上の層で描くと、日本語入力の変換中の下線や文節の区切りが見えなくなるため。
+ */
+function TitleInput({
+  tokens,
+  toneOf,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & {
+  value: string
+  tokens: QuickAddToken[]
+  toneOf: (kind: QuickAddToken['kind']) => CSSProperties
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  const layer = useRef<HTMLDivElement>(null)
+
+  // 長い件名で欄が横に流れたら、色の地も同じだけ流す。はみ出している側は、欄の縁で切る(地が縁の外に覗かない)
+  const follow = () => {
+    const el = input.current
+    if (!el || !frame.current || !layer.current) return
+    const left = el.scrollLeft
+    const right = el.scrollWidth - el.clientWidth - left
+    layer.current.style.transform = `translateX(${-left}px)`
+    frame.current.style.clipPath = `inset(0 ${right > 0 ? MARK_PAD : 0}px 0 ${left > 0 ? MARK_PAD : 0}px)`
+  }
+  useLayoutEffect(follow)
+
+  return (
+    <div className="relative">
+      <div
+        ref={frame}
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 flex items-center overflow-hidden"
+        style={{ left: -MARK_PAD, right: -MARK_PAD, paddingInline: MARK_PAD }}
+      >
+        <div ref={layer} className="text-lg font-bold whitespace-pre text-transparent">
+          {splitQuickAdd(props.value, tokens).map((part, i) =>
+            part.token ? (
+              <mark
+                key={part.token.kind}
+                className="rounded-[4px] bg-transparent py-px text-transparent"
+                style={{ marginInline: -MARK_PAD, paddingInline: MARK_PAD, ...toneOf(part.token.kind) }}
+              >
+                {part.text}
+              </mark>
+            ) : (
+              <Fragment key={i}>{part.text}</Fragment>
+            ),
+          )}
+        </div>
+      </div>
+      {/* スペルチェックの波線が「p1」の地の上に出ると、読み取った単語が誤りに見えるので切る */}
+      <input
+        ref={input}
+        {...props}
+        spellCheck={false}
+        onScroll={follow}
+        onSelect={follow}
+        className="relative h-9 w-full bg-transparent text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-ink-3"
+      />
+    </div>
   )
 }

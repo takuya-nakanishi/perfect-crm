@@ -51,6 +51,7 @@ L1 の対象は `frontend/src/lib/`(`filter.ts`・`dates.ts`・`quickAddParser.t
 | IO-045 | 利用者 | 日付 | 表記 | L1 | `parseQuickAdd`: 全角の「ｐ１」や「９／３０」も読む(NFKC) | `quickAddParser.test.ts` | — |
 | IO-046 | システム | 日付 | 整合 | L1 | `resolveDateMacro`: `$today+N` / `$today-N` / `$start_of_month` / `$end_of_month`。知らないマクロは null | `dates.test.ts` | — |
 | IO-047 | システム | 日付 | 整合 | L1 | `addMonths`(区間の計算用): 日を 1 日に固定して月を進める(`2026-01-31` + 1 → `2026-02-01`、12 月 + 1 → 翌年 1 月)。日を保つ計算は `nextDue`(IO-085)の側 | `dates.test.ts` | — |
+| IO-048 | 利用者 | 日付 | 表記 | L1 | `parseQuickAdd`: 読み取った単語の位置(`start` / `end`。入力の添字)を返す。`splitQuickAdd` は入力を読み取った単語とそのほかに切り分け、つなげると入力に戻る。同じ語の 2 つめ(件名に残る方)は切り出さない | `quickAddParser.test.ts` | — |
 
 ## 4. CSV(`mocks/csv.ts`)
 

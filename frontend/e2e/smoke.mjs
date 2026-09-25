@@ -42,6 +42,20 @@ let failed = 0
 const ok = (cond, label, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? '  — ' + extra : ''}`); if (!cond) failed++ }
 const rows = () => page.locator('[role=table] [role=row][data-row]').count()
 const wait = (ms) => page.waitForTimeout(ms)
+// タスクの追加欄で、色の地(mark)の中心と、同じ書体で測った単語の中心の差(px)。欄が横に流れていれば、その分も含めて比べる
+const markDrift = () => page.evaluate(() => {
+  const input = document.querySelector('dialog[open] input[aria-label=件名]')
+  const style = getComputedStyle(input)
+  const ctx = document.createElement('canvas').getContext('2d')
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+  const left = input.getBoundingClientRect().left
+  return [...document.querySelectorAll('dialog[open] mark')].map((m) => {
+    const r = m.getBoundingClientRect()
+    const before = input.value.slice(0, input.value.indexOf(m.textContent))
+    const center = ctx.measureText(before).width + ctx.measureText(m.textContent).width / 2 - input.scrollLeft
+    return Math.abs(r.left + r.width / 2 - left - center)
+  })
+})
 
 // 1. 未ログインならログイン画面へ。ログイン後は今日のタスクへ
 await page.goto(BASE + '/o/accounts')
@@ -77,9 +91,20 @@ await page.keyboard.press('q')
 await page.waitForSelector('dialog[open] input[aria-label=件名]')
 await page.keyboard.type('E2E のタスク 今日 p2'); await wait(100)
 ok(await page.getByText('期限を今日にします').count() === 1, '件名から期限を読み取る')
+const marked = await page.locator('dialog[open] mark').allTextContents()
+ok(marked.join(' ') === '今日 p2', '読み取った単語に色の地を敷く', marked.join(' / '))
+const drift = await markDrift()
+ok(drift.length === 2 && drift.every((d) => d < 1), '色の地が件名の文字に重なる', drift.map((d) => d.toFixed(2)).join(' / '))
 await page.keyboard.press('Enter'); await wait(800)
 ok(await page.locator('dialog[open]').count() === 0, 'Enter で追加して閉じる')
 ok(await page.getByText('E2E のタスク', { exact: true }).count() >= 1, '追加したタスクが「今日」に出る')
+// 長い件名で欄が横に流れても、色の地は文字に付いてくる(追加せずに閉じる)
+await page.keyboard.press('q'); await page.waitForSelector('dialog[open] input[aria-label=件名]')
+await page.keyboard.type('取引先の担当者に、修正した見積書と納期の回答と来月の訪問日程をまとめてメールで送る 金曜 p3'); await wait(100)
+const scrolled = await page.locator('dialog[open] input[aria-label=件名]').evaluate((el) => el.scrollLeft)
+const longDrift = await markDrift()
+ok(scrolled > 0 && longDrift.length === 2 && longDrift.every((d) => d < 1), '長い件名で欄が流れても、色の地が文字に付いてくる', `scrollLeft ${scrolled} / ${longDrift.map((d) => d.toFixed(2)).join(' / ')}`)
+await page.keyboard.press('Escape'); await wait(200)
 
 // 5. / で検索 → レコードを開く
 await page.keyboard.press('/')

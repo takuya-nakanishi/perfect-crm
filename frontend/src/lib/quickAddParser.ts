@@ -12,8 +12,17 @@ export interface ParsedQuickAdd {
   priority: string | null
   /** 繰り返しの規則(「毎週」など) */
   repeat: string | null
-  /** 読み取った単語(画面で「こう解釈した」と見せるため) */
-  tokens: { text: string; kind: 'due' | 'priority' | 'repeat' }[]
+  /** 読み取った単語。入力の並びどおり(追加欄で、この単語に色の地を敷く) */
+  tokens: QuickAddToken[]
+}
+
+export interface QuickAddToken {
+  /** 打ったままの字 */
+  text: string
+  kind: 'due' | 'priority' | 'repeat'
+  /** 入力の中の位置(start は含み、end は含まない。String の添字と同じ数え方) */
+  start: number
+  end: number
 }
 
 const WEEKDAYS = '日月火水木金土'
@@ -71,23 +80,25 @@ function parseDateWord(word: string, today: string): string | null {
 export function parseQuickAdd(input: string, today = todayISO()): ParsedQuickAdd {
   const out: ParsedQuickAdd = { title: '', due_date: null, priority: null, repeat: null, tokens: [] }
   const rest: string[] = []
-  for (const word of input.split(/[\s　]+/).filter(Boolean)) {
+  for (const m of input.matchAll(/[^\s　]+/g)) {
+    const word = m[0]
+    const token = { text: word, start: m.index, end: m.index + word.length }
     const priority = /^[pPｐＰ]([1-4１-４])$/.exec(word)
     if (priority && !out.priority) {
       out.priority = `p${priority[1].normalize('NFKC')}`
-      out.tokens.push({ text: word, kind: 'priority' })
+      out.tokens.push({ ...token, kind: 'priority' })
       continue
     }
     const repeat = out.repeat ? null : REPEAT_WORDS[word.normalize('NFKC')]
     if (repeat) {
       out.repeat = repeat
-      out.tokens.push({ text: word, kind: 'repeat' })
+      out.tokens.push({ ...token, kind: 'repeat' })
       continue
     }
     const due = out.due_date ? null : parseDateWord(word, today)
     if (due) {
       out.due_date = due
-      out.tokens.push({ text: word, kind: 'due' })
+      out.tokens.push({ ...token, kind: 'due' })
       continue
     }
     rest.push(word)
@@ -95,5 +106,21 @@ export function parseQuickAdd(input: string, today = todayISO()): ParsedQuickAdd
   out.title = rest.join(' ')
   // 繰り返しだけ書いたら、最初の回は今日
   if (out.repeat && !out.due_date) out.due_date = today
+  return out
+}
+
+/**
+ * 入力を、読み取った単語とそのほかの文字に切り分ける(つなげると入力に戻る)。
+ * 追加欄は、これを入力欄と同じ文字組みで後ろに並べ、読み取った単語にだけ色の地を敷く。
+ */
+export function splitQuickAdd(input: string, tokens: QuickAddToken[]): { text: string; token: QuickAddToken | null }[] {
+  const out: { text: string; token: QuickAddToken | null }[] = []
+  let at = 0
+  for (const token of tokens) {
+    if (token.start > at) out.push({ text: input.slice(at, token.start), token: null })
+    out.push({ text: input.slice(token.start, token.end), token })
+    at = token.end
+  }
+  if (at < input.length) out.push({ text: input.slice(at), token: null })
   return out
 }

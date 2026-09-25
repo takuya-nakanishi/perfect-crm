@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseQuickAdd } from './quickAddParser'
+import { parseQuickAdd, splitQuickAdd, type ParsedQuickAdd } from './quickAddParser'
 
 // テストケース表: docs/tests/io.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const today = '2026-09-22' // 火曜日
+
+/** 読み取った単語の字と種類(位置は IO-048 で見る) */
+const words = (parsed: ParsedQuickAdd) => parsed.tokens.map(({ text, kind }) => ({ text, kind }))
 
 describe('parseQuickAdd', () => {
   it('IO-042 「見積を送る 明日 p1」は件名・期限・優先度に分かれ、「今日の議事録を送る」の「今日」は件名に残る', () => {
@@ -11,7 +14,7 @@ describe('parseQuickAdd', () => {
     expect(parsed.due_date).toBe('2026-09-23')
     expect(parsed.priority).toBe('p1')
     expect(parsed.repeat).toBeNull()
-    expect(parsed.tokens).toEqual([
+    expect(words(parsed)).toEqual([
       { text: '明日', kind: 'due' },
       { text: 'p1', kind: 'priority' },
     ])
@@ -21,7 +24,7 @@ describe('parseQuickAdd', () => {
     expect(inTitle.title).toBe('今日の議事録を送る')
     expect(inTitle.due_date).toBeNull()
     expect(inTitle.priority).toBeNull()
-    expect(inTitle.tokens).toEqual([])
+    expect(words(inTitle)).toEqual([])
 
     // 月末をまたいでも明日は翌日
     expect(parseQuickAdd('見積を送る 明日 p1', '2026-09-30').due_date).toBe('2026-10-01')
@@ -59,7 +62,7 @@ describe('parseQuickAdd', () => {
     expect(weekly.repeat).toBe('weekly')
     // 期限を書かなければ、最初の回は今日
     expect(weekly.due_date).toBe(today)
-    expect(weekly.tokens).toEqual([{ text: '毎週', kind: 'repeat' }])
+    expect(words(weekly)).toEqual([{ text: '毎週', kind: 'repeat' }])
 
     expect(parseQuickAdd('日報を書く 平日', today).repeat).toBe('weekdays')
     expect(parseQuickAdd('定例に出る 隔週', today).repeat).toBe('biweekly')
@@ -72,7 +75,7 @@ describe('parseQuickAdd', () => {
     const twice = parseQuickAdd('毎週 毎月の振り返り 毎月', today)
     expect(twice.repeat).toBe('weekly')
     expect(twice.title).toBe('毎月の振り返り 毎月')
-    expect(twice.tokens).toEqual([{ text: '毎週', kind: 'repeat' }])
+    expect(words(twice)).toEqual([{ text: '毎週', kind: 'repeat' }])
   })
 
   it('IO-045 全角の「ｐ１」「９／３０」も読む(NFKC)', () => {
@@ -81,7 +84,7 @@ describe('parseQuickAdd', () => {
     expect(parsed.due_date).toBe('2026-09-30')
     expect(parsed.priority).toBe('p1')
     // 読み取った単語は打ったままの字で見せる
-    expect(parsed.tokens).toEqual([
+    expect(words(parsed)).toEqual([
       { text: '９／３０', kind: 'due' },
       { text: 'ｐ１', kind: 'priority' },
     ])
@@ -92,5 +95,32 @@ describe('parseQuickAdd', () => {
     expect(upper.priority).toBe('p2')
     expect(upper.due_date).toBe('2026-09-25')
     expect(parseQuickAdd('見積を送る １０月１日', today).due_date).toBe('2026-10-01')
+  })
+
+  it('IO-048 読み取った単語の位置を返し、入力を読み取った単語とそのほかに切り分ける。同じ語の 2 つめ(件名に残る方)は切り出さない', () => {
+    // 位置は入力の添字。空白が続いても、全角の空白でも、打ったままの位置を指す
+    const input = '明日  見積を送る　p1 明日'
+    const parsed = parseQuickAdd(input, today)
+    expect(parsed.tokens).toEqual([
+      { text: '明日', kind: 'due', start: 0, end: 2 },
+      { text: 'p1', kind: 'priority', start: 10, end: 12 },
+    ])
+    for (const t of parsed.tokens) expect(input.slice(t.start, t.end)).toBe(t.text)
+    // 2 つめの「明日」は期限にならず件名に残るので、色の地を敷く対象にしない
+    expect(parsed.title).toBe('見積を送る 明日')
+
+    const parts = splitQuickAdd(input, parsed.tokens)
+    expect(parts.map((p) => [p.text, p.token?.kind ?? null])).toEqual([
+      ['明日', 'due'],
+      ['  見積を送る　', null],
+      ['p1', 'priority'],
+      [' 明日', null],
+    ])
+    // つなげると入力に戻る(入力欄と同じ文字組みで後ろに並べるため)
+    expect(parts.map((p) => p.text).join('')).toBe(input)
+
+    // 読み取った単語が無ければ入力 1 つ、空なら何も無い
+    expect(splitQuickAdd('今日の議事録を送る', parseQuickAdd('今日の議事録を送る', today).tokens)).toEqual([{ text: '今日の議事録を送る', token: null }])
+    expect(splitQuickAdd('', [])).toEqual([])
   })
 })
