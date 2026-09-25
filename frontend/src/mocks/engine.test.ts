@@ -1089,6 +1089,33 @@ describe('テーブル設定(mocks/engine.ts)', () => {
     const report = getMeta().views.find((v) => v.type === 'report' && v.object === 'activities')
     if (report) expect(report.config).toBeTruthy()
   })
+
+  it('META-097 文字の項目を外すと、その値では q の絞り込みにも横断検索にも当たらず、同じ列名で戻せばまた当たる', () => {
+    const before = getMeta().objects.find((o) => o.key === 'accounts')!
+    const bodyFields = before.fields
+      .filter((f) => !f.readonly)
+      .map(({ key, label, type, required, options, target, max_length, scale, placeholder }) => ({ key, label, type, required, options, target, max_length, scale, placeholder }))
+    const body = (fields: ObjectInput['fields']): ObjectInput => ({ key: 'accounts', label: before.label, icon: before.icon, color: before.color, fields })
+    const id = table('accounts').find((r) => r.name === '株式会社アオバ精機')!.id as string
+    // 住所にだけある語(名前・ほかの文字の項目には無い)
+    const listed = () => query('accounts', { q: '新横浜' }, null).records.map((r) => r.id)
+    const searched = () => searchAll('新横浜').filter((h) => h.object === 'accounts').map((h) => h.id)
+    expect(listed()).toContain(id)
+    expect(searched()).toContain(id)
+    const updatedAt = table('accounts').find((r) => r.id === id)!.updated_at
+
+    // 住所を外す → 値は行に残るが、どちらの検索にも当たらない。値は変わらないので更新日時も動かない
+    expect(statusOf(() => updateObject('accounts', body(bodyFields.filter((f) => f.key !== 'address'))))).toBeNull()
+    expect(table('accounts').find((r) => r.id === id)!.address).toBe('神奈川県横浜市港北区新横浜 0-0-0')
+    expect(table('accounts').find((r) => r.id === id)!.updated_at).toBe(updatedAt)
+    expect(listed()).not.toContain(id)
+    expect(searched()).not.toContain(id)
+
+    // 同じ列名で戻す → また当たる
+    expect(statusOf(() => updateObject('accounts', body(bodyFields)))).toBeNull()
+    expect(listed()).toContain(id)
+    expect(searched()).toContain(id)
+  })
 })
 
 // テストケース表: docs/tests/io.md

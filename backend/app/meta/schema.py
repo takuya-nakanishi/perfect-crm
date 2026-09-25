@@ -12,6 +12,7 @@ from sqlalchemy import Connection, func, select
 from app.errors import bad_request, not_found
 from app.meta import ddl, store
 from app.meta.tables import meta_fields, meta_objects, meta_views
+from app.records.search import rebuild_search_text
 
 KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 RESERVED_FIELD_KEYS = {"id", "created_at", "updated_at"}
@@ -295,6 +296,12 @@ def update_object(conn: Connection, key: str, body: dict[str, Any], user_id: Any
     for field in added:
         ddl.run(conn, ddl.add_column_statements(key, field), object_key=key, user_id=user_id)
     ensure_views(conn, store.object_meta(conn, key), added)
+
+    # 文字の項目を外した・戻したら、検索用の列を作り直す(外した項目の値で当たらないように。02 §5)
+    text_before = {f["key"] for f in editable if f["type"] in TEXT_TYPES}
+    text_after = {f["key"] for f in kept if f["type"] in TEXT_TYPES}
+    if text_before - text_after or (text_after - text_before) & removed.keys():
+        rebuild_search_text(conn, key)
 
 
 def _check_completion_options(obj: dict[str, Any], fields: list[dict[str, Any]]) -> None:

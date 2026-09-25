@@ -91,3 +91,4 @@ L2 の対象は `frontend/src/mocks/schema.ts`(`createObject` / `updateObject` /
 | META-094 | システム | 整合 | 整合 | L2 | レポートの部品が指す項目を外す → その部品だけ外れ、全部無くなればビューが出ない。関連先の `related_object` の列を指す部品は残る | `engine.test.ts` | — |
 | META-095 | システム | 整合 | 整合 | L2 | `subtitle_field` の項目を外す → `subtitle_field` が消える(無い項目を指さない) | `engine.test.ts` | — |
 | META-096 | システム | 整合 | 整合 | L2 | 関連先(`polymorphic`)を指すビューの定義 → 論理名(`related`)でも実際の 2 列(`related_object`・`related_id`)でも `GET /meta` で外れない | `engine.test.ts` | — |
+| META-097 | システム | 整合 | 整合 | L2 | 文字の項目を外す → その値では `q` の絞り込みにも横断検索にも当たらない(値は行に残る)。同じ列名で戻せばまた当たる。外しても `updated_at` は動かない | `engine.test.ts` | `test_meta_write.py` |

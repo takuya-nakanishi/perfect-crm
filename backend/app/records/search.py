@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from sqlalchemy import Connection, case, select
+from sqlalchemy import Connection, bindparam, case, select
 
 from app.meta import store
-from app.records.normalize import normalize_text
+from app.records.normalize import normalize_text, search_text_of
 from app.records.refs import display_value, ref_of
 from app.records.tables import table_of
 
@@ -51,3 +51,20 @@ def _subtitle(conn: Connection, obj: dict[str, Any], values: dict[str, Any]) -> 
     if obj.get("subtitle_field"):
         return display_value(conn, obj, values, obj["subtitle_field"])
     return None
+
+
+def rebuild_search_text(conn: Connection, object_key: str) -> None:
+    """検索用の列(`search_text`)を、いまの項目の定義で全行作り直す(削除中の行も)。
+
+    テーブル設定で文字の項目を外した・戻したときに呼ぶ。外した項目の値で当たり続けないように(02 §5。
+    モックは検索のたびに見えている項目から作るので、この列を持たない)。値は変えないので `updated_at` は動かさない。
+    """
+    obj = store.object_meta(conn, object_key)
+    table = table_of(obj)
+    rows = [
+        {"_id": row.id, "_search_text": search_text_of(obj["fields"], dict(row._mapping))}
+        for row in conn.execute(select(table))
+    ]
+    if rows:
+        stmt = table.update().where(table.c.id == bindparam("_id")).values(search_text=bindparam("_search_text"))
+        conn.execute(stmt, rows)

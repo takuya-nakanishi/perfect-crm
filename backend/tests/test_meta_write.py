@@ -111,6 +111,30 @@ def test_項目を外しても値は残り_同じ列名で戻せば復活する(
     assert back["phase"] == "doing"
 
 
+def test_META_097_文字の項目を外すと検索に当たらず_戻せばまた当たる(admin: TestClient) -> None:
+    with_memo = simple_table()
+    with_memo["fields"].append({"key": "memo", "label": "メモ", "type": "text"})
+    admin.post("/api/v1/meta/objects", json=with_memo)
+    record = admin.post("/api/v1/objects/projects/records", json={"name": "案件", "memo": "かささぎ"}).json()["record"]
+
+    def listed() -> int:
+        return admin.post("/api/v1/objects/projects/records/query", json={"q": "カササギ"}).json()["total"]
+
+    def searched() -> list[str]:
+        hits = admin.get("/api/v1/search", params={"q": "カササギ"}).json()["hits"]
+        return [h["id"] for h in hits if h["object"] == "projects"]
+
+    assert listed() == 1 and searched() == [record["id"]]
+    # メモを外す → 値は残るが、どちらの検索にも当たらない。値は変わらないので更新日時も動かない
+    assert admin.put("/api/v1/meta/objects/projects", json=simple_table()).status_code == 200
+    assert listed() == 0 and searched() == []
+    after = admin.get(f"/api/v1/objects/projects/records/{record['id']}").json()["record"]
+    assert after["updated_at"] == record["updated_at"]
+    # 同じ列名で戻す → また当たる
+    assert admin.put("/api/v1/meta/objects/projects", json=with_memo).status_code == 200
+    assert listed() == 1 and searched() == [record["id"]]
+
+
 def test_同じ列名を別の型では戻せない(admin: TestClient) -> None:
     admin.post("/api/v1/meta/objects", json=simple_table())
     without = simple_table()
