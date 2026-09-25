@@ -54,7 +54,7 @@ def ref_of(conn: Connection, object_key: str, ids: list[str]) -> dict[str, dict[
     except Exception:
         return {}
     table = table_of(obj)
-    # 論理削除中でも表示名は解く(関連リストに出さないだけで、参照は保つ。08 §2 の 15)
+    # 削除中かは見ない。削除したレコードを指す参照は、削除のときに外している(`records/detach.py`。02 §4)
     rows = conn.execute(select(table).where(table.c.id.in_(ids)))
     out: dict[str, dict[str, Any]] = {}
     for row in rows:

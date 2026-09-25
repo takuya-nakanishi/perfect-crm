@@ -80,6 +80,28 @@ export function liveObjects(): ObjectMeta[] {
     }))
 }
 
+/** 参照を持ちうる列。polymorphic は「どのテーブルか」の列(`objectColumn`)も持ち、相手のテーブル(`target`)は決まらない */
+export interface RefColumn {
+  object: string
+  column: string
+  objectColumn?: string
+  target?: string
+}
+
+/**
+ * 参照を持ちうる全部の列(削除したレコードを指す参照を外すときに使う。engine.ts の detach)。
+ * 外した項目の列も、削除中のテーブルの列も含める。どちらも戻せるので、戻したときに消えた相手を指さないように
+ */
+export function referenceColumns(): RefColumn[] {
+  return schema.objects.flatMap((o) =>
+    [...o.fields, ...Object.values(schema.removedFields?.[o.key] ?? {})].flatMap((f): RefColumn[] => {
+      if (f.type === 'relation' && f.target) return [{ object: o.key, column: f.key, target: f.target }]
+      if (f.type === 'polymorphic' && f.columns) return [{ object: o.key, column: f.columns.id, objectColumn: f.columns.object }]
+      return []
+    }),
+  )
+}
+
 /** 無くなった項目を指している部分を外したビュー。成り立たなくなったもの(分ける列の無いカンバン)は null */
 /**
  * 無い項目を指す条件を外す。外すと条件が緩んで表示が広がるので、02 §5 の決まりとして明記している。

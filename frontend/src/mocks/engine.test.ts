@@ -2479,6 +2479,50 @@ describe('更新は渡した列だけ(mocks/engine.ts の update)', () => {
     expect(table('accounts').filter((r) => r.id === id)).toHaveLength(1)
     expect(table('accounts')).toHaveLength(count)
   })
+
+  it('REC-068 remove で、そのレコードを指していた参照(relation・関連先)が空になり、絞り込みの「空」にも当たる。restore で付け直す', () => {
+    const account = insert('accounts', { name: '消す取引先' }, null).record
+    const contact = insert('contacts', { name: '所属する人', account_id: account.id }, null).record
+    const related = { related_object: 'accounts', related_id: account.id }
+    const task = insert('tasks', { title: '関連先のタスク', ...related }, null).record
+    const activity = insert('activities', { subject: '電話した', ...related }, null).record
+
+    remove('accounts', account.id)
+    const got = find('contacts', contact.id)!
+    expect(got.record.account_id).toBeNull()
+    expect(got.references.accounts).toBeUndefined()
+    // 利用者が変えたのではないので、指していた側の更新日時は動かさない
+    expect(got.record.updated_at).toBe(contact.updated_at)
+    expect(find('tasks', task.id)!.record).toMatchObject({ related_object: null, related_id: null })
+    expect(find('activities', activity.id)!.record).toMatchObject({ related_object: null, related_id: null })
+    // 画面の表示だけでなく、絞り込みも同じ値を見る(「取引先が空」に当たる)
+    expect(query('contacts', { filter: { field: 'account_id', op: 'is_empty' } }, null).records.map((r) => r.id)).toContain(contact.id)
+
+    restore('accounts', account)
+    const back = find('contacts', contact.id)!
+    expect(back.record.account_id).toBe(account.id)
+    expect(back.references.accounts?.[account.id]?.name).toBe('消す取引先')
+    expect(find('tasks', task.id)!.record).toMatchObject(related)
+    expect(find('activities', activity.id)!.record).toMatchObject(related)
+  })
+
+  it('REC-069 削除中に別の値を入れた参照は、restore しても上書きしない。先に消した行が指していた参照も外れ、戻しても消えた相手を指さない', () => {
+    const gone = insert('accounts', { name: '消す取引先' }, null).record
+    const other = insert('accounts', { name: '移り先' }, null).record
+    const moved = insert('contacts', { name: '移った人', account_id: gone.id }, null).record
+    const trashed = insert('contacts', { name: '先に消した人', account_id: gone.id }, null).record
+
+    // 責任者を先に消し、そのあと取引先を消す
+    remove('contacts', trashed.id)
+    remove('accounts', gone.id)
+    update('contacts', moved.id, { account_id: other.id }, null)
+    // 責任者を戻しても(画面が持っていた行は取引先を指したまま)、消えた取引先は指していない
+    expect(restore('contacts', trashed).record.account_id).toBeNull()
+
+    restore('accounts', gone)
+    expect(find('contacts', moved.id)!.record.account_id).toBe(other.id)
+    expect(find('contacts', trashed.id)!.record.account_id).toBe(gone.id)
+  })
 })
 
 describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
@@ -2658,6 +2702,16 @@ describe('作成の検証: 数値の列(mocks/engine.ts の insert)', () => {
 
     // 必須の列を埋める更新は、別の必須の列が空のままでも通る
     expect(update('opportunities', id, { name: '名前を埋める' }, null)!.record).toMatchObject({ name: '名前を埋める', account_id: null })
+  })
+
+  it('REC-085 削除中のレコードは参照に入れられない(insert も update も 400。行は変わらない)', () => {
+    const gone = insert('accounts', { name: '消した取引先' }, null).record
+    remove('accounts', gone.id)
+    expect(statusOf(() => insert('contacts', { name: '人', account_id: gone.id }, null))).toBe(400)
+    expect(statusOf(() => insert('tasks', { title: 'タスク', related_object: 'accounts', related_id: gone.id }, null))).toBe(400)
+    const contact = insert('contacts', { name: '人' }, null).record
+    expect(statusOf(() => update('contacts', contact.id, { account_id: gone.id }, null))).toBe(400)
+    expect(find('contacts', contact.id)!.record.account_id).toBeNull()
   })
 })
 

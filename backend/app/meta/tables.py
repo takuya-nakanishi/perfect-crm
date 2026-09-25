@@ -144,6 +144,23 @@ activity_mentions = Table(
     PrimaryKeyConstraint("activity_id", "object_key", "record_id"),
 )
 
+# 削除したレコードを指していた参照の控え(02 §4)。削除のときに指している側の列を空にしてここへ残し、
+# 元に戻したら付け直す。業務テーブルは動的に作られるので FK は張らない
+detached_refs = Table(
+    "detached_refs",
+    metadata,
+    # 削除したレコード
+    Column("object_key", Text, nullable=False),
+    Column("record_id", UUID(as_uuid=True), nullable=False),
+    # それを指していた行と列。polymorphic は「どのテーブルか」の列(`ref_object_column`)も空にしている
+    Column("ref_object_key", Text, nullable=False),
+    Column("ref_record_id", UUID(as_uuid=True), nullable=False),
+    Column("ref_column", Text, nullable=False),
+    Column("ref_object_column", Text, nullable=True),
+    _ts("at"),
+    PrimaryKeyConstraint("object_key", "record_id", "ref_object_key", "ref_record_id", "ref_column"),
+)
+
 # 業務テーブルが必ず持つ列(DDL 経路が足す)。名前はメタデータの項目に使えない(02 §5 の予約)
 SYSTEM_COLUMNS = ("id", "created_at", "updated_at", "deleted_at", "search_text")
 
@@ -156,6 +173,7 @@ SYSTEM_TABLES = frozenset(
         "meta_views",
         "ddl_log",
         "activity_mentions",
+        "detached_refs",
         "mcp_tokens",
         "web_forms",
         "google_accounts",

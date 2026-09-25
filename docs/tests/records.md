@@ -58,6 +58,9 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 | REC-065 | システム | 編集 | 整合 | L2 | `update`: 渡した列だけが変わる(他の列はそのまま)。無い ID → null | `engine.test.ts` | — |
 | REC-066 | 利用者 | 削除 | 可逆 | L2 | `remove` → 行が消え `find` は null。`restore`(消した行)→ 同じ id で戻る。2 回 restore しても 1 行 | `engine.test.ts` | — |
 | REC-067 | 利用者 | 削除 | 可逆 | L3 | 利用者: パネルの削除 → 一覧から消え、トーストの「元に戻す」で戻る。ぱんくずの途中なら 1 つ前へ戻る | — | — |
+| REC-068 | 利用者 | 削除 | 整合 | L2 | `remove` → そのレコードを指していた参照(relation・関連先)が空になる。`find` の `references` にも出ず、絞り込みの「空」に当たる。指していた側の `updated_at` は動かない。`restore` → 付け直す(02 §4。J-044) | `engine.test.ts` | `test_records_write.py` |
+| REC-069 | 利用者 | 削除 | 可逆 | L2 | 削除中に別の値を入れた参照は、`restore` しても上書きしない。先に消した行が指していた参照も外れ、その行を戻しても消えた相手を指さない(相手を戻せば付け直す) | `engine.test.ts` | `test_records_write.py` |
+| REC-070 | システム | 削除 | 整合 | L4 | 起動時の後始末(`app.cli init` の `detach_dangling`): 削除中のレコードを指したまま残っている参照(控えを持つ前に消したもの)を外して控える。2 回目は 0 件。控えがあるので `restore` で付け直す | `test_records_write.py`(pytest) | — |
 
 ## 5. 検証(サーバの型と参照整合。04 §11)
 
@@ -68,3 +71,4 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 | REC-082 | 外部 | 検証 | 安全弁 | L2 | `insert`: 参照の列に無い ID → 400。利用者の列に無い ID → 400。チェックの列に文字 → 400 | `engine.test.ts` | — |
 | REC-083 | 外部 | 検証 | 安全弁 | L2 | `insert`: 選択肢に無い値 → 400。文字の列が `max_length` ちょうどは通り、+1 文字は 400(richtext は書式を落とした長さ) | `engine.test.ts` | — |
 | REC-084 | 外部 | 検証 | 安全弁 | L2 | `update`: 本文に無い列は検証しない(必須の列が既に空でも、他の列の更新は通る) | `engine.test.ts` | — |
+| REC-085 | 外部 | 検証 | 安全弁 | L2 | `insert` / `update`: 削除中のレコードを参照の列・関連先に入れる → 400。行は変わらない | `engine.test.ts` | `test_records_write.py` |

@@ -11,6 +11,7 @@ from app.errors import bad_request, not_found
 from app.meta import store
 from app.meta.tables import SYSTEM_COLUMNS, activity_mentions
 from app.meta.tables import users as users_table
+from app.records.detach import detach, reattach
 from app.records.filters import Context, compile_filter
 from app.records.normalize import normalize_text, search_text_of
 from app.records.recurrence import copy_for_next, due_field_of, next_due
@@ -186,7 +187,7 @@ def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, A
 
 
 def remove(conn: Connection, object_key: str, record_id: str) -> None:
-    """論理削除(02 §4)。画面の「元に戻す」は `restore` でこれを外すだけ。"""
+    """論理削除(02 §4)。このレコードを指している参照は外して控える(`detach`)。画面の「元に戻す」は `restore`。"""
     obj = store.object_meta(conn, object_key)
     table = table_of(obj)
     result = conn.execute(
@@ -196,9 +197,11 @@ def remove(conn: Connection, object_key: str, record_id: str) -> None:
     )
     if result.rowcount == 0:
         raise not_found("レコードがありません")
+    detach(conn, object_key, record_id)
 
 
 def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]:
+    """論理削除を外し、削除のときに外した参照を付け直す(その間に別の値を入れた列はそのまま)。"""
     obj = store.object_meta(conn, object_key)
     table = table_of(obj)
     result = conn.execute(
@@ -208,6 +211,7 @@ def restore(conn: Connection, object_key: str, record_id: str) -> dict[str, Any]
     )
     if result.rowcount == 0:
         raise not_found("削除されたレコードがありません")
+    reattach(conn, object_key, record_id)
     return find(conn, object_key, record_id)
 
 

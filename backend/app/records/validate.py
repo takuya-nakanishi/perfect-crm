@@ -48,7 +48,9 @@ def _exists(conn: Connection, object_key: str, record_id: Any) -> bool:
     except Exception:
         return False
     table = table_of(target)
-    return bool(conn.execute(select(exists().where(table.c.id == record_id))).scalar())
+    # 削除中のレコードは指せない(削除のときに外した参照を、別の経路から戻させない。02 §4)
+    alive = exists().where(table.c.id == record_id, table.c.deleted_at.is_(None))
+    return bool(conn.execute(select(alive)).scalar())
 
 
 def validate(conn: Connection, obj: dict[str, Any], row: dict[str, Any], keys: list[str] | None) -> dict[str, Any]:

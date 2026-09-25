@@ -1,6 +1,6 @@
 """起動前の支度と、利用者の追加。
 
-  python -m app.cli init                         マイグレーション → 初期メタデータ → 最初の管理者
+  python -m app.cli init                         マイグレーション → 初期メタデータ → 最初の管理者 → 参照の後始末
   python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す(画面ができるまでの口。J-038)
   python -m app.cli reset-demo                   E2E 用の DB(名前が _e2e で終わる)を、モックと同じ種のデータで作り直す
 
@@ -16,6 +16,7 @@ from alembic.config import Config
 from app.config import get_settings
 from app.db import get_engine
 from app.meta.seed import ensure_user, seed
+from app.records.detach import detach_dangling
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -29,6 +30,10 @@ def init() -> None:
         seed(conn)
         if settings.admin_email:
             ensure_user(conn, name=settings.admin_name, email=settings.admin_email, admin=True)
+        # 削除済みのレコードを指したまま残っている参照を外す(控えに残すので、元に戻せば付け直す。02 §4)
+        detached = detach_dangling(conn)
+        if detached:
+            print(f"削除済みのレコードを指していた参照を {detached} 件外しました")
 
 
 def add_user(args: list[str]) -> int:

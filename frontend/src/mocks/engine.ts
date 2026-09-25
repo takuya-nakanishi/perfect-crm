@@ -37,8 +37,19 @@ import { liveObjects, objectMeta, users, workspace } from './schema'
 export { objectMeta, users, workspace }
 
 const STORAGE_KEY = 'works.mock.tables.v1'
+const TRASH_KEY = 'works.mock.trash.v1'
 
 type Tables = Record<string, Row[]>
+
+/**
+ * 削除した行と、それを指していた参照の控え(本番の `deleted_at` と `detached_refs` に当たる)。
+ * 削除した行は表から抜いてここへ移すので、読み取りも参照整合の検証も、表にある行だけを見ればよい
+ */
+interface Trash {
+  rows: Tables
+  /** `テーブル名:ID` → そのレコードを指していた参照(外した行と列) */
+  detached: Record<string, { object: string; id: string; column: string; objectColumn?: string }[]>
+}
 
 const seedTables: Tables = {
   accounts: accountsJson as Row[],
@@ -89,11 +100,23 @@ function load(): Tables {
   return fresh()
 }
 
+function loadTrash(): Trash {
+  try {
+    const saved = localStorage.getItem(TRASH_KEY)
+    if (saved) return JSON.parse(saved) as Trash
+  } catch {
+    // 壊れていたら空から
+  }
+  return { rows: {}, detached: {} }
+}
+
 let tables: Tables = load()
+let trash: Trash = loadTrash()
 
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tables))
+    localStorage.setItem(TRASH_KEY, JSON.stringify(trash))
   } catch {
     // 保存できなくても画面は動かす
   }
@@ -101,8 +124,10 @@ function save() {
 
 export function resetTables() {
   localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(TRASH_KEY)
   schema.resetSchema()
   tables = load()
+  trash = { rows: {}, detached: {} }
 }
 
 export function table(key: string): Row[] {
@@ -306,7 +331,7 @@ function validate(meta: ObjectMeta, row: Row, keys: string[] | null) {
       throw new ApiError(400, 'invalid', `${field.label}は ISO 8601 の日時で指定してください`)
     }
     if (field.type === 'checkbox' && typeof value !== 'boolean') throw new ApiError(400, 'invalid', `${field.label}は真偽で指定してください`)
-    // 参照整合: 参照先のレコードがあること(論理削除は無いので、行があれば有効)
+    // 参照整合: 参照先のレコードがあること(削除した行は控えへ移すので、表にあれば生きている)
     if (field.type === 'relation' && field.target && !(typeof value === 'string' && table(field.target).some((r) => r.id === value))) {
       throw new ApiError(400, 'invalid', `${field.label}の参照先が見つかりません`)
     }
@@ -437,20 +462,63 @@ function applyRecurrence(meta: ObjectMeta, row: Row, rows: Row[], index: number,
   }
 }
 
+/** 削除(本番は論理削除)。行は控えへ移し、この行を指している参照を外す(02 §4) */
 export function remove(object: string, id: string): boolean {
   const rows = table(object)
   const index = rows.findIndex((r) => r.id === id)
   if (index < 0) return false
-  rows.splice(index, 1)
+  const [row] = rows.splice(index, 1)
+  trash.rows[object] = [...(trash.rows[object] ?? []), row]
+  detach(object, id)
   save()
   return true
 }
 
+/** 削除の取り消し。控えの行を戻し、外した参照を付け直す。控えに無ければ画面が持っていた行で戻す(控えを持つ前に消したもの) */
 export function restore(object: string, row: Row) {
   const rows = table(object)
-  if (!rows.some((r) => r.id === row.id)) rows.unshift(structuredClone(row))
+  if (!rows.some((r) => r.id === row.id)) {
+    const kept = trash.rows[object]?.find((r) => r.id === row.id)
+    trash.rows[object] = (trash.rows[object] ?? []).filter((r) => r.id !== row.id)
+    rows.unshift(kept ?? structuredClone(row))
+    reattach(object, row.id)
+  }
   save()
   return find(object, row.id)!
+}
+
+/** 表と控えの両方の行。削除中の行が指している参照も外す(その行を戻したときに、消えた相手を指さないように) */
+function rowsWithTrash(object: string): Row[] {
+  return [...(tables[object] ?? []), ...(trash.rows[object] ?? [])]
+}
+
+/**
+ * 削除したレコードを指している参照を外し、控えに残す(02 §4)。残すと、画面・絞り込み・並び・集計のどこでも
+ * 消したはずの相手が見え続ける。外した項目の列も対象(schema.referenceColumns)。指していた側の updated_at は動かさない
+ */
+function detach(object: string, id: string) {
+  const key = `${object}:${id}`
+  for (const ref of schema.referenceColumns()) {
+    if (ref.target !== undefined && ref.target !== object) continue
+    for (const row of rowsWithTrash(ref.object)) {
+      if (row[ref.column] !== id || (ref.objectColumn && row[ref.objectColumn] !== object)) continue
+      row[ref.column] = null
+      if (ref.objectColumn) row[ref.objectColumn] = null
+      ;(trash.detached[key] ??= []).push({ object: ref.object, id: row.id, column: ref.column, objectColumn: ref.objectColumn })
+    }
+  }
+}
+
+/** 控えにある参照を付け直す。空のままの列だけで、その間に別の値を入れたものは上書きしない */
+function reattach(object: string, id: string) {
+  const key = `${object}:${id}`
+  for (const d of trash.detached[key] ?? []) {
+    const row = rowsWithTrash(d.object).find((r) => r.id === d.id)
+    if (!row || (row[d.column] ?? null) !== null || (d.objectColumn && (row[d.objectColumn] ?? null) !== null)) continue
+    row[d.column] = id
+    if (d.objectColumn) row[d.objectColumn] = object
+  }
+  delete trash.detached[key]
 }
 
 // --- 集計 -------------------------------------------------------------------

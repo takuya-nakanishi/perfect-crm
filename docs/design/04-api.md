@@ -33,8 +33,8 @@
 | `GET /objects/{object}/records/{id}` | 1 件 | `RecordResponse` |
 | `POST /objects/{object}/records` | 作成(本文は列名 → 値) | `RecordResponse` |
 | `PATCH /objects/{object}/records/{id}` | 更新(変える列だけ) | `RecordResponse` |
-| `DELETE /objects/{object}/records/{id}` | 削除(論理削除) | 204 |
-| `POST /objects/{object}/records/{id}/restore` | 削除の取り消し | `RecordResponse` |
+| `DELETE /objects/{object}/records/{id}` | 削除(論理削除)。このレコードを指している参照(relation・関連先)は空になる(02 §4) | 204 |
+| `POST /objects/{object}/records/{id}/restore` | 削除の取り消し。削除のときに外した参照を付け直す(空のままの列だけ) | `RecordResponse` |
 | `POST /objects/{object}/aggregate` | 集計(本文に `AggregateParams`) | `AggregateResponse` |
 | `GET /objects/{object}/records/{id}/timeline` | そのレコードの時系列(活動 + 言及 + 完了したタスク)。§9 | `TimelineResponse` |
 | `POST /objects/{object}/import` | CSV の取り込み(本文に `ImportParams`)。§7 | `ImportResponse` |
@@ -172,7 +172,7 @@
 
 - `PATCH` は渡した列だけを変える。応答は、業務ルール(02 §3)を当てたあとの 1 行と、その参照先
 - 作成時の既定値と、完了日時・確度の自動設定は**サーバの仕事**。画面は結果を受け取るだけ。**完了にする本文に `completed_at` も入っていれば、それを尊重する**(移行で元の日時を保つため)
-- サーバは型(数値・日付・日時・真偽)と参照整合(参照先の行がある、関連先はテーブル名と ID の組で `targets` の中)を検証し、外れれば 400。文字から型への変換は取り込みと Web フォームだけが行う
+- サーバは型(数値・日付・日時・真偽)と参照整合(参照先の行があって削除中でない、関連先はテーブル名と ID の組で `targets` の中)を検証し、外れれば 400。文字から型への変換は取り込みと Web フォームだけが行う
 - **定義に無い列が本文にあれば 400**(`定義に無い列です: <列名>`)。黙って捨てない——MCP や AI チャットが項目名を間違えたとき、値が消えたことに気づけないため。DB も無い列への INSERT は弾く。`readonly` の列は本文にあってよい(上の `completed_at` と同じ扱い)。`id` はサーバが付けるので本文に入れない(2026-09-22 決定。REC-062)
 - 画面は応答を待たずに表示を書き換え(楽観更新)、失敗したら元に戻して知らせる。応答が返ったら、関連する一覧・集計を読み直す
 
