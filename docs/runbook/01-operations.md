@@ -6,14 +6,15 @@ Surface(WSL2 の Ubuntu)で Works を動かすための手順と、実際に踏�
 ## 1. 起動・停止・更新
 
 ```
-docker compose --profile public up -d --build     # 画面 + Tunnel。ソースを変えたあとの反映もこれ
-docker compose --profile public ps                # 状態(web が healthy であること)
-docker compose --profile public logs -f tunnel    # Tunnel の接続(Registered tunnel connection が 4 本)
-docker compose --profile public down              # 停止(ボリュームは残る)
-docker compose up -d --build                      # Tunnel なしで画面だけ(http://127.0.0.1:8610)
+docker compose --profile backend --profile public up -d --build       # 本番(画面 + API + DB + Tunnel)。ソースを変えたあとの反映もこれ
+docker compose --profile backend --profile public up -d --build web   # 画面だけ変えたとき(api・db・tunnel はそのまま。入れ替えの数秒だけ届かない)
+docker compose --profile backend --profile public ps                  # 状態(web・api・db が healthy であること)
+docker compose --profile public logs -f tunnel                        # Tunnel の接続(Registered tunnel connection が 4 本)
+docker compose --profile backend --profile public down                # 停止(ボリュームは残る)
+docker compose up -d --build                                          # Tunnel なしで画面だけ(http://127.0.0.1:8610)
 ```
 
-- `--profile public` を付けないと `tunnel` は対象にならない(止めるときも同じ)
+- `--profile public` を付けないと `tunnel` は、`--profile backend` を付けないと `api` と `db` は対象にならない(止めるときも同じ)。本番は 2026-09-24 から http モード(J-041)なので両方付ける
 - **`docker compose down -v` は打たない。**`-v` はボリュームを消す。いまは空だが、`db` にデータが入ったら取り返しがつかない
 
 **イメージの取得でつまずく点**: この WSL の `~/.docker/config.json` は `credsStore: desktop.exe`(Docker Desktop の名残)で、公開イメージの pull まで
