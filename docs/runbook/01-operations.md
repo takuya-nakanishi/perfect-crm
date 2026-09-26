@@ -41,7 +41,7 @@ npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtu
 ```
 
 - E2E の向き先は引数で変えられる: `npm run e2e -- http://127.0.0.1:8610`(コンテナの本番ビルド)
-- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=dev`)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる
+- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=dev`)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる(止めるコマンドを最後に出す)。**ポートが既に使われていたら始めない**(残っていた古い画面に向けて E2E が通ってしまうため)。別のポートで流すなら `E2E_API_PORT`・`E2E_WEB_PORT`
 - `smoke.mjs` は画面の `<html data-api-mode>` を読み、モック専用の検査(Google ドライブを繋いだ状態、モックのデータの初期化)を http では飛ばす。http では契約どおりの 4xx(ログイン前の 401 など)をブラウザのエラーに数えず、api の 5xx を失敗に数える
 - E2E のブラウザは Playwright の Chromium(`~/.cache/ms-playwright/chromium-*`)。無ければ `npx playwright install chromium`。別の場所にあるなら `CHROMIUM_PATH`
 - モックのデータはブラウザごと。画面の利用者メニュー「モックのデータを初期化」で戻る。メタデータ(`fixtures/objects.json`・`views.json`)は手で直す
@@ -78,6 +78,8 @@ python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c 
 | 公開 URL でだけ、コンソールに `static.cloudflareinsights.com/beacon.min.js … violates Content Security Policy` | ゾーンの Web Analytics が HTML にビーコンを自動挿入していた。CSP が止めるので実害は無い。配る側で `Cache-Control: no-transform` を返して挿入させないようにした。ホスト単位の除外ルールは無料プランでは作れない(`maxRulesError`) |
 | Access の確認で、同じ要求が 302 と 200 を行き来する | 作りたてのポリシーが Cloudflare の全拠点へ行き渡るまで十数秒かかる。確認スクリプトは 3 回続けて通るまで待つ |
 | 絞り込み欄で、打った文字が逆順に入る(「かささぎ」→「ぎささか」) | 幅 0 から広がるアニメーションの途中で打鍵すると、Chromium がキャレットを先頭に置き続ける。入力欄は、開いた状態でだけ描く(幅を動かさない)。**入力欄の幅をアニメーションさせない** |
+| `scripts/e2e-http.sh` のあと、E2E の画面(vite)が残って次の実行のポートがふさがる(34 時間前の vite が残っていた) | `npx vite` は npm exec → sh → node(vite)と子を作るので、最初のプロセスだけ止めても vite が残る。起こすものを `setsid` で別のプロセスグループにし、グループごと止めて、止まるまで待つようにした(2026-09-26)。バックグラウンドで起こしたものを `kill $!` で止める作りは、ほかのスクリプトでも同じ罠がある |
+| 使っていないポートを「接続できるか」で確かめると、2 分近く止まる | この WSL では、待ち受けの無いポートへの接続が拒否されず、`SYN-SENT` のまま待たされる(`/dev/tcp` も curl も)。空いているかは待ち受けの一覧(`ss -Hltn "sport = :<ポート>"`)で見る。起動待ちの curl には `--connect-timeout` を付ける |
 | テーブル設定で、Enter のあと速く打つと、文字が前の欄に入る(「見積」→ Enter →「見積番号」が「見」と「名前積番号」になる) | 次の欄へのフォーカス移動を `requestAnimationFrame` で 1 フレーム遅らせていた。**フォーカスの移動は同期で行う。**行を足してから移すときは `flushSync` で先に描く。E2E は待ちを挟まずに打つので、この類を拾える |
 | 日本語 IME で英字を打つと、変換が途切れて「lleあ」のようになる(列名の欄で `Lead` を Shift+l, e, a, d と打つ) | 入力のたびに `toLowerCase()` した値を書き戻していた。変換中(`InputEvent.isComposing`)に値を書き換えると変換が仕切り直しになる。**変換中は値をそのまま持ち、`compositionend` と blur で整える**(`keyInputHandlers`)。Linux の Playwright では再現できない(CDP の `Input.imeSetComposition` でも Windows の MS-IME の挙動にはならない)ので、値を変形する入力欄を作るときは規則として守る |
 | スクリーンショットで、変換中の文字に黄色い地が出る | CDP の `Input.imeSetComposition` で変換させたときの Chromium の描画。実際の IME では下線だけになる。画面の不具合ではない(タスクの追加欄の色の地の層を隠しても残ることで切り分けた)。変換中の見た目を確かめるときは、黄色を除いて見る |
