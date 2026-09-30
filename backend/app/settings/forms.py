@@ -12,7 +12,7 @@ from sqlalchemy import Connection, func, select
 from app.errors import bad_request, not_found, too_many_requests
 from app.meta import store
 from app.meta.tables import web_forms
-from app.records import service
+from app.records import origin, service
 from app.records.csv_io import RowError, coerce
 
 # 受け口ごと・送り元ごとの間引き(1 分に 10 件まで)。1 プロセスで持つ(利用者 1〜3 名の規模)
@@ -70,7 +70,7 @@ def submit(conn: Connection, key: str, values: dict[str, Any], source: str) -> d
             accepted[field_key] = coerce(conn, field, value, timezone) if isinstance(value, str) else value
         except RowError as exc:
             raise bad_request(str(exc)) from exc
-    created = service.insert(conn, row.object_key, accepted, None)
+    created = service.insert(conn, row.object_key, accepted, None, origin=origin.form(row.name))
     conn.execute(
         web_forms.update()
         .where(web_forms.c.id == row.id)

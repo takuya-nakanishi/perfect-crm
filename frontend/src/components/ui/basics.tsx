@@ -105,3 +105,23 @@ export function ObjectIcon({ icon, color, size = 16 }: { icon: string; color: Ta
     </span>
   )
 }
+
+/** オン/オフのスイッチ。行の中に置いても、押したときに行を開かない */
+export function Switch({ checked, label, onChange, disabled }: { checked: boolean; label: string; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation()
+        onChange(!checked)
+      }}
+      className={cx('relative h-5 w-9 flex-none rounded-full transition-colors duration-100 disabled:opacity-50', checked ? 'bg-accent' : 'bg-line-strong')}
+    >
+      <span className={cx('absolute top-0.5 left-0 size-4 rounded-full bg-paper shadow-card transition-transform duration-100', checked ? 'translate-x-[18px]' : 'translate-x-0.5')} />
+    </button>
+  )
+}

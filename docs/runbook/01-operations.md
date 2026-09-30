@@ -83,6 +83,7 @@ python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c 
 | テーブル設定で、Enter のあと速く打つと、文字が前の欄に入る(「見積」→ Enter →「見積番号」が「見」と「名前積番号」になる) | 次の欄へのフォーカス移動を `requestAnimationFrame` で 1 フレーム遅らせていた。**フォーカスの移動は同期で行う。**行を足してから移すときは `flushSync` で先に描く。E2E は待ちを挟まずに打つので、この類を拾える |
 | 日本語 IME で英字を打つと、変換が途切れて「lleあ」のようになる(列名の欄で `Lead` を Shift+l, e, a, d と打つ) | 入力のたびに `toLowerCase()` した値を書き戻していた。変換中(`InputEvent.isComposing`)に値を書き換えると変換が仕切り直しになる。**変換中は値をそのまま持ち、`compositionend` と blur で整える**(`keyInputHandlers`)。Linux の Playwright では再現できない(CDP の `Input.imeSetComposition` でも Windows の MS-IME の挙動にはならない)ので、値を変形する入力欄を作るときは規則として守る |
 | テーブルを追加で、列名を打って欄を外すと画面が真っ白になる(`Cannot read properties of null (reading 'value')`) | blur の処理が `setDraft((d) => ({ ...d, key: normalize(e.currentTarget.value) }))` と、**更新関数の中でイベントを読んでいた**。React は処理を終えると `e.currentTarget` を null に戻し、更新関数は描くときまで遅れて呼ばれることがある(打った直後に外すと毎回遅れ、必ず落ちた。名前が `leads` だからではない)。**イベントの値は、更新関数の外で先に読んで変数に入れる**。例外を受け止めるものが無く画面ごと外れていたので、全体を `ErrorBoundary`(`shell/ErrorBoundary.tsx`)で包んだ(2026-09-30) |
+| worktree で開発サーバを起こすと、欧文の書体(Figtree)が 403 になり、E2E が「ブラウザのエラー」で落ちる | `scripts/wt-new.sh` は `frontend/node_modules` を本体へのリンクにするので、書体のファイルが worktree の外になり、Vite の配信の許可(`server.fs.allow`)から外れる。`vite.config.ts` の `server.fs.allow` に、`node_modules` のリンク先を足して直した。画面の不具合ではない(2026-09-30) |
 | スクリーンショットで、変換中の文字に黄色い地が出る | CDP の `Input.imeSetComposition` で変換させたときの Chromium の描画。実際の IME では下線だけになる。画面の不具合ではない(タスクの追加欄の色の地の層を隠しても残ることで切り分けた)。変換中の見た目を確かめるときは、黄色を除いて見る |
 | パネルの幅を変えたあと、パネルがもう一度スライドして入ってくる | ドラッグ中だけ `animate-panel-in` を外していたため、付け直すたびに CSS アニメーションが再生されていた。**アニメーションのクラスは付けたままにする**(初回の挿入時だけ走る) |
 | ポップオーバーの中からポップオーバーを開くと、内側を押した瞬間に外側が閉じて、選んだ値が消える | 外側の「外側のクリック」判定が、body に描かれた内側を外側だと見ていた。開いた順の並び(`popoverStack`)を持ち、自分より後に開いたものの中は内側とみなす。Esc もいちばん上だけが閉じる。**ポップオーバーの部品は `ui/overlay.tsx` の `Popover` だけを使う**(自前で fixed の div を出すと、この判定から外れる) |
@@ -199,7 +200,8 @@ docker compose --profile backend up -d --build api
 
 ## 6b. Slack に通知する(llm-wiki の稼働通知の Slack アプリを流用する・2026-09-30)
 
-環境設定 › 通知 の「Slack と連携する」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §14。
+環境設定 › Slack の「チャンネルを追加」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §14。
+何をいつ知らせるかは、環境設定 › ワークフロー で決める(04 §15。2026-09-30 に「Web フォームの登録だけを 1 チャンネルへ」から替えた)。
 **新しい Slack アプリは作らない。**llm-wiki の稼働通知(株価の通知など)に使っているアプリを流用する(2026-09-30 本人の判断)。
 **Client ID と Client Secret は `.env` に入れるだけで、コミットしない。**
 
@@ -211,7 +213,7 @@ docker compose --profile backend up -d --build api
 
 **共有しているので守ること**
 
-- **アプリを削除しない・ワークスペースから外さない。**そのアプリが払い出した Webhook が全部止まり、llm-wiki の稼働通知も Works の通知も止まる(2026-08-22 に、アプリの削除の道連れで llm-wiki の Webhook が失効した)。Works の「連携を解除」も、アプリは外さない作りにしてある
+- **アプリを削除しない・ワークスペースから外さない。**そのアプリが払い出した Webhook が全部止まり、llm-wiki の稼働通知も Works の通知も止まる(2026-08-22 に、アプリの削除の道連れで llm-wiki の Webhook が失効した)。Works でチャンネルを「外す」も、アプリは外さない作りにしてある
 - **名前・アイコンは両方の通知の差出人になる**(Incoming Webhook は 1 通ごとに差出人を変えられない)。変えると llm-wiki の通知の見え方も変わる。Slack の許可の画面にも、このアプリの名前が出る
 - **権限を増やさない。**Works が求めるのは `incoming-webhook` だけ。権限を足すと、アプリの入れ直しが要る
 
@@ -236,25 +238,27 @@ WORKS_SLACK_CLIENT_SECRET=<...>
 
 **C. 繋いで確かめる**
 
-1. Works の 環境設定 › 通知 で「Slack と連携する」
-2. Slack の許可の画面で、ワークスペース(SANEi CLOVER)と**通知先のチャンネル**を選んで「許可する」(非公開のチャンネルは、自分が入っていれば選べる)。
-   Webhook が 1 本増えるだけで、llm-wiki の Webhook はそのまま
-3. 戻ってきたら「テスト通知を送る」→ そのチャンネルに「✅ Works からのテスト通知です」が届く
-4. 環境設定 › Web フォーム の「テスト送信」→「📨 Web フォームから登録がありました」が届き、「Works で開く」でそのレコードが開く(SET-106)
+1. Works の 環境設定 › Slack で「チャンネルを追加」(ワークフローの「Slack に知らせる」のチャンネルの一覧の「Slack でチャンネルを追加…」からでもよい。そのときは書きかけのワークフローへ戻る)
+2. Slack の許可の画面で、ワークスペース(SANEi CLOVER)と**送り先のチャンネル**を選んで「許可する」(非公開のチャンネルは、自分が入っていれば選べる)。
+   Webhook が 1 本増えるだけで、llm-wiki の Webhook はそのまま。**チャンネルを増やすたびに、これを繰り返す**
+3. 戻ってきたら「テスト通知」→ そのチャンネルに「✅ Works からのテスト通知です」が届く
+4. 環境設定 › ワークフロー で、そのチャンネルへ知らせるワークフローを作り、「テスト送信」→ ワークフローの名前を見出しにした通知が届き、「Works で開く」でそのレコードが開く(SET-106)
 5. llm-wiki の稼働通知が、これまでどおり届いていることも見ておく
 
 つまずいたとき:
 
 | 症状 | 見るところ |
 |---|---|
-| 通知の節に「Slack アプリの資格情報が入っていません」 | `.env` に 2 つを入れたあと api を建て直したか |
+| Slack の節に「Slack アプリの資格情報が入っていません」 | `.env` に 2 つを入れたあと api を建て直したか |
 | Slack の画面で `redirect_uri did not match` | アプリの Redirect URLs と、`WORKS_PUBLIC_URL` + `/api/v1/slack/callback` の不一致(末尾の `/`・http と https) |
-| Slack の画面で「承認が必要」と出る | ワークスペースの設定でアプリの承認制が有効。Slack の管理者が承認してから、もう一度「Slack と連携する」 |
-| 戻ってきて「Slack と連携できませんでした」 | `docker compose logs api`。Client Secret の誤り(`invalid_client`)、許可の画面を開いてから 15 分を過ぎた、押した人が管理者でない |
-| 「要再接続」になった | チャンネルがアーカイブされた・アプリが外された(llm-wiki の通知も止まっていないか見る)。「チャンネルを選び直す」 |
-| 再起動したら「要再接続」(`undecryptable`) | `WORKS_SECRET_KEY` が変わった。固定してから「チャンネルを選び直す」 |
+| Slack の画面で「承認が必要」と出る | ワークスペースの設定でアプリの承認制が有効。Slack の管理者が承認してから、もう一度「チャンネルを追加」 |
+| 戻ってきて「Slack と繋げませんでした」 | `docker compose logs api`。Client Secret の誤り(`invalid_client`)、許可の画面を開いてから 15 分を過ぎた、押した人が管理者でない |
+| 「要再接続」になった | チャンネルがアーカイブされた・アプリが外された(llm-wiki の通知も止まっていないか見る)。その行の「繋ぎ直す」で、Slack の許可の画面で**同じチャンネル**を選ぶ(行は増えず、ワークフローの設定もそのまま)。止まっていたあいだの失敗は、ワークフローの実行記録の「送り直す」で送れる |
+| 再起動したら「要再接続」(`undecryptable`) | `WORKS_SECRET_KEY` が変わった。固定してから「繋ぎ直す」 |
+| チャンネルを外そうとしたら「ワークフロー「…」がこのチャンネルへ送っています」 | 先にそのワークフローの送り先を替えるか、ワークフローを削除する(黙って届かなくなるのを防いでいる) |
+| ワークフローが動いたのに届かない | ワークフローの「実行記録」を見る。待ち(送信待ち)のまま → `docker compose logs api` の `works.workflows`(送り係)。失敗 → 理由が出る。見送り → 送る前にオフ・削除にした |
 
-- チャンネルを選び直したり連携を解除したりすると、Slack 側に古い Webhook が残る(Works が送るのは新しい方だけ)。消したければ、通知の節の「Slack で設定を開く」(解除のときはトーストの「Slack で開く」)から、**Works が使っていた Webhook だけを**消す。llm-wiki の Webhook を消さない
+- 同じチャンネルを繋ぎ直したりチャンネルを外したりすると、Slack 側に古い Webhook が残る(Works が送るのは新しい方だけ)。消したければ、その行の「Slack で設定を開く」(外したときはトーストの「Slack で開く」)から、**Works が使っていた Webhook だけを**消す。llm-wiki の Webhook を消さない
 - Client Secret を替えるとき: 「App Credentials」の Regenerate → `.env` を書き換えて api を建て直す。繋いだ Webhook はそのまま届く(Client Secret が要るのは繋ぐときだけ)
 
 出典(2026-09-30 確認。いずれも非推奨の表示なし): Slack「Sending messages using incoming webhooks」(`https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks`。`oauth.v2.access` の `incoming_webhook`、エラーコード、投稿先を本文で変えられないこと)、「Installing with OAuth」(`https://docs.slack.dev/authentication/installing-with-oauth`。`redirect_uri` は HTTPS で、登録した URL と一致かその下)、「Distributing your app」(`https://docs.slack.dev/app-management/distribution`。作ったワークスペースに入れるだけなら配布は要らない)。

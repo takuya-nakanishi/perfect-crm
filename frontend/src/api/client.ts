@@ -24,6 +24,10 @@ import type {
   TimelineResponse,
   WebForm,
   WebFormInput,
+  Workflow,
+  WorkflowInput,
+  WorkflowRun,
+  WorkflowTestResult,
 } from './types'
 
 /**
@@ -90,14 +94,34 @@ export interface ApiClient {
   /** 受け口そのもの(認証なし)。画面からは「テスト送信」で使う */
   submitWebForm(key: string, values: Record<string, Scalar>): Promise<RecordResponse>
 
-  /** Slack への通知(ワークスペースで 1 つ。管理者だけ)。繋いでいれば、Web フォームから登録があるたびに知らせる */
+  /** Slack のチャンネル(いくつでも。管理者だけ)。どのチャンネルへ何を知らせるかはワークフローが決める */
   slackStatus(): Promise<SlackStatus>
-  /** Slack の許可の画面の URL。チャンネルはそこで選ぶ。戻ると /settings/notifications?slack=connected */
-  slackConnect(): Promise<{ url: string }>
-  /** テスト通知を送り、結果を記録した状態を返す(送れたかは connection.last_error が空か) */
-  slackTest(): Promise<SlackStatus>
-  /** 連携を解除する。Works が Webhook を捨てるだけで、Slack のアプリは外さない(ほかの仕組みと共有している) */
-  slackDisconnect(): Promise<void>
+  /**
+   * Slack の許可の画面の URL。チャンネルはそこで選ぶ。戻ると returnTo(環境設定の中。既定 /settings/slack)に
+   * ?slack=connected&channel=<id>(断れば denied、失敗は error)。同じチャンネルなら行は増えず、繋ぎ直しになる
+   */
+  slackConnect(returnTo?: string): Promise<{ url: string }>
+  /** テスト通知を送り、結果を記録した状態を返す(送れたかは、そのチャンネルの last_error が空か) */
+  slackTest(channelId: string): Promise<SlackStatus>
+  /**
+   * チャンネルを外す。Works が Webhook を捨てるだけで、Slack のアプリは外さない(ほかの仕組みと共有している)。
+   * ワークフローが送り先に選んでいれば 409 channel_in_use
+   */
+  slackDisconnect(channelId: string): Promise<void>
+
+  /** ワークフロー(管理者だけ。04 §15)。削除していないもの、作った順 */
+  listWorkflows(): Promise<Workflow[]>
+  createWorkflow(input: WorkflowInput): Promise<Workflow>
+  updateWorkflow(id: string, input: WorkflowInput): Promise<Workflow>
+  /** 論理削除。実行記録は残り、restoreWorkflow で戻る(「元に戻す」) */
+  deleteWorkflow(id: string): Promise<void>
+  restoreWorkflow(id: string): Promise<Workflow>
+  /** 実行記録(新しい順。50 件) */
+  listWorkflowRuns(id: string): Promise<WorkflowRun[]>
+  /** 失敗・見送りの実行を、もう一度送る(待ちへ戻す) */
+  retryWorkflowRun(runId: string): Promise<WorkflowRun>
+  /** 保存前の定義のまま、アクションをその場で 1 回動かす(実行記録には残さない) */
+  testWorkflow(input: WorkflowInput): Promise<WorkflowTestResult>
 
   /** Google を繋いでいるか(利用者ごと)。繋いでいなければドライブの API は 409 `google_reauth` を返す */
   googleStatus(): Promise<GoogleStatus>

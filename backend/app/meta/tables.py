@@ -9,11 +9,13 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     PrimaryKeyConstraint,
     Table,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
@@ -192,6 +194,8 @@ SYSTEM_TABLES = frozenset(
         "web_forms",
         "google_accounts",
         "slack_connections",
+        "workflows",
+        "workflow_runs",
         "oauth_clients",
         "oauth_requests",
         "oauth_grants",
@@ -253,9 +257,11 @@ google_accounts = Table(
 )
 
 
-# Slack への通知の繋ぎ先(04 §14)。**ワークスペースに 1 つだけ**(繋ぎ直したら置き換える)。
+# Slack のチャンネル(04 §14)。**1 行 = 1 チャンネル**で、いくつでも繋げる(2026-09-30 に 1 つから複数へ)。
+# ワークフローの「Slack に知らせる」が、どのチャンネルへ送るかをこの行の id で指す(04 §15)。
+# 同じチャンネルを許可し直したら、その行の Webhook を差し替える(行は増やさない。team_id と channel_id で一意)。
 # Slack アプリの認可で払い出された Incoming Webhook の URL は**暗号化して持つ**(`app/slack/store.py`)。
-# ボットトークンは持たない(Slack のアプリはほかの仕組みと共有していて、外さないため)。連携を解除したら行ごと消す
+# ボットトークンは持たない(Slack のアプリはほかの仕組みと共有していて、外さないため)。外したら行ごと消す
 slack_connections = Table(
     "slack_connections",
     metadata,
@@ -275,7 +281,65 @@ slack_connections = Table(
     Column("last_error_code", Text, nullable=True),
     Column("last_error_at", TIMESTAMP(timezone=True), nullable=True),
     _ts("created_at"),
+    UniqueConstraint("team_id", "channel_id", name="slack_connections_channel"),
 )
+
+# ワークフロー(04 §15。2026-09-30)。「きっかけ」1 つと「アクション」の並びの組。
+# きっかけ(`trigger`)とアクション(`actions`)は種類ごとに形が違い、これからも増えるので JSONB で持ち、
+# 形はアプリが確かめる(`app/workflows/model.py`)。書き込みのたびに引くテーブルとオン/オフは列にする。
+# 削除は論理削除(実行記録を残し、「元に戻す」で戻る)
+workflows = Table(
+    "workflows",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("name", Text, nullable=False),
+    Column("object_key", Text, ForeignKey("meta_objects.key", ondelete="CASCADE"), nullable=False),
+    Column("enabled", Boolean, nullable=False, server_default=text("true")),
+    Column("trigger", JSONB, nullable=False),
+    Column("actions", JSONB, nullable=False),
+    Column("created_by", UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+    Column("deleted_at", TIMESTAMP(timezone=True), nullable=True),
+    _ts("created_at"),
+    _ts("updated_at"),
+)
+
+# ワークフローの実行記録(04 §15)。1 行 = 1 つのアクションを 1 回動かすこと。**送信待ちの台帳を兼ねる**:
+# レコードの書き込みと同じトランザクションで queued の行を入れ、確定したものだけを送り係(`app/workflows/runner.py`)が
+# 拾う。取り消された書き込みの行は残らないので、送らない。送る中身(Slack の本文)は、入れたときのレコードの値で作って
+# `payload` に写す(送り係はレコードの表を読まない。あとでレコードが変わっても、そのときの内容が届く)
+workflow_runs = Table(
+    "workflow_runs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False),
+    # ワークフローの中のどのアクションか(アクションの id)と、その種類(`slack`)
+    Column("action_id", Text, nullable=False),
+    Column("action_type", Text, nullable=False),
+    Column("object_key", Text, nullable=False),
+    Column("record_id", UUID(as_uuid=True), nullable=False),
+    # 実行記録の一覧に出す名前(レコードを消しても残る)
+    Column("record_name", Text, nullable=False),
+    # created(作成されたとき)/ matched(条件を満たしたとき)
+    Column("event", Text, nullable=False),
+    # 書き込みがどこから来たか: app(画面)/ form(Web フォーム)/ mcp(AI)/ auto(自動作成)/ import(CSV)
+    Column("origin", Text, nullable=False),
+    Column("actor_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+    # queued(待ち)/ running(実行中)/ done(済み)/ failed(失敗)/ skipped(見送り)
+    Column("status", Text, nullable=False),
+    Column("attempts", Integer, nullable=False, server_default=text("0")),
+    # queued のとき、次に試す時刻。running のとき、この時刻を過ぎたら取り出した処理が落ちたとみなして待ちへ戻す
+    Column("next_attempt_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("locked_until", TIMESTAMP(timezone=True), nullable=True),
+    Column("payload", JSONB, nullable=False),
+    Column("error", Text, nullable=True),
+    Column("error_code", Text, nullable=True),
+    _ts("created_at"),
+    _ts("updated_at"),
+    Column("finished_at", TIMESTAMP(timezone=True), nullable=True),
+)
+# 送り係が引く(期限の来た待ち)と、ワークフローごとの実行記録の一覧
+Index("workflow_runs_due", workflow_runs.c.status, workflow_runs.c.next_attempt_at)
+Index("workflow_runs_by_workflow", workflow_runs.c.workflow_id, workflow_runs.c.created_at)
 
 # --- MCP を Claude のカスタムコネクタから使うための OAuth(03 §6・04 §13)------------------------
 # Works 自身が認可サーバになる。人の確認は Access の内側の画面で行い、Anthropic からの機械の呼び出し

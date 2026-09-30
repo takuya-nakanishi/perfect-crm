@@ -11,7 +11,8 @@ import { OAuthConsent } from '@/pages/OAuthConsent'
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const TablesSettings = lazy(() => import('@/pages/settings/TablesSettings').then((m) => ({ default: m.TablesSettings })))
 const FormsSettings = lazy(() => import('@/pages/settings/FormsSettings').then((m) => ({ default: m.FormsSettings })))
-const NotificationsSettings = lazy(() => import('@/pages/settings/NotificationsSettings').then((m) => ({ default: m.NotificationsSettings })))
+const WorkflowsSettings = lazy(() => import('@/pages/settings/WorkflowsSettings').then((m) => ({ default: m.WorkflowsSettings })))
+const SlackSettings = lazy(() => import('@/pages/settings/SlackSettings').then((m) => ({ default: m.SlackSettings })))
 const McpSettings = lazy(() => import('@/pages/settings/McpSettings').then((m) => ({ default: m.McpSettings })))
 
 function Home() {
@@ -27,7 +28,7 @@ function ObjectRoute() {
  *   /login            ログイン
  *   /oauth/consent    Claude のカスタムコネクタから繋ぐときの許可(?request=。サイドバーは出さない)
  *   /o/:objectKey     テーブル(?view= でビュー、?peek=テーブル名:ID で右のパネル)
- *   /settings/…       環境設定(テーブル・Web フォーム・通知・MCP。管理者だけ)
+ *   /settings/…       環境設定(テーブル・Web フォーム・ワークフロー・Slack・MCP。管理者だけ)
  */
 export default function App() {
   return (
@@ -48,7 +49,10 @@ export default function App() {
           <Route index element={<Navigate to="/settings/tables" replace />} />
           <Route path="tables" element={<Suspense fallback={null}><TablesSettings /></Suspense>} />
           <Route path="forms" element={<Suspense fallback={null}><FormsSettings /></Suspense>} />
-          <Route path="notifications" element={<Suspense fallback={null}><NotificationsSettings /></Suspense>} />
+          <Route path="workflows" element={<Suspense fallback={null}><WorkflowsSettings /></Suspense>} />
+          <Route path="slack" element={<Suspense fallback={null}><SlackSettings /></Suspense>} />
+          {/* 2026-09-30 まで「通知」だった節。Slack の許可の戻り先に残っていても迷わないように */}
+          <Route path="notifications" element={<Navigate to="/settings/slack" replace />} />
           <Route path="mcp" element={<Suspense fallback={null}><McpSettings /></Suspense>} />
         </Route>
         <Route path="*" element={<Home />} />

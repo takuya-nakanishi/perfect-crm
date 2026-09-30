@@ -185,7 +185,7 @@ export function importCsv(object: string, params: ImportParams, me: string | nul
   const created_ids: string[] = []
   if (!params.dry_run) {
     // 一覧の並び(新しいものが上)が CSV の並びと揃うよう、後ろから入れる
-    for (const values of [...accepted].reverse()) created_ids.unshift(insert(object, values, me).record.id)
+    for (const values of [...accepted].reverse()) created_ids.unshift(insert(object, values, me, { kind: 'import', actor: me }).record.id)
   }
   return { headers, mapping, total: lines.length, valid: accepted.length, errors: errors.slice(0, 20), sample: lines.slice(0, 5), created_ids }
 }

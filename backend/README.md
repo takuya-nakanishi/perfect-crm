@@ -16,6 +16,9 @@ FastAPI + SQLAlchemy 2(Core)+ Alembic + Pydantic v2 + psycopg 3。パッケー�
 | `app/errors.py` | `ApiError` と、契約どおりの `{code, message}` に揃える例外ハンドラ |
 | `app/access.py` | ログイン。Cloudflare Access の JWT を確かめてメールアドレスを取る(03 §5 の B 案)。いまの利用者を決めるのは `app/api/deps.py` |
 | `app/mcpserver/` | MCP サーバ(`server.py`。ツール 6 つ)と、Claude のカスタムコネクタが通る OAuth の認可サーバ(`oauth.py`)。`/mcp` と OAuth の口は `/api/v1` の外(03 §6、04 §13) |
+| `app/slack/` | Slack のチャンネル(04 §14)。`service`(繋ぐ・外す・テスト通知)・`store`(Webhook を暗号化して持つ。1 行 = 1 チャンネル)・`message`(本文の Block Kit とエスケープ)・`http`(**唯一の外向きの口**。テストはここを差し替える) |
+| `app/workflows/` | ワークフロー(04 §15)。`model`(定義の検証)・`store`(定義と実行記録)・`engine`(書き込みのたびに判定して実行記録を入れる)・`runner`(送り係。API のプロセスの中のスレッド。03 §11)・`trial`(テスト送信)・`actions/`(アクションの種類。いまは `slack`) |
+| `app/records/origin.py` | 書き込みがどこから来たか(画面・Web フォーム・MCP・自動作成・CSV)。`service.insert` / `update` には必ず渡す |
 | `app/security.py` | 署名と暗号化の鍵、`WORKS_AUTH=dev` のセッション Cookie |
 | `app/meta/tables.py` | **システム表だけ**の定義(`workspace` / `users` / `meta_*` / `ddl_log` / `activity_mentions`) |
 | `app/meta/ddl.py` | メタデータ → 実テーブルの DDL。**DDL を流す経路はここ 1 本**。`DROP` は作らない(02 §4) |
@@ -43,6 +46,8 @@ docker compose --profile backend up -d --build     # api + db(リポジトリの
 | `WORKS_ADMIN_EMAIL` / `WORKS_ADMIN_NAME` | 最初の管理者。初回の `app.cli init` だけが使う |
 | `WORKS_GOOGLE_CLIENT_ID` / `WORKS_GOOGLE_CLIENT_SECRET` | Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は `docs/runbook/01` §6 |
 | `WORKS_GOOGLE_REDIRECT_URI` | 許可のあとに Google が戻す先。既定は `https://works.sanei-clover.com/api/v1/google/callback`。**GCP に登録した URL と 1 文字も違ってはいけない** |
+| `WORKS_SLACK_CLIENT_ID` / `WORKS_SLACK_CLIENT_SECRET` | Slack のチャンネルを繋ぐ(04 §14)。空なら繋げない。アプリは llm-wiki の稼働通知と共有(`docs/runbook/01` §6b) |
+| `WORKS_WORKFLOW_RUNNER` | ワークフローの送り係(スレッド)を起こすか(既定 `true`)。テストは `false` にして `runner.run_due()` を直に呼ぶ |
 
 ## 手元で動かす・テストする
 

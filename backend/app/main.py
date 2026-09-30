@@ -7,9 +7,10 @@ from fastapi import APIRouter, FastAPI
 from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
-from app.api import google, meta, oauth, records, session, settings, slack
+from app.api import google, meta, oauth, records, session, settings, slack, workflows
 from app.errors import install_error_handlers
 from app.mcpserver import server as mcp_server
+from app.workflows import runner
 
 # MCP(03 §6)。`/mcp` と OAuth の口は、下の API より後ろに丸ごと載せる(API の道が先に当たる)。
 # SDK の接続管理は 1 回しか起動できないので、起動(lifespan)のたびに作り直す(本番は 1 回、テストはクライアントごと)
@@ -24,8 +25,13 @@ async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     server = mcp_server.build()
     _mcp["app"] = mcp_server.asgi_app(server)
-    async with server.session_manager.run():
-        yield
+    # ワークフローの送り係(04 §15)。テストは起こさない(WORKS_WORKFLOW_RUNNER=false)
+    runner.start()
+    try:
+        async with server.session_manager.run():
+            yield
+    finally:
+        runner.stop()
 
 
 app = FastAPI(
@@ -45,6 +51,7 @@ v1.include_router(records.router)
 v1.include_router(settings.router)
 v1.include_router(google.router)
 v1.include_router(slack.router)
+v1.include_router(workflows.router)
 v1.include_router(oauth.router)
 app.include_router(v1)
 

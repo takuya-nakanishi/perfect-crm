@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     slack_client_id: str = ""
     slack_client_secret: str = ""
 
+    # --- ワークフロー(04 §15)-------------------------------------------------------
+    # 送り係(実行記録の送信待ちを拾って動かすスレッド)を API のプロセスで起こすか。テストは false にして、直に呼ぶ
+    workflow_runner: bool = True
+
     # 外から見た Works の URL(末尾の / なし)。MCP の接続先(`<ここ>/mcp`)と OAuth の発行元になる(03 §6)。
     # **Claude のコネクタに入れる URL と 1 文字も違ってはいけない**。既定は手元の web(compose が本番の値を渡す)
     public_url: str = "http://127.0.0.1:8610"

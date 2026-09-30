@@ -1,4 +1,7 @@
-"""レコードの読み書き(04 §2)。**書き込みの経路はここ 1 本**で、画面・取り込み・MCP のどれも通る。"""
+"""レコードの読み書き(04 §2)。**書き込みの経路はここ 1 本**で、画面・取り込み・MCP のどれも通る。
+
+書き込みには、どこから来たか(`Origin`)を必ず添える。ワークフロー(04 §15)の「どこから」と実行記録に使う。
+"""
 
 import json
 from datetime import UTC, date
@@ -21,6 +24,8 @@ from app.records.detach import (
 )
 from app.records.filters import Context, compile_filter
 from app.records.normalize import normalize_text, search_text_of
+from app.records.origin import Origin
+from app.records.origin import auto as auto_origin
 from app.records.recurrence import copy_for_next, due_field_of, next_due
 from app.records.refs import collect_references
 from app.records.richtext import mentions_value
@@ -28,6 +33,7 @@ from app.records.rules import apply_rules, defaults_for_insert, today_in
 from app.records.tables import fields_by_column, table_of
 from app.records.validate import reject_unknown_columns, validate
 from app.records.values import row_to_api, to_db
+from app.workflows import engine as workflows
 
 
 def _with_mentions(obj: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
@@ -141,7 +147,9 @@ def _blank_row(obj: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def insert(conn: Connection, object_key: str, values: dict[str, Any], me: str | None) -> dict[str, Any]:
+def insert(
+    conn: Connection, object_key: str, values: dict[str, Any], me: str | None, *, origin: Origin
+) -> dict[str, Any]:
     obj = store.object_meta(conn, object_key)
     reject_unknown_columns(obj, values)
     table = table_of(obj)
@@ -162,10 +170,14 @@ def insert(conn: Connection, object_key: str, values: dict[str, Any], me: str | 
     payload["search_text"] = search_text_of(obj["fields"], row)
     record_id = conn.execute(table.insert().values(**payload).returning(table.c.id)).scalar_one()
     _sync_mentions(conn, obj, str(record_id), row)
-    return find(conn, object_key, str(record_id))
+    created = find(conn, object_key, str(record_id))
+    workflows.after_insert(conn, obj, created["record"], origin)
+    return created
 
 
-def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, Any], me: str | None) -> dict[str, Any]:
+def update(
+    conn: Connection, object_key: str, record_id: str, patch: dict[str, Any], me: str | None, *, origin: Origin
+) -> dict[str, Any]:
     obj = store.object_meta(conn, object_key)
     reject_unknown_columns(obj, patch)
     table = table_of(obj)
@@ -181,6 +193,8 @@ def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, A
     row = {**before, **patch}
     row = validate(conn, obj, row, list(patch))
     row = apply_rules(obj, before, row, patch, now=now, timezone=timezone)
+    # 「条件を満たしたとき」は、満たしていなかったものが満たした瞬間だけ動く。書き換える前に、いま満たしているかを見る
+    matched_before = workflows.before_update(conn, obj, record_id, origin)
 
     payload = _writable(table, {k: v for k, v in row.items() if before.get(k) != v}, fields)
     payload.pop("id", None)
@@ -190,7 +204,9 @@ def update(conn: Connection, object_key: str, record_id: str, patch: dict[str, A
     conn.execute(table.update().where(table.c.id == record_id).values(**payload))
     _sync_mentions(conn, obj, record_id, row)
     _apply_recurrence(conn, obj, {**row, "id": record_id}, patch, me)
-    return find(conn, object_key, record_id)
+    updated = find(conn, object_key, record_id)
+    workflows.after_update(conn, obj, updated["record"], origin, matched_before)
+    return updated
 
 
 def remove(conn: Connection, object_key: str, record_id: str) -> None:
@@ -275,4 +291,4 @@ def _apply_recurrence(
         found = conn.execute(select(table.c.id).where(table.c[repeat_of] == row["id"])).first()
         if found is not None:
             return
-    insert(conn, obj["key"], copy_for_next(obj, row, due), me)
+    insert(conn, obj["key"], copy_for_next(obj, row, due), me, origin=auto_origin(me))

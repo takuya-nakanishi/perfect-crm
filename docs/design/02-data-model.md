@@ -144,3 +144,19 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 - `frontend/src/mocks/fixtures/` に、メタデータ(`objects.json`・`views.json`。手で書く)とレコード(`accounts.json` ほか。`npm run fixtures` で生成)を置く。会社・人物は架空、メールは `example.jp`、電話は実在しない局番
 - レコードの日付は生成時の基準日で書かれており、モックが読み込むときに「今日」基準へずらす。いつ開いても、今日のタスクと今月の商談がある
 - 画面での変更は localStorage に残る(レコードは `works.mock.tables.v1`、テーブル設定は `works.mock.schema.v1`)。利用者メニューの「モックのデータを初期化」で両方戻せる
+
+## 7. ワークフロー(2026-09-30)
+
+「どのテーブルで・いつ・どの条件で・どこからの書き込みで」→「何をするか」の組(01 D-13、API は 04 §15)。システム表で、業務のテーブルとは別に Alembic が持つ(0008)。
+
+| 表 | 1 行 | 列(主なもの) |
+|---|---|---|
+| `workflows` | ワークフロー 1 つ | `name`、`object_key`(→ `meta_objects`)、`enabled`、`trigger`(JSONB: `event`・`filter`・`origins`)、`actions`(JSONB: `[{id, type, …}]`)、`created_by`、`deleted_at`(論理削除。「元に戻す」で戻る) |
+| `workflow_runs` | 1 つのアクションを 1 回動かすこと(**実行記録**。送信待ちの台帳を兼ねる) | `workflow_id`、`action_id`・`action_type`、`object_key`・`record_id`・`record_name`(レコードを消しても名前は残る)、`event`、`origin`(どこから)、`actor_id`、`status`(`queued` / `running` / `done` / `failed` / `skipped`)、`attempts`・`next_attempt_at`・`locked_until`、`payload`(送る中身の控え)、`error`、`finished_at` |
+| `slack_connections` | Slack のチャンネル 1 つ(いくつでも。`team_id` と `channel_id` で一意) | 04 §14。ワークフローの「Slack に知らせる」が、この行の `id` で送り先を指す |
+
+- **きっかけとアクションは JSONB。**種類ごとに形が違い、これからも増える(メール、レコードの作成…)。形はアプリが確かめる(`app/workflows/model.py`・モックの `checkWorkflow`)。書き込みのたびに引く `object_key` と `enabled` だけ列にする
+- **実行記録の状態は、レコードの表にも Slack のチャンネルの表にも持たない**(本人の提案)。レコードは業務のデータで、1 件に何本ものワークフローが動く。チャンネルの表には最終送信と最後の失敗だけ(画面の「要再接続」)
+- **本文は、実行記録を入れたときのレコードの値で作って `payload` に写す。**送り係はレコードの表を読まない。あとでレコードが変わっても消えても、そのときの内容が届く(実行記録の名前も残る)
+- ワークフローを削除しても実行記録は残る(ワークフローを戻せば見える)。実行記録は今のところ消さない(1 日に数十件の規模。増えたら古いものを間引く)
+- 条件が指す項目を外したワークフローは動かない(条件を外して動かすと広く動く。ビューは外して表示を広げるのと逆。§5)。画面は「条件の項目 … がありません」と出す

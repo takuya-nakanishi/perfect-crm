@@ -17,7 +17,7 @@ from app.security import COOKIE_NAME, verify
 
 Conn = Annotated[Connection, Depends(connection)]
 # 関数を抜けたところで確定する接続(既定の `Conn` は応答を送ったあとで確定する)。
-# 応答のあとに走る仕事(Slack への通知)が、確定したデータだけを知らせるように
+# Web フォームの受け口が、送り手に「受け付けました」を返す前に確定させるため(確定すると、ワークフローの送り係も起きる)
 CommittedConn = Annotated[Connection, Depends(connection, scope="function")]
 
 

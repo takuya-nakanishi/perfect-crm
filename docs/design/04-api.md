@@ -44,11 +44,15 @@
 | `GET /oauth/requests/{id}` / `POST`(`{ approve }`) | 許可の画面(`/oauth/consent`)。依頼の中身を見せ、決めたら Claude の戻り先を返す。無い・期限切れは 404。§13 | `OAuthRequest` / `{ redirect_url }` |
 | `GET /settings/forms` / `POST` / `PUT …/{id}` / `DELETE …/{id}` / `POST …/{id}/rotate` | Web フォームの定義(管理者)。§10 | `WebForm` |
 | `POST /forms/{key}` | **Web フォームの受け口(認証なし)**。form-urlencoded か JSON。§10 | `RecordResponse`(HTML のフォームからは `redirect_url` へ 303、無ければ小さな「受け付けました」の画面) |
-| `GET /settings/slack` | Slack への通知の繋がり具合(管理者。ワークスペースで 1 つ)。§14 | `SlackStatus` |
-| `POST /settings/slack/connect` | Slack の許可の画面の URL をもらう(管理者)。チャンネルはそこで選ぶ。§14 | `{ url }` |
-| `GET /slack/callback?code&state` | **Slack からの戻り**(誰の許可かは署名付きの `state` が持つ)。§14 | 303 で `/settings/notifications?slack=connected` / `denied` / `error` |
-| `POST /settings/slack/test` | テスト通知を送り、結果を記録する(管理者)。繋いでいなければ 409 `slack_not_connected`。§14 | `SlackStatus`(送れたかは `connection.last_error` が空か) |
-| `DELETE /settings/slack` | 連携を解除する(管理者)。Works が Webhook を捨てるだけで、Slack のアプリは外さない。§14 | 204 |
+| `GET /settings/slack` | 繋いでいる Slack のチャンネル(管理者。いくつでも)。§14 | `SlackStatus`(`{ configured, channels }`) |
+| `POST /settings/slack/connect` | Slack の許可の画面の URL をもらう(管理者。本文 `{ return_to }` は任意で、許可のあとに戻す画面。環境設定の中だけ)。チャンネルはそこで選ぶ。§14 | `{ url }` |
+| `GET /slack/callback?code&state` | **Slack からの戻り**(誰の許可か・どこへ戻すかは署名付きの `state` が持つ)。§14 | 303 で `<return_to>?slack=connected&channel=<id>` / `denied` / `error`(既定の戻り先は `/settings/slack`) |
+| `POST /settings/slack/{id}/test` | そのチャンネルへテスト通知を送り、結果を記録する(管理者)。無いチャンネルは 404。§14 | `SlackStatus`(送れたかは、そのチャンネルの `last_error` が空か) |
+| `DELETE /settings/slack/{id}` | チャンネルを外す(管理者)。Works が Webhook を捨てるだけで、Slack のアプリは外さない。ワークフローが送り先に選んでいれば 409 `channel_in_use`。§14 | 204 |
+| `GET /settings/workflows` / `POST` / `PUT …/{id}` / `DELETE …/{id}` / `POST …/{id}/restore` | ワークフローの定義(管理者。削除は論理削除で、`restore` が「元に戻す」)。§15 | `Workflow[]` / `Workflow` / 204 |
+| `GET /settings/workflows/{id}/runs` | 実行記録(管理者。新しい順、既定 50 件・`?limit=` で 200 まで)。§15 | `WorkflowRun[]` |
+| `POST /settings/workflows/runs/{id}/retry` | 失敗・見送りの実行を、もう一度送る(管理者)。それ以外は 409 `not_retryable`。§15 | `WorkflowRun` |
+| `POST /settings/workflows/test` | 保存前の定義(`WorkflowInput`)のまま、アクションをその場で 1 回動かす(管理者。実行記録には残さない)。§15 | `WorkflowTestResult` |
 | `GET /google/status` | その利用者が Google を繋いでいるか。§8 | `GoogleStatus` |
 | `POST /google/connect` | 許可の画面の URL をもらう。§8 | `{ url }` |
 | `GET /google/callback?code&state` | **Google からの戻り**(ここだけ Cookie を見ない)。§8 | 303 で画面へ(`?google=connected` / `denied` / `error`) |
@@ -204,28 +208,68 @@
 - 許可(`oauth_grants`)が環境設定の「接続中のアプリ」の 1 行。コードとトークンは sha256 だけを持つ。利用者を消すと、その人の許可も消える
 - ツールの呼び出しは、許可した人を「誰として」にして、画面と同じ関数を通る(既定値の「担当は自分」も同じ)。失敗は 400 の文(`定義に無い列です` など)をツールのエラーとして返し、AI が読んで直せるようにする
 
-## 14. Slack への通知(2026-09-30)
+## 14. Slack のチャンネル(2026-09-30)
 
 本人の指示: 「Web フォームから登録がなされたとき、自社の Slack に飛ばす」。leadcast-sales の Slack 通知(`docs/notifications/SLACK.md`)と同じ方式にした。
-違いは 2 つ。**Slack アプリは、SANEi CLOVER Inc. の Slack にある llm-wiki の稼働通知のアプリを流用し、その Slack にだけ入れる**(2026-09-30 本人の判断。leadcast-sales は LEADCAST Inc. の Slack に専用のアプリを作り、他社へ配布している)。そのため、**解除しても Slack のアプリは外さない**(下の「外す」)。設定は `docs/runbook/01` §6b。
+違いは 2 つ。**Slack アプリは、SANEi CLOVER Inc. の Slack にある llm-wiki の稼働通知のアプリを流用し、その Slack にだけ入れる**(2026-09-30 本人の判断。leadcast-sales は LEADCAST Inc. の Slack に専用のアプリを作り、他社へ配布している)。そのため、**チャンネルを外しても Slack のアプリは外さない**(下の「外す」)。設定は `docs/runbook/01` §6b。
+同日、**何をいつ知らせるかはワークフロー(§15)で決める形に替え、チャンネルを複数持てるようにした**(当初は「Web フォームの登録を 1 チャンネルへ」だけ)。ここはその送り先の管理。
 
 **方式: OAuth v2 で `incoming-webhook` の権限だけを求め、投稿先のチャンネルは Slack の許可の画面で選ばせる。**
-許可が済むと、Slack が選ばれたチャンネル専用の Incoming Webhook の URL を払い出し、Works はそこへ投稿する。
+許可が済むと、Slack が選ばれたチャンネル専用の Incoming Webhook の URL を払い出す。Works はそれを 1 チャンネル(`slack_connections` の 1 行)として仕舞う。許可を通すたびにチャンネルが増える。
 
 | 手順 | 中身 |
 |---|---|
-| 繋ぐ | `POST /settings/slack/connect` で許可の画面(`https://slack.com/oauth/v2/authorize?scope=incoming-webhook&…`)の URL をもらい、画面はそこへ送り出す。戻り(`GET /slack/callback`)でサーバが `oauth.v2.access` に認可コードを渡し、**Webhook の URL を暗号化して `slack_connections` に仕舞う**(応答に入っているボットトークンは捨てる。使い道が無い)。終わったら `?slack=connected` を付けて画面へ 303 |
-| 知らせる | `POST /forms/{key}` がレコードを作ったら、**確定して応答したあとで**(`BackgroundTasks`。受け口の接続は `Depends(scope="function")` で関数を抜けたところで確定する)Webhook へ投稿する。Slack が遅くても送り手を待たせず、確定していないレコードを知らせない |
-| 確かめる | `POST /settings/slack/test` でテスト通知。結果は繋ぎ先に記録し、状態を返す |
-| 外す | `DELETE /settings/slack`。行を消すだけ。**`apps.uninstall` は呼ばない** — アプリを外すと、そのアプリが払い出した Webhook が全部止まり、同じアプリを使う llm-wiki の稼働通知も止まる(2026-08-22 にアプリの削除で実際に止まった)。Slack 側に残った Webhook は、画面の「Slack で設定を開く」(`configuration_url`)から消す |
+| 繋ぐ | `POST /settings/slack/connect`(本文 `{ return_to }` は任意)で許可の画面(`https://slack.com/oauth/v2/authorize?scope=incoming-webhook&…`)の URL をもらい、画面はそこへ送り出す。戻り(`GET /slack/callback`)でサーバが `oauth.v2.access` に認可コードを渡し、**Webhook の URL を暗号化して仕舞う**(応答に入っているボットトークンは捨てる。使い道が無い)。終わったら `?slack=connected&channel=<id>` を付けて `return_to` へ 303 |
+| 繋ぎ直す | **同じチャンネル(`team_id` と `channel_id` の組)を許可し直すと、その行の Webhook を差し替える**(行は増えず、id も変わらない。ワークフローは id で指しているので、選び直さなくてよい)。「要再接続」もこれで消える |
+| 確かめる | `POST /settings/slack/{id}/test` でテスト通知。結果はそのチャンネルに記録し、状態を返す |
+| 外す | `DELETE /settings/slack/{id}`。行を消すだけ。**ワークフローが送り先に選んでいるあいだは 409 `channel_in_use`**(外すと、そのワークフローが黙って届かなくなる。削除中のワークフローは数えない)。**`apps.uninstall` は呼ばない** — アプリを外すと、そのアプリが払い出した Webhook が全部止まり、同じアプリを使う llm-wiki の稼働通知も止まる(2026-08-22 にアプリの削除で実際に止まった)。Slack 側に残った Webhook は、画面の「Slack で設定を開く」(`configuration_url`)から消す |
 
-- **繋ぎ先はワークスペースで 1 つ**(1 チャンネル)。チャンネルを変えるには、もう一度許可からやり直す(Incoming Webhook は投稿先を本文で上書きできない)。選び直しても前の Webhook は Slack 側に残り、送るのは新しい方だけ。別のワークスペースへ繋ぎ直しても、前のワークスペースからアプリは外さない(外すかどうかは Slack 側で人が決める)
-- 求める権限は 1 つ(`chat:write` も `channels:read` も求めない)。非公開のチャンネルも、許可する本人が入っていれば選べる。投稿した通知は後から直せない・消せない(Incoming Webhook の仕様)
+- **`return_to` は環境設定の中のパスだけ**(`^/settings(/[a-z][a-z-]*)*$`)。外の URL・`//…`・`..` は既定の `/settings/slack` に差し替える(開いたリダイレクトにしない)。戻り先は署名付きの `state` に入れて持ち、戻りでは `state` から取る(クエリは信じない)。`state` を読めないときは、戻り先も信じずに既定へ戻す
+- 求める権限は 1 つ(`chat:write` も `channels:read` も求めない)。非公開のチャンネルも、許可する本人が入っていれば選べる。投稿した通知は後から直せない・消せない(Incoming Webhook の仕様)。チャンネルは Webhook ごとに決まり、本文で上書きできない(だからチャンネルを増やすたびに許可を通す)
 - **state は署名だけで持つ**(Google と同じ。§8)。用途を混ぜるので、Google の state は Slack の戻りに使えない。戻ったとき、その人がまだ管理者かを見る。組織(Enterprise Grid)単位のインストールと、`https://hooks.slack.com/services/` で始まらない URL は保存しない
-- 知らせるのは **Web フォームから登録があったときだけ**(画面の「テスト送信」も含む。本物の受け口を通るため)。bot と判断した送信(§10 の 3)は知らせない。画面・MCP・CSV で作ったレコードは知らせない
-- 本文(`app/slack/message.py`): 見出し「📨 Web フォームから登録がありました」、**そのフォームが受け付けた項目**(既定値は載せない。選択肢はラベル、参照は表示名、日時はワークスペースの時刻。長い文は 1 段ぶん使う)、「フォーム『…』から〈テーブル〉に登録 · Works で開く」(`<公開 URL>/o/<テーブル>?peek=<テーブル>:<ID>`)。要約(`text`)は `[Works] Web フォーム「…」: <表示名>`
-- **人が書いた文字は Slack の書式の `&` `<` `>` をエスケープしてから載せる**(`<!channel>` でチャンネル全員に通知を飛ばす・`<https://…|…>` で偽のリンクを作る、を防ぐ。Web フォームは誰でも送れる)。リンクはボタンにせず mrkdwn のリンクにする(ボタンは Slack がアプリの Interactivity の口へ知らせようとし、Works はその口を持たない)。ブロックの上限(section 3000 字・field 2000 字・fields 10 個)の内側で切る
-- 失敗の扱い: 429・5xx・繋がらないは 1 回だけ待って送り直す(`Retry-After`、長くても 5 秒)。それでも駄目なら記録するだけで、**フォームの受け付けは止めない**(レコードはもうできている)。`no_service`・`channel_not_found`・`channel_is_archived`・`action_prohibited` などの「投稿先が失われた」類は `needs_reconnect`(画面は「要再接続」と「チャンネルを選び直す」を出す)。送れたら前の失敗を消す。後から送り直す仕組み(送信待ちの表)は持たない — 件数が少なく、レコードは Works に残るため
-- 繋いでいない・資格情報が無い: 何も送らない。管理者が `.env` を入れていなければ、`configured: false`(画面は「資格情報が入っていません」)、`connect` は 503 `slack_not_configured`
+- **人が書いた文字は Slack の書式の `&` `<` `>` をエスケープしてから載せる**(`<!channel>` でチャンネル全員に通知を飛ばす・`<https://…|…>` で偽のリンクを作る、を防ぐ。Web フォームは誰でも送れる)。リンクはボタンにせず mrkdwn のリンクにする(ボタンは Slack がアプリの Interactivity の口へ知らせようとし、Works はその口を持たない)。ブロックの上限(header 150 字・section 3000 字・field 2000 字・fields 10 個)の内側で切る
+- 失敗の分類: 429・5xx・繋がらないは一時的(ワークフローの送り係が間を空けて送り直す。§15。画面のテスト通知は 1 回だけ待って送り直す)。`no_service`・`channel_not_found`・`channel_is_archived`・`action_prohibited` などの「投稿先が失われた」類は `needs_reconnect`(画面は「要再接続」と「繋ぎ直す」)。送れたら前の失敗を消す
+- 資格情報が無い: 管理者が `.env` を入れていなければ、`configured: false`(画面は「資格情報が入っていません」)、`connect` は 503 `slack_not_configured`
 - 戻り先(`<WORKS_PUBLIC_URL>/api/v1/slack/callback`)は Access の内側のまま(戻ってくるのは、Works にログインしている本人のブラウザ)。Slack は HTTPS 以外の戻り先を受け付けないので、手元(`http://127.0.0.1`)では本物の往復は試せない。本物の往復は `test_slack.py` が偽物の Slack で確かめる
 
+## 15. ワークフロー(2026-09-30)
+
+本人の指示: 「リード登録時に Slack 通知させるトリガーを、リードのみならず汎用的に使えるように。名前はワークフロー、将来の拡張もできる UI と作りに」(01 D-13)。
+**1 つのワークフロー = きっかけ 1 つ + アクションの並び。**表は 02 §7、送り係は 03 §11、画面は 05 §14。正はモック(`frontend/src/mocks/workflows.ts`)。
+
+`WorkflowInput`(作成・更新・テスト送信の本文):
+
+```json
+{
+  "name": "新しいリード",
+  "enabled": true,
+  "object": "leads",
+  "trigger": { "event": "created", "filter": { "field": "source", "op": "eq", "value": "web" }, "origins": ["app", "form", "mcp", "auto"] },
+  "actions": [{ "id": "a3f9c2d1e0", "type": "slack", "channel": "<SlackChannel の id>", "fields": ["company", "email", "phone"] }]
+}
+```
+
+| 項目 | 決まり |
+|---|---|
+| `trigger.event` | `created`(作成されたとき。条件は任意で、あれば作ったレコードが満たすときだけ)/ `matched`(条件を満たしたとき。条件は必須。作成・更新で、**満たしていなかったものが満たした瞬間に 1 回**。満たしたまま直しても動かない。外れてからまた満たせばもう 1 回) |
+| `trigger.filter` | ビューと同じ形(§3)で、**同じ関数で SQL にしてその 1 行に当てる**(ビューと意味が食い違わない)。「自分」(`$me`)は 400(誰の書き込みでも動くので決まらない)。無い項目・型に合わない値は保存のときに 400。保存したあとで項目を外したら、そのワークフローは動かず `problems` に出る(条件を外して広く動かさない) |
+| `trigger.origins` | どこからの書き込みで動かすか。`app`(画面)・`form`(Web フォーム)・`mcp`(AI)・`auto`(繰り返しのタスクの次回)・`import`(CSV の取り込み)。1 つ以上。この順に揃える。画面の既定は `import` を除く 4 つ |
+| `actions` | 1〜10 個。`id` は画面が振る重ならない名前(64 字まで。実行記録が指す)。`type` はいまは `slack` だけ: `channel`(`SlackChannel` の id。必須)、`fields`(載せる項目。20 個まで。表示名は見出しの下に必ず出るので重ねない) |
+| `enabled` | 真偽。オフのあいだは動かず、**オフにする前に入った送信待ちも見送る** |
+
+**動く仕組み**(書き込みの経路 `service.insert` / `update` の中):
+1. そのテーブルの、オンで削除中でなく、`origins` にこの書き込みの経路が入っているワークフローを引く
+2. 更新なら、書き換える前に「`matched` のうち、もう満たしているもの」を覚えておく
+3. 書いたあと、条件をその 1 行に当て、動かすものについてアクションごとに**実行記録(`queued`)を入れる**。本文はこのときのレコードの値で作って写す
+4. トランザクションが確定したら送り係が起きて送る(03 §11)。取り消されたら実行記録も残らない
+5. 何が起きてもレコードの書き込みは止めない(SAVEPOINT で囲む)
+
+**Slack に知らせる の本文**(`app/slack/message.py` の `workflow_notice`): 見出しはワークフローの名前、次にレコードの表示名(太字)、選んだ項目(選択肢はラベル、参照は表示名、日時はワークスペースの時刻、長い文は 1 段ぶん、空は載せない)、末尾に「〈テーブル〉に作成(または 〈テーブル〉が条件を満たしました)· 〈誰〉(〈どこから〉)· Works で開く」。要約(`text`)は `[Works] <ワークフローの名前>: <表示名>`。テスト送信は見出しに `[テスト]` を付ける。エスケープと上限は §14。
+
+**実行記録**(`WorkflowRun`): `status` は `queued`(待ち)→ `running`(実行中)→ `done`(済み)/ `failed`(失敗)/ `skipped`(見送り: 送る前にオフ・削除にされた)。一時的な失敗は `queued` に戻して間を空け(`next_attempt_at`)、5 回目で `failed`。`retry` は `failed` / `skipped` だけを `queued` に戻す(試した回数は 0 から)。削除中のワークフローの実行は送り直せない(先に戻す)。
+
+**`Workflow`**(一覧と 1 件): 定義に加えて `created_by`・`created_at`・`updated_at`、`last_run`(直近の実行の状態・時刻・失敗)、`problems`(いま動けない理由: テーブルが削除中・条件の項目が無い・チャンネルが外された・要再接続)。
+
+**テスト送信**(`POST /settings/workflows/test`): 保存前の定義を同じ検証に通し、そのテーブルで条件を満たす最新の 1 件(無ければ最新の 1 件、テーブルが空なら見本の値)で、アクションをその場で 1 回動かす。実行記録には残さない。応答は使ったレコードと、アクションごとの成否。
+
+**これまでの Web フォームの通知の移行**(マイグレーション 0008): Slack と繋いでいて Web フォームがあれば、テーブルごとに「Web フォームからの登録」(作成されたとき・`origins: ["form"]`・載せる項目はそのテーブルのフォームの項目を合わせたもの・送り先は繋いでいたチャンネル)を作る。Web フォームの受け口は、もう自分では知らせない。

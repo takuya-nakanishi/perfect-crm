@@ -29,7 +29,7 @@ export function Select({ value, onChange, children, label }: { value: string; on
 const toList = (value: Condition['value']): Scalar[] => (Array.isArray(value) ? value : value === null || value === undefined ? [] : [value])
 
 /** 値の欄。型ごとに、選択肢・利用者・参照・日付・数値・文字を出し分ける */
-function ValueEditor({ meta, field, condition, onChange }: { meta: MetaResponse; field: FieldMeta; condition: Condition; onChange: (c: Condition) => void }) {
+function ValueEditor({ meta, field, condition, onChange, allowMe }: { meta: MetaResponse; field: FieldMeta; condition: Condition; onChange: (c: Condition) => void; allowMe: boolean }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [query, setQuery] = useState('')
   const q = useDebounced(query, 120)
@@ -93,7 +93,7 @@ function ValueEditor({ meta, field, condition, onChange }: { meta: MetaResponse;
     return (
       <Select value={String(values[0] ?? '')} onChange={(v) => set(v || null)} label="値">
         <option value="">利用者を選ぶ</option>
-        <option value="$me">自分</option>
+        {allowMe && <option value="$me">自分</option>}
         {meta.users.map((u) => (
           <option key={u.id} value={u.id}>
             {u.name}
@@ -187,12 +187,18 @@ export function ConditionEditor({
   condition,
   onChange,
   onRemove,
+  allowMe = true,
+  live = true,
 }: {
   meta: MetaResponse
   fields: FieldMeta[]
   condition: Condition
   onChange: (c: Condition) => void
   onRemove: () => void
+  /** 「自分」を値に選べるか。ワークフローの条件では使えない(誰の書き込みでも動くので、自分が決まらない) */
+  allowMe?: boolean
+  /** 変えるとすぐ効くか(ビュー)。保存してから効くもの(ワークフロー)では、その一言を出さない */
+  live?: boolean
 }) {
   const field = fields.find((f) => f.key === condition.field) ?? fields[0]
   return (
@@ -228,17 +234,19 @@ export function ConditionEditor({
             </option>
           ))}
         </Select>
-        {needsValue(condition.op) && <ValueEditor meta={meta} field={field} condition={condition} onChange={onChange} />}
+        {needsValue(condition.op) && <ValueEditor meta={meta} field={field} condition={condition} onChange={onChange} allowMe={allowMe} />}
       </div>
       <div className="mt-3 flex items-center justify-between">
         <button type="button" onClick={onRemove} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm text-ink-2 hover:bg-danger-wash hover:text-danger">
           <X size={13} aria-hidden />
           条件を外す
         </button>
-        <span className="inline-flex items-center gap-1 text-xs text-ink-3">
-          <Check size={12} aria-hidden />
-          変えるとすぐ効きます
-        </span>
+        {live && (
+          <span className="inline-flex items-center gap-1 text-xs text-ink-3">
+            <Check size={12} aria-hidden />
+            変えるとすぐ効きます
+          </span>
+        )}
       </div>
     </div>
   )

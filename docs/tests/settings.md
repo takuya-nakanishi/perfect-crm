@@ -1,8 +1,8 @@
 # 環境設定と連携(SET)テストケース表
 
-読み方・資産の書き方・`—` の扱いは [`README.md`](README.md)。仕様は `docs/design/03` §5、`04` §8・§10・§14、`05` §11、`06` §7、棚卸し `08` §1(1・6・7)。
+読み方・資産の書き方・`—` の扱いは [`README.md`](README.md)。仕様は `docs/design/03` §5、`04` §8・§10・§14、`05` §11、`06` §7、棚卸し `08` §1(1・6・7)。ワークフロー(Slack に知らせる本体)は [`workflows.md`](workflows.md)。
 
-**段階**: `管理者`(誰が変えられるか)、`MCP`、`フォーム`(Web フォームの受け口)、`ドライブ`(Google ドライブの項目)、`サイドバー`(テーブルの表示)、`通知`(Slack への通知)。
+**段階**: `管理者`(誰が変えられるか)、`MCP`、`フォーム`(Web フォームの受け口)、`ドライブ`(Google ドライブの項目)、`サイドバー`(テーブルの表示)、`Slack`(ワークフローが知らせる先のチャンネル)。
 この領域は**優先順位の 6 位**(外からの書き込みの安全弁)。
 
 L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(`requireAdmin`)。
@@ -62,17 +62,20 @@ L2 の対象は `frontend/src/mocks/settings.ts`・`drive.ts`・`mockClient.ts`(
 |---|---|---|---|---|---|---|---|
 | SET-080 | 管理者 | サイドバー | 整合 | L3 | 管理者: 活動は初めからサイドバーに出ない。スイッチで出せる | `smoke.mjs「活動は初めからサイドバーに出ない」` / `smoke.mjs「スイッチで活動をサイドバーに出せる」` | — |
 
-## 6. 通知(Slack)
+## 6. Slack のチャンネル
 
-L2 は `mocks/settings.ts` の擬似(Slack の許可の画面は無く、「繋ぐ」で架空のチャンネルに繋いだことにする)。
-本物の Slack との往復(認可コードの交換・Webhook への投稿・失敗の分類・エスケープ)は `test_slack.py` が偽物の Slack で確かめる。
+L2 は `mocks/slack.ts` の擬似(Slack の許可の画面は無く、「繋ぐ」で架空のチャンネルを 1 つ足したことにする)。
+本物の Slack との往復(認可コードの交換・Webhook への投稿・失敗の分類)は `test_slack.py` が偽物の Slack で確かめる。
+2026-09-30 に 1 つから複数のチャンネルへ替えた(SET-100〜102・104・105 は、そのときに書き直した)。何をいつ知らせるかはワークフロー(`workflows.md`)。
 
 | ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 | API の資産 |
 |---|---|---|---|---|---|---|---|
-| SET-100 | 管理者 | 通知 | 整合 | L2 | 初めは繋いでいない。`slackConnect` → チャンネルと繋いだ人が出る。`slackDisconnect` → 消える(本物は Works が Webhook を捨てるだけで、Slack のアプリは外さない。`apps.uninstall` を呼んだら落ちる) | `mockClient.test.ts` | `test_slack.py` |
-| SET-101 | 利用者 | 通知 | 権限 | L2 | 管理者でない利用者: `slackStatus` / `slackConnect` / `slackTest` / `slackDisconnect` → 403。繋ぎ先は変わらない | `mockClient.test.ts` | `test_slack.py` |
-| SET-102 | 管理者 | 通知 | 証跡 | L2 | `slackTest`: 繋いでいない → 409。繋いでいれば最終送信の時刻が入り、失敗は空。送れなければ理由が残り、投稿先が消えた類なら「要再接続」。送れたら消える(失敗の再現は API の資産だけ) | `mockClient.test.ts` | `test_slack.py` |
-| SET-103 | 外部 | 通知 | 整合 | L2 | `submitWebForm`: Slack と繋いでいれば知らせる(最終送信が更新される)。bot(`_gotcha`)は知らせない。繋いでいなければ何も送らない | `mockClient.test.ts` | `test_slack.py` |
-| SET-104 | 管理者 | 通知 | 整合 | L3 | 管理者: 「Slack と連携する」→ 戻ってくると選んだチャンネルが出る。テスト通知 → 最終送信の時刻。解除できる | `smoke.mjs「Slack と連携すると、選んだチャンネルが出る」` / `smoke.mjs「テスト通知を送ると、最終送信の時刻が出る」` / `smoke.mjs「Slack との連携を解除できる」`(モックだけ) | — |
-| SET-105 | 管理者 | 通知 | 整合 | L3 | 管理者が Slack アプリの資格情報を入れていない(http): 通知の節に「資格情報が入っていません」が出て、「Slack と連携する」は出ない | `smoke.mjs「Slack アプリが未設定なら、その旨が出て連携のボタンは出ない」`(http のときだけ走る) | — |
-| SET-106 | 外部 | 通知 | 安全弁 | L5 | 本番: 自社の Slack で連携 → テスト通知と、Web フォームの「テスト送信」がチャンネルに届く。本文に書いた `<!channel>` は効かず、そのまま文字で出る | — | — |
+| SET-100 | 管理者 | Slack | 整合 | L2 | 初めは空。`slackConnect` → チャンネル(と繋いだ人)が並び、もう一度で 2 つめ。同じチャンネルを繋ぎ直すと行は増えず(id も同じ)、名前と Webhook が新しくなる。`slackDisconnect(id)` → 消える(本物は Works が Webhook を捨てるだけで、Slack のアプリは外さない。`apps.uninstall` を呼んだら落ちる) | `mockClient.test.ts` | `test_slack.py` |
+| SET-101 | 利用者 | Slack | 権限 | L2 | 管理者でない利用者: `slackStatus` / `slackConnect` / `slackTest` / `slackDisconnect` → 403。チャンネルは変わらない | `mockClient.test.ts` | `test_slack.py` |
+| SET-102 | 管理者 | Slack | 証跡 | L2 | `slackTest(id)`: 無いチャンネル(UUID でない id も)→ 404。あれば最終送信の時刻が入り、失敗は空。送れなければ理由が残り、投稿先が消えた類なら「要再接続」。送れたら消える(失敗の再現は API の資産だけ) | `mockClient.test.ts` | `test_slack.py` |
+| SET-103 | 外部 | Slack | 整合 | L2 | `submitWebForm`: 「どこから」に Web フォームを入れたワークフローがあれば知らせる(実行記録が済みになり、チャンネルの最終送信が進む)。bot(`_gotcha`)はレコードを作らないので知らせない。ワークフローが無ければ何も送らない | `mockClient.test.ts` | `test_workflows.py` |
+| SET-104 | 管理者 | Slack | 整合 | L3 | 管理者: 「チャンネルを追加」→ 戻ってくると選んだチャンネルが並ぶ。テスト通知 → 最終送信の時刻。ワークフローが送っているチャンネルは外せず、使っていないものは外せる | `smoke.mjs「チャンネルを追加すると、選んだチャンネルが並ぶ」` / `smoke.mjs「テスト通知を送ると、最終送信の時刻が出る」` / `smoke.mjs「ワークフローが送っているチャンネルは外せず、理由が出る」` / `smoke.mjs「使っていないチャンネルは外せる」`(モックだけ) | — |
+| SET-105 | 管理者 | Slack | 整合 | L3 | 管理者が Slack アプリの資格情報を入れていない(http): Slack の節に「資格情報が入っていません」が出て、「チャンネルを追加」は出ない。入れていれば出る | `smoke.mjs「Slack アプリが未設定なら、その旨が出て「チャンネルを追加」は出ない」` / `smoke.mjs「Slack アプリが設定済みなら「チャンネルを追加」が出る」`(http のときだけ走る) | — |
+| SET-106 | 外部 | Slack | 安全弁 | L5 | 本番: 自社の Slack でチャンネルを繋ぐ → テスト通知と、ワークフロー(Web フォームから)の通知がチャンネルに届く。本文に書いた `<!channel>` は効かず、そのまま文字で出る | — | — |
+| SET-107 | 管理者 | Slack | 安全弁 | L2 | `slackDisconnect(id)`: ワークフローが送り先に選んでいれば 409 `channel_in_use`(メッセージにワークフローの名前)。そのワークフローを削除すれば(削除中は数えない)外せる | `mockClient.test.ts` | `test_slack.py` |
+| SET-108 | 管理者 | Slack | 安全弁 | L2 | `slackConnect(returnTo)`: 許可のあとは頼んだ画面(環境設定の中)へ戻す。外の URL・`//…`・環境設定の外のパス・`..` を含むものは、環境設定の Slack へ差し替える(開いたリダイレクトにしない) | `mockClient.test.ts` | `test_slack.py` |

@@ -7,6 +7,8 @@ import { createDocument, listFiles, resetDrive } from './drive'
 import { getMeta, resetTables } from './engine'
 import { createMockClient } from './mockClient'
 import { listForms, listTokens, resetSettings } from './settings'
+import { resetSlack } from './slack'
+import { resetWorkflows } from './workflows'
 
 // テストケース表: docs/tests/settings.md。1 つの it が表の 1 行(ID をラベルに入れる)
 const input = (key: string): ObjectInput => ({
@@ -406,77 +408,130 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
   })
 })
 
-describe('Slack への通知の擬似(mocks/settings.ts)', () => {
+describe('Slack のチャンネルの擬似(mocks/slack.ts)', () => {
   beforeEach(() => {
     localStorage.clear()
     resetTables()
     resetSettings()
+    resetSlack()
+    resetWorkflows()
   })
 
-  it('SET-100 初めは繋いでいない。slackConnect で繋ぐとチャンネルと繋いだ人が出て、slackDisconnect で消える', async () => {
+  /** 「繋ぐ」で足したチャンネルの id(戻り先の URL の ?channel=) */
+  const connect = async (api: ReturnType<typeof createMockClient>, returnTo?: string) => {
+    const { url } = await api.slackConnect(returnTo)
+    return new URL(url, 'http://works.test').searchParams.get('channel')!
+  }
+
+  it('SET-100 初めは空。slackConnect でチャンネルが並び、slackDisconnect で消える', async () => {
     const api = createMockClient()
     await api.login(admin.email, 'x')
-    expect(await api.slackStatus()).toEqual({ configured: true, connection: null })
+    expect(await api.slackStatus()).toEqual({ configured: true, channels: [] })
 
     const { url } = await api.slackConnect()
-    expect(url, '戻り先は通知の設定').toBe('/settings/notifications?slack=connected')
-    const { connection } = await api.slackStatus()
-    expect(connection).toMatchObject({ channel_name: '#web-問い合わせ', connected_by: admin.id, last_sent_at: null, last_error: null, needs_reconnect: false })
+    const back = new URL(url, 'http://works.test')
+    expect(back.pathname, '戻り先は既定で環境設定の Slack').toBe('/settings/slack')
+    expect(back.searchParams.get('slack')).toBe('connected')
+    const first = back.searchParams.get('channel')!
+    const second = await connect(api)
+    const { channels } = await api.slackStatus()
+    expect(channels.map((c) => c.id)).toEqual([first, second])
+    expect(channels[0]).toMatchObject({ channel_name: '#web-問い合わせ', connected_by: admin.id, last_sent_at: null, last_error: null, needs_reconnect: false })
+    expect(channels[1].channel_name, '2 つめは別のチャンネル').not.toBe(channels[0].channel_name)
 
-    await api.slackDisconnect()
-    expect((await api.slackStatus()).connection, '解除すると消える').toBeNull()
+    await api.slackDisconnect(first)
+    expect((await api.slackStatus()).channels.map((c) => c.id), '外すと消える').toEqual([second])
   })
 
-  it('SET-101 管理者でない利用者の slackStatus / slackConnect / slackTest / slackDisconnect は 403 で、繋ぎ先は変わらない', async () => {
+  it('SET-101 管理者でない利用者の slackStatus / slackConnect / slackTest / slackDisconnect は 403 で、チャンネルは変わらない', async () => {
     const api = createMockClient()
     await api.login(admin.email, 'x')
-    await api.slackConnect()
+    const id = await connect(api)
     const before = await api.slackStatus()
     await api.logout()
 
     await api.login(member.email, 'x')
     expect(await statusOf(() => api.slackStatus()), 'slackStatus').toBe(403)
     expect(await statusOf(() => api.slackConnect()), 'slackConnect').toBe(403)
-    expect(await statusOf(() => api.slackTest()), 'slackTest').toBe(403)
-    expect(await statusOf(() => api.slackDisconnect()), 'slackDisconnect').toBe(403)
+    expect(await statusOf(() => api.slackTest(id)), 'slackTest').toBe(403)
+    expect(await statusOf(() => api.slackDisconnect(id)), 'slackDisconnect').toBe(403)
 
-    // 対照: 管理者から見ると、繋ぎ先はそのまま
+    // 対照: 管理者から見ると、チャンネルはそのまま
     await api.logout()
     await api.login(admin.email, 'x')
     expect(await api.slackStatus()).toEqual(before)
   })
 
-  it('SET-102 slackTest は繋いでいなければ 409、繋いでいれば最終送信の時刻が入って失敗は空', async () => {
+  it('SET-102 slackTest は無いチャンネルなら 404、あれば最終送信の時刻が入って失敗は空', async () => {
     const api = createMockClient()
     await api.login(admin.email, 'x')
-    expect(await statusOf(() => api.slackTest()), '繋いでいない').toBe(409)
+    expect(await statusOf(() => api.slackTest('nothing')), '無いチャンネル').toBe(404)
 
-    await api.slackConnect()
+    const id = await connect(api)
     const startedAt = new Date().toISOString()
-    const { connection } = await api.slackTest()
-    expect(connection!.last_sent_at! >= startedAt, '最終送信の時刻が入る').toBe(true)
-    expect(connection!.last_error).toBeNull()
-    expect(connection!.needs_reconnect).toBe(false)
+    const channel = (await api.slackTest(id)).channels.find((c) => c.id === id)!
+    expect(channel.last_sent_at! >= startedAt, '最終送信の時刻が入る').toBe(true)
+    expect(channel.last_error).toBeNull()
+    expect(channel.needs_reconnect).toBe(false)
   })
 
-  it('SET-103 submitWebForm は Slack と繋いでいれば最終送信の時刻を更新し、bot(_gotcha)なら更新しない。繋いでいなければ何も起きない', async () => {
+  it('SET-103 submitWebForm は、Web フォームで動くワークフローがあれば知らせ(実行記録が済みになる)、bot(_gotcha)なら知らせない。無ければ何も起きない', async () => {
     const api = createMockClient()
     await api.login(admin.email, 'x')
     const form = listForms().find((f) => f.enabled)!
     const name = getMeta().objects.find((o) => o.key === form.object)!.name_field
 
-    // 繋ぐ前の送信は、繋いだあとの状態に残らない
-    await api.submitWebForm(form.key, { [name]: '繋ぐ前' })
-    await api.slackConnect()
-    expect((await api.slackStatus()).connection!.last_sent_at).toBeNull()
+    // ワークフローが無ければ、送信しても何も残らない
+    await api.submitWebForm(form.key, { [name]: '作る前' })
+    const channel = await connect(api)
+    const workflow = await api.createWorkflow({
+      name: 'Web フォームからの登録',
+      enabled: true,
+      object: form.object,
+      trigger: { event: 'created', origins: ['form'] },
+      actions: [{ id: 'a1', type: 'slack', channel, fields: [] }],
+    })
+    expect(await api.listWorkflowRuns(workflow.id)).toEqual([])
 
     await api.submitWebForm(form.key, { [name]: '山田 太郎' })
-    const sent = (await api.slackStatus()).connection!.last_sent_at
-    expect(sent, '知らせた').not.toBeNull()
+    const runs = await api.listWorkflowRuns(workflow.id)
+    expect(runs.map((r) => [r.status, r.origin, r.record_name, r.target])).toEqual([['done', 'form', '山田 太郎', '#web-問い合わせ']])
+    expect((await api.slackStatus()).channels[0].last_sent_at, 'チャンネルの最終送信も進む').not.toBeNull()
 
-    await new Promise((resolve) => setTimeout(resolve, 5))
     await api.submitWebForm(form.key, { [name]: 'bot', _gotcha: '罠' })
-    expect((await api.slackStatus()).connection!.last_sent_at, 'bot は知らせない').toBe(sent)
+    expect(await api.listWorkflowRuns(workflow.id), 'bot は知らせない').toHaveLength(1)
+  })
+
+  it('SET-107 ワークフローが送り先に選んでいるチャンネルは外せない(409)。ワークフローを削除すれば外せる', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    const channel = await connect(api)
+    const workflow = await api.createWorkflow({
+      name: '新しい取引先責任者',
+      enabled: true,
+      object: 'contacts',
+      trigger: { event: 'created', origins: ['app'] },
+      actions: [{ id: 'a1', type: 'slack', channel, fields: [] }],
+    })
+    let refused: unknown = null
+    await api.slackDisconnect(channel).catch((e: unknown) => (refused = e))
+    expect(refused).toBeInstanceOf(ApiError)
+    expect((refused as ApiError).status).toBe(409)
+    expect((refused as ApiError).code).toBe('channel_in_use')
+    expect((refused as ApiError).message).toContain('新しい取引先責任者')
+
+    await api.deleteWorkflow(workflow.id)
+    await api.slackDisconnect(channel)
+    expect((await api.slackStatus()).channels).toEqual([])
+  })
+
+  it('SET-108 許可のあとは頼んだ画面(環境設定の中)へ戻し、外の URL は環境設定の Slack へ差し替える', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    expect(new URL((await api.slackConnect('/settings/workflows')).url, 'http://works.test').pathname).toBe('/settings/workflows')
+    for (const outside of ['https://evil.example/', '//evil.example', '/o/contacts', '/settings/../o']) {
+      expect(new URL((await api.slackConnect(outside)).url, 'http://works.test').pathname, outside).toBe('/settings/slack')
+    }
   })
 })
 

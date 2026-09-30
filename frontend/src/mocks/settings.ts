@@ -1,9 +1,10 @@
 /**
- * 環境設定の擬似: MCP のアクセストークン、Web フォーム、Slack への通知。本番はバックエンドの表(mcp_tokens / web_forms / slack_connections)。
+ * 環境設定の擬似: MCP のアクセストークン、Web フォーム。本番はバックエンドの表(mcp_tokens / web_forms)。
+ * Slack のチャンネルは slack.ts、ワークフローは workflows.ts。
  * トークンの全文は発行時に 1 回だけ返し、保存するのはハッシュだけ(ここでは先頭 8 文字と印のみ)
  */
 import { ApiError } from '@/api/client'
-import type { McpConnection, McpToken, McpTokenCreated, OAuthRequest, RecordResponse, Scalar, SlackConnection, SlackStatus, WebForm, WebFormInput } from '@/api/types'
+import type { McpConnection, McpToken, McpTokenCreated, OAuthRequest, RecordResponse, Scalar, WebForm, WebFormInput } from '@/api/types'
 import { coerce } from './csv'
 import { insert, users } from './engine'
 import { liveObjects } from './schema'
@@ -14,7 +15,6 @@ interface Store {
   tokens: McpToken[]
   forms: WebForm[]
   connections?: McpConnection[]
-  slack?: SlackConnection | null
 }
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600000).toISOString()
@@ -214,53 +214,10 @@ export function submitForm(key: string, values: Record<string, Scalar>): RecordR
       throw new ApiError(400, 'invalid', e instanceof Error ? e.message : String(e))
     }
   }
-  const created = insert(form.object, accepted, null)
+  // 知らせる(Slack など)のはワークフロー。「どこから」は Web フォーム(04 §15)
+  const created = insert(form.object, accepted, null, { kind: 'form', actor: null, label: form.name })
   form.submissions += 1
   form.last_submitted_at = new Date().toISOString()
-  // Slack と繋いでいれば知らせる(本物はレコードを確定して応答したあとで送る。04 §14)
-  markSent()
   save()
   return created
-}
-
-// --- Slack への通知(04 §14)---------------------------------------------------------
-// モックには Slack の許可の画面が無いので、「繋ぐ」で架空のワークスペースのチャンネルに繋いだことにする。
-// 送ったことは最終送信の時刻にだけ残す(本物はサーバが Incoming Webhook へ送る)
-
-export function slackStatus(): SlackStatus {
-  return { configured: true, connection: structuredClone(store.slack ?? null) }
-}
-
-export function slackConnect(me: string): { url: string } {
-  store.slack = {
-    team_name: 'Works デモ',
-    channel_name: '#web-問い合わせ',
-    configuration_url: null,
-    connected_by: me,
-    connected_at: new Date().toISOString(),
-    last_sent_at: null,
-    last_error: null,
-    last_error_at: null,
-    needs_reconnect: false,
-  }
-  save()
-  // 本物は Slack の許可の画面。モックは繋いだことにして、通知の設定へ戻す
-  return { url: '/settings/notifications?slack=connected' }
-}
-
-function markSent() {
-  if (!store.slack) return
-  store.slack = { ...store.slack, last_sent_at: new Date().toISOString(), last_error: null, last_error_at: null, needs_reconnect: false }
-}
-
-export function slackTest(): SlackStatus {
-  if (!store.slack) throw new ApiError(409, 'slack_not_connected', 'Slack と連携していません')
-  markSent()
-  save()
-  return slackStatus()
-}
-
-export function slackDisconnect() {
-  store.slack = null
-  save()
 }

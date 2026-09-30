@@ -21,6 +21,7 @@ import type {
   SidebarItem,
   TimelineEntry,
   ViewInput,
+  WorkflowOrigin,
 } from '@/api/types'
 import { addDays, addMonths, dayLabel, diffDays, localDateOf, monthLabel, startOfMonth, todayISO } from '@/lib/dates'
 import { defaultContext, makeComparator, matchFilter } from '@/lib/filter'
@@ -129,6 +130,34 @@ export function resetTables() {
   schema.resetSchema()
   tables = load()
   trash = { rows: {}, detached: {} }
+}
+
+/** 書き込みがどこから来たか(04 §15)。ワークフローの「どこから」と実行記録に使う。本番は `app/records/origin.py` */
+export interface Origin {
+  kind: WorkflowOrigin
+  /** 書いた人。Web フォームは null */
+  actor: string | null
+  /** 人に見せる補足(Web フォームの名前) */
+  label?: string
+}
+
+export const appOrigin = (actor: string | null): Origin => ({ kind: 'app', actor })
+
+/**
+ * 書き込みのたびに呼ぶ口。ワークフロー(mocks/workflows.ts)が差し込む。engine からワークフローを import しないため
+ * (ワークフローは engine の表示名や表を使う)。本番は `app/records/service.py` が `app/workflows/engine.py` を呼ぶ
+ */
+export interface WriteHooks {
+  afterInsert(meta: ObjectMeta, row: Row, origin: Origin): void
+  /** 更新の前。「条件を満たしたとき」のうち、もう満たしているもの(の id)を返す */
+  beforeUpdate(meta: ObjectMeta, row: Row, origin: Origin): Set<string>
+  afterUpdate(meta: ObjectMeta, row: Row, origin: Origin, before: Set<string>): void
+}
+
+let writeHooks: WriteHooks | null = null
+
+export function setWriteHooks(hooks: WriteHooks | null) {
+  writeHooks = hooks
 }
 
 export function table(key: string): Row[] {
@@ -374,7 +403,7 @@ function rejectUnknownColumns(meta: ObjectMeta, values: Record<string, Scalar>) 
   if (bad !== undefined) throw new ApiError(400, 'invalid', `定義に無い列です: ${bad}`)
 }
 
-export function insert(object: string, values: Record<string, Scalar>, me: string | null) {
+export function insert(object: string, values: Record<string, Scalar>, me: string | null, origin: Origin = appOrigin(me)) {
   const meta = objectMeta(object)
   rejectUnknownColumns(meta, values)
   const now = new Date().toISOString()
@@ -401,10 +430,11 @@ export function insert(object: string, values: Record<string, Scalar>, me: strin
   applyRules(meta, null, row, effective, me)
   table(object).unshift(row)
   save()
+  writeHooks?.afterInsert(meta, row, origin)
   return find(object, row.id)!
 }
 
-export function update(object: string, id: string, patch: Record<string, Scalar>, me: string | null) {
+export function update(object: string, id: string, patch: Record<string, Scalar>, me: string | null, origin: Origin = appOrigin(me)) {
   const meta = objectMeta(object)
   const rows = table(object)
   const index = rows.findIndex((r) => r.id === id)
@@ -413,9 +443,12 @@ export function update(object: string, id: string, patch: Record<string, Scalar>
   const next = { ...rows[index], ...patch, id }
   validate(meta, next, Object.keys(patch))
   applyRules(meta, rows[index], next, patch, me)
+  // 「条件を満たしたとき」は、満たしていなかったものが満たした瞬間だけ動く。書き換える前に、いま満たしているかを見る
+  const matchedBefore = writeHooks?.beforeUpdate(meta, rows[index], origin) ?? new Set<string>()
   rows[index] = next
   applyRecurrence(meta, next, rows, index, patch, me)
   save()
+  writeHooks?.afterUpdate(meta, next, origin, matchedBefore)
   return find(object, id)!
 }
 
@@ -452,7 +485,7 @@ function applyRecurrence(meta: ObjectMeta, row: Row, rows: Row[], index: number,
     copy[c.field] = c.open_value
     if (c.repeat_of_field) copy[c.repeat_of_field] = row.id
     // 作成と同じ経路(既定値・検証・業務ルール)。rows の先頭に入るので、index の行はそのまま
-    insert(meta.key, copy, me)
+    insert(meta.key, copy, me, { kind: 'auto', actor: me })
     void index
   } else if (c.repeat_of_field) {
     // 完了を戻した: この回から自動で作った次回が、まだ未着手ならば消す

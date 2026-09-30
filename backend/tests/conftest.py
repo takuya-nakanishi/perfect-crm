@@ -77,6 +77,8 @@ def engine() -> Iterator[Engine]:
     # ログインは dev(メールアドレスだけ)を既定にする。.env に WORKS_AUTH=access があっても、テストはこちら。
     # Access の JWT を確かめるテストは、そのテストの中だけ access に切り替える(test_session.py)
     os.environ["WORKS_AUTH"] = "dev"
+    # ワークフローの送り係(スレッド)は起こさない。テストは `runner.run_due()` を直に呼ぶ
+    os.environ["WORKS_WORKFLOW_RUNNER"] = "false"
     from app.config import get_settings
 
     get_settings.cache_clear()

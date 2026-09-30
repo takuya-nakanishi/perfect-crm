@@ -4,30 +4,11 @@ import { useEffect } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router'
 import { api } from '@/api/client'
 import type { MetaResponse, ObjectMeta } from '@/api/types'
-import { Button, ObjectIcon } from '@/components/ui/basics'
+import { Button, ObjectIcon, Switch } from '@/components/ui/basics'
 import { keys } from '@/data/queries'
-import { cx } from '@/lib/cx'
 import { draftOf, toInput } from '@/lib/tableDraft'
 import { useUI } from '@/state/ui'
 import { SectionHeader } from './SettingsPage'
-
-function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={(e) => {
-        e.stopPropagation()
-        onChange(!checked)
-      }}
-      className={cx('relative h-5 w-9 flex-none rounded-full transition-colors duration-100', checked ? 'bg-accent' : 'bg-line-strong')}
-    >
-      <span className={cx('absolute top-0.5 size-4 rounded-full bg-paper shadow-card transition-transform duration-100', checked ? 'translate-x-[18px]' : 'translate-x-0.5')} />
-    </button>
-  )
-}
 
 /** テーブルの一覧。項目の定義(テーブル設定)はここから開く。サイドバーに出すかはスイッチで */
 export function TablesSettings() {

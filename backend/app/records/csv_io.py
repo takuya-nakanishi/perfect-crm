@@ -19,6 +19,7 @@ from app.meta import store
 from app.meta.tables import users as users_table
 from app.records import service
 from app.records.normalize import normalize_text, plain_text
+from app.records.origin import csv_import
 from app.records.refs import display_value
 from app.records.tables import table_of
 
@@ -200,7 +201,7 @@ def import_csv(conn: Connection, object_key: str, params: dict[str, Any], me: st
     if not params.get("dry_run"):
         # 一覧の並び(新しいものが上)が CSV の並びと揃うよう、後ろから入れる
         for values in reversed(accepted):
-            created = service.insert(conn, object_key, values, me)
+            created = service.insert(conn, object_key, values, me, origin=csv_import(me))
             created_ids.insert(0, created["record"]["id"])
     return {
         "headers": headers,

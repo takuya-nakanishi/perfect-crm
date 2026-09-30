@@ -75,7 +75,7 @@ Tunnel をやめて ALB などで直接受けるなら、TLS と認証(03 §5 �
 - **MCP**: Claude Desktop(`headers`)・Claude Code(`--header`)・Codex(`http_headers`)はどれも任意のヘッダを送れるので、サービストークン + アプリのトークンの 2 つを付ける。環境設定の「繋ぎ方」はその形で出す(05 §11)。サービストークンは Zero Trust で発行し、Access のポリシーに「Service Auth」として足す(`scripts/cloudflare-access-check.py` が一時的にやっていることを、恒久のトークンで行う)
 - **Web フォーム**: 訪問者のブラウザは Access のヘッダを付けられない(付けさせると秘密が漏れる)。だから**送るのは Web サイトのサーバ**(問い合わせフォームの送信先。WordPress のプラグイン、サーバレス関数など)で、サービストークンを付けて受け口へ転送する。環境設定の「サーバから送る」がその形。静的なサイトからブラウザで直接送りたい場合だけ、受け口のパスを Access の外に出す(別の判断。いまは持たない)
 - 管理 API(`/settings/*`)と画面は、これまでどおり Access の内側で人だけが通る
-- **Slack の戻り(`/api/v1/slack/callback`)も Access の内側のまま**(04 §14)。戻ってくるのは、Works にログインして「Slack と連携する」を押した本人のブラウザなので、素通しは要らない。api からは `slack.com`・`hooks.slack.com` へ出ていく(外向きの HTTPS。Tunnel とは別で、何も開けなくてよい)
+- **Slack の戻り(`/api/v1/slack/callback`)も Access の内側のまま**(04 §14)。戻ってくるのは、Works にログインして「チャンネルを追加」を押した本人のブラウザなので、素通しは要らない。api からは `slack.com`・`hooks.slack.com` へ出ていく(外向きの HTTPS。Tunnel とは別で、何も開けなくてよい)
 
 ### Claude のカスタムコネクタのための例外(2026-09-24 決定。本人の承認。03 §6)
 

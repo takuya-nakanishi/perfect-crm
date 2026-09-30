@@ -240,17 +240,20 @@ export interface WebForm {
 export type WebFormInput = Pick<WebForm, 'name' | 'object' | 'fields' | 'defaults' | 'enabled' | 'redirect_url'>
 
 /**
- * GET /api/v1/settings/slack — Slack への通知の繋がり具合(ワークスペースで 1 つ。04 §14)。
- * 繋いでいれば、Web フォームから登録があるたびに、Slack の許可の画面で選んだチャンネルへ知らせる
+ * GET /api/v1/settings/slack — 繋いでいる Slack のチャンネル(04 §14)。いくつでも繋げる。
+ * どのチャンネルへ何を知らせるかは、ワークフローの「Slack に知らせる」が決める(04 §15)
  */
 export interface SlackStatus {
   /** 管理者が Slack アプリの資格情報(.env)を入れているか。false なら繋ぐこともできない */
   configured: boolean
-  connection: SlackConnection | null
+  /** 繋いだ順 */
+  channels: SlackChannel[]
 }
 
-/** 繋いでいる Slack。Webhook の URL とトークンはサーバだけが持ち、ここには出ない */
-export interface SlackConnection {
+/** 繋いでいる Slack のチャンネル 1 つ。Webhook の URL とトークンはサーバだけが持ち、ここには出ない */
+export interface SlackChannel {
+  /** ワークフローの「Slack に知らせる」が指す ID。同じチャンネルを繋ぎ直しても変わらない */
+  id: string
   team_name: string
   /** 投稿先のチャンネル(# 付き)。Slack の許可の画面で選んだもの */
   channel_name: string
@@ -263,8 +266,96 @@ export interface SlackConnection {
   /** 最後の送信の失敗。送れたら消える */
   last_error: string | null
   last_error_at: string | null
-  /** 投稿先が使えなくなった(Webhook が消された・チャンネルがアーカイブされた等)。選び直す(繋ぎ直す)まで届かない */
+  /** 投稿先が使えなくなった(Webhook が消された・チャンネルがアーカイブされた等)。同じチャンネルを繋ぎ直すまで届かない */
   needs_reconnect: boolean
+}
+
+// ---------------------------------------------------------------------------
+// ワークフロー(04 §15)。「きっかけ」1 つと「アクション」の並び
+// ---------------------------------------------------------------------------
+
+/**
+ * 書き込みがどこから来たか。app = 画面、form = Web フォーム、mcp = AI(MCP)、auto = 自動作成(繰り返しの次回)、
+ * import = CSV の取り込み。この順で並べる
+ */
+export type WorkflowOrigin = 'app' | 'form' | 'mcp' | 'auto' | 'import'
+
+export interface WorkflowTrigger {
+  /** created = 作成されたとき / matched = 条件を満たしたとき(満たしていなかったものが満たした瞬間に 1 回。作成も含む) */
+  event: 'created' | 'matched'
+  /** ビューと同じ条件。matched では必須。「自分」($me)は使えない */
+  filter?: Filter
+  /** どこからの書き込みで動かすか。1 つ以上 */
+  origins: WorkflowOrigin[]
+}
+
+/** アクション「Slack に知らせる」。選んだチャンネルへ、レコードの表示名と選んだ項目を送る */
+export interface SlackAction {
+  /** ワークフローの中でアクションを見分ける名前(画面が振る。実行記録が指す) */
+  id: string
+  type: 'slack'
+  /** SlackChannel の id。選ぶまでは null(保存はできない) */
+  channel: string | null
+  /** 載せる項目(この順)。表示名は見出しに出るので、ここに入れても重ねない */
+  fields: string[]
+}
+
+/** アクション。種類はこれから増える(メール、レコードの作成…)。種類ごとの形は type で分ける */
+export type WorkflowAction = SlackAction
+
+export interface Workflow {
+  id: string
+  name: string
+  enabled: boolean
+  object: string
+  trigger: WorkflowTrigger
+  actions: WorkflowAction[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  /** 直近の実行(無ければ null) */
+  last_run: { status: WorkflowRunStatus; at: string; error: string | null } | null
+  /** いま動けない理由(条件の項目が無い・チャンネルが外された・要再接続…)。空なら動ける */
+  problems: string[]
+}
+
+/** POST /settings/workflows・PUT /settings/workflows/{id}・POST /settings/workflows/test の本文 */
+export type WorkflowInput = Pick<Workflow, 'name' | 'enabled' | 'object' | 'trigger' | 'actions'>
+
+/** queued = 待ち、running = 実行中、done = 済み、failed = 失敗、skipped = 見送り(動かす前にオフ・削除にされた) */
+export type WorkflowRunStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped'
+
+/** 実行記録の 1 行 = 1 つのアクションを 1 回動かしたこと。GET /settings/workflows/{id}/runs(新しい順) */
+export interface WorkflowRun {
+  id: string
+  workflow_id: string
+  action_id: string
+  action_type: WorkflowAction['type']
+  object: string
+  record_id: string
+  /** 動いたときのレコードの表示名(レコードを消しても残る) */
+  record_name: string
+  event: WorkflowTrigger['event']
+  origin: WorkflowOrigin
+  /** 書いた人(Web フォームは null) */
+  actor_id: string | null
+  status: WorkflowRunStatus
+  /** 試した回数。一時的な失敗は間を空けて 5 回まで */
+  attempts: number
+  error: string | null
+  /** 送り先の名前(#チャンネル)。外されていれば null */
+  target: string | null
+  created_at: string
+  /** 待ちのとき、次に試す時刻 */
+  next_attempt_at: string | null
+  finished_at: string | null
+}
+
+/** POST /settings/workflows/test の応答。保存前の定義で、アクションをその場で 1 回動かした結果 */
+export interface WorkflowTestResult {
+  /** 使ったレコード(条件を満たす最新の 1 件。無ければ最新の 1 件)。テーブルが空なら null(見本の値で送った) */
+  record: { id: string; name: string } | null
+  results: { action_id: string; ok: boolean; error: string | null }[]
 }
 
 export type ViewType = 'list' | 'kanban' | 'report'

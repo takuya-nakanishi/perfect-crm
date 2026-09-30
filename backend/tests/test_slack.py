@@ -1,6 +1,6 @@
-"""Slack への通知(04 §14)。**本物の Slack には繋がない** — `app.slack.http` の 2 つの口を偽物に差し替える。
+"""Slack のチャンネル(04 §14)。**本物の Slack には繋がない** — `app.slack.http` の 2 つの口を偽物に差し替える。
 
-表の行は SET-100〜SET-103(`docs/tests/settings.md` §6)。
+表の行は SET-100〜SET-108(`docs/tests/settings.md` §6)。Slack へ知らせる本体(ワークフロー)は `test_workflows.py`。
 """
 
 from collections.abc import Iterator
@@ -30,6 +30,7 @@ class FakeSlack:
         self.team = {"id": "T0001", "name": "Works デモ"}
         self.hook_url = HOOK
         self.channel = "#web-問い合わせ"
+        self.channel_id = "C0001"
         self.enterprise = False
 
     def api(self, method: str, data: dict[str, str]) -> dict[str, Any]:
@@ -44,7 +45,7 @@ class FakeSlack:
                 "incoming_webhook": {
                     "url": self.hook_url,
                     "channel": self.channel,
-                    "channel_id": "C0001",
+                    "channel_id": self.channel_id,
                     "configuration_url": f"https://demo.slack.com/services/{self.team['id']}",
                 },
             }
@@ -66,9 +67,10 @@ def slack(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSlack]:
     fake = FakeSlack()
     monkeypatch.setattr("app.slack.http.api", fake.api)
     monkeypatch.setattr("app.slack.http.webhook", fake.webhook)
-    # 送り直しの待ちは数えるだけにする
+    # 送り直しの待ちは数えるだけにする(画面からのテスト通知と、送り係の間隔)
     fake_waits: list[float] = []
     monkeypatch.setattr("app.slack.service.time.sleep", fake_waits.append)
+    monkeypatch.setattr("app.workflows.runner.time.sleep", fake_waits.append)
     fake.waits = fake_waits  # type: ignore[attr-defined]
     # Slack アプリの資格情報がある状態にする。**署名の鍵(WORKS_SECRET_KEY)は触らない**(state が読めなくなる)
     monkeypatch.setenv("WORKS_SLACK_CLIENT_ID", "1111.2222")
@@ -79,26 +81,28 @@ def slack(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSlack]:
     get_settings.cache_clear()
 
 
-def connect(client: TestClient) -> None:
-    """画面と同じ順で繋ぐ: 許可の URL をもらう → Slack から戻る。"""
-    url = client.post("/api/v1/settings/slack/connect").json()["url"]
+def connect(client: TestClient, return_to: str | None = None) -> str:
+    """画面と同じ順で繋ぐ: 許可の URL をもらう → Slack から戻る。繋いだチャンネルの id を返す。"""
+    body = {"return_to": return_to} if return_to else None
+    url = client.post("/api/v1/settings/slack/connect", json=body).json()["url"]
     state = parse_qs(urlparse(url).query)["state"][0]
     back = client.get("/api/v1/slack/callback", params={"code": "auth-code", "state": state}, follow_redirects=False)
     assert back.status_code == 303, back.text
-    assert back.headers["location"] == "/settings/notifications?slack=connected"
-
-
-def make_form(client: TestClient, fields: list[str]) -> dict[str, Any]:
-    body = {"name": "お問い合わせ", "object": "contacts", "fields": fields, "defaults": {"status": "new"}}
-    response = client.post("/api/v1/settings/forms", json={**body, "enabled": True, "redirect_url": None})
-    assert response.status_code == 200, response.text
-    return response.json()
+    location = urlparse(back.headers["location"])
+    assert location.path == (return_to or "/settings/slack")
+    query = parse_qs(location.query)
+    assert query["slack"] == ["connected"], back.headers["location"]
+    return query["channel"][0]
 
 
 def status(client: TestClient) -> dict[str, Any]:
     response = client.get("/api/v1/settings/slack")
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def channel(client: TestClient, channel_id: str) -> dict[str, Any]:
+    return next(c for c in status(client)["channels"] if c["id"] == channel_id)
 
 
 def texts(payload: dict[str, Any]) -> list[str]:
@@ -112,45 +116,68 @@ def texts(payload: dict[str, Any]) -> list[str]:
     return out
 
 
+def back_to(client: TestClient, params: dict[str, str]) -> str:
+    back = client.get("/api/v1/slack/callback", params=params, follow_redirects=False)
+    assert back.status_code == 303, back.text
+    return str(back.headers["location"])
+
+
 # --- 表の行(docs/tests/settings.md §6)--------------------------------------------
 
 
-def test_SET_100_繋ぐとチャンネルが出て_外すと消える(admin: TestClient, slack: FakeSlack) -> None:
-    assert status(admin) == {"configured": True, "connection": None}
+def test_SET_100_チャンネルを繋ぐと並び_繋ぎ直しても増えず_外すと消える(admin: TestClient, slack: FakeSlack) -> None:
+    assert status(admin) == {"configured": True, "channels": []}
 
-    connect(admin)
-    connection = status(admin)["connection"]
-    assert connection["team_name"] == "Works デモ"
-    assert connection["channel_name"] == "#web-問い合わせ"
-    assert connection["configuration_url"] == "https://demo.slack.com/services/T0001"
-    assert connection["connected_by"] == ADMIN_ID
-    assert connection["last_sent_at"] is None
-    assert connection["needs_reconnect"] is False
+    first = connect(admin)
+    found = channel(admin, first)
+    assert found["team_name"] == "Works デモ"
+    assert found["channel_name"] == "#web-問い合わせ"
+    assert found["configuration_url"] == "https://demo.slack.com/services/T0001"
+    assert found["connected_by"] == ADMIN_ID
+    assert found["last_sent_at"] is None
+    assert found["needs_reconnect"] is False
     # 画面へは URL もトークンも出さない
-    assert "webhook_url" not in connection and "access_token" not in connection
+    assert "webhook_url" not in found and "access_token" not in found
 
-    assert admin.delete("/api/v1/settings/slack").status_code == 204
-    assert status(admin)["connection"] is None
+    # 別のチャンネルを繋ぐと、もう 1 行
+    slack.channel, slack.channel_id = "#営業", "C0002"
+    second = connect(admin)
+    assert second != first
+    assert [c["channel_name"] for c in status(admin)["channels"]] == ["#web-問い合わせ", "#営業"]
+
+    # 同じチャンネルを繋ぎ直すと、行は増えず(id も同じ)、名前と Webhook が新しくなる
+    slack.channel, slack.channel_id = "#営業-改名", "C0002"
+    assert connect(admin) == second
+    assert [c["channel_name"] for c in status(admin)["channels"]] == ["#web-問い合わせ", "#営業-改名"]
+
+    assert admin.delete(f"/api/v1/settings/slack/{first}").status_code == 204
+    assert [c["id"] for c in status(admin)["channels"]] == [second]
     # Works が Webhook を捨てるだけで、Slack のアプリは外さない(共有しているアプリなので)
-    assert slack.methods() == ["oauth.v2.access"]
+    assert set(slack.methods()) == {"oauth.v2.access"}
 
 
-def test_SET_101_管理者でなければ_Slack_の設定を触れない(member: TestClient, slack: FakeSlack) -> None:
-    assert member.get("/api/v1/settings/slack").status_code == 403
-    assert member.post("/api/v1/settings/slack/connect").status_code == 403
-    assert member.post("/api/v1/settings/slack/test").status_code == 403
-    assert member.delete("/api/v1/settings/slack").status_code == 403
+def test_SET_101_管理者でなければ_Slack_の設定を触れない(admin: TestClient, slack: FakeSlack) -> None:
+    channel_id = connect(admin)
+    admin.post("/api/v1/session", json={"email": "misaki@example.jp", "password": "x"})
+    assert admin.get("/api/v1/settings/slack").status_code == 403
+    assert admin.post("/api/v1/settings/slack/connect").status_code == 403
+    assert admin.post(f"/api/v1/settings/slack/{channel_id}/test").status_code == 403
+    assert admin.delete(f"/api/v1/settings/slack/{channel_id}").status_code == 403
+    admin.post("/api/v1/session", json={"email": "takuya@example.jp", "password": "x"})
+    assert [c["id"] for c in status(admin)["channels"]] == [channel_id]
 
 
 def test_SET_102_テスト通知は結果を記録し_送れたら失敗を消す(admin: TestClient, slack: FakeSlack) -> None:
-    not_yet = admin.post("/api/v1/settings/slack/test")
-    assert not_yet.status_code == 409
-    assert not_yet.json()["code"] == "slack_not_connected"
+    missing = admin.post("/api/v1/settings/slack/00000000-0000-7000-8000-000000000000/test")
+    assert missing.status_code == 404
+    assert admin.post("/api/v1/settings/slack/not-a-uuid/test").status_code == 404
 
-    connect(admin)
-    sent = admin.post("/api/v1/settings/slack/test").json()["connection"]
-    assert sent["last_sent_at"] is not None
-    assert sent["last_error"] is None
+    channel_id = connect(admin)
+    sent = admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    assert sent.status_code == 200, sent.text
+    found = next(c for c in sent.json()["channels"] if c["id"] == channel_id)
+    assert found["last_sent_at"] is not None
+    assert found["last_error"] is None
     url, payload = slack.posts[-1]
     assert url == HOOK
     assert payload["text"] == "[Works] テスト通知"
@@ -158,48 +185,44 @@ def test_SET_102_テスト通知は結果を記録し_送れたら失敗を消�
 
     # Webhook が消された(アプリを外された)→ 要再接続
     slack.results = [WebhookResult(404, "no_service")]
-    gone = admin.post("/api/v1/settings/slack/test").json()["connection"]
+    admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    gone = channel(admin, channel_id)
     assert gone["needs_reconnect"] is True
     assert "no_service" in gone["last_error"]
     assert gone["last_error_at"] is not None
 
     # 送れたら失敗を消す
-    healed = admin.post("/api/v1/settings/slack/test").json()["connection"]
+    admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    healed = channel(admin, channel_id)
     assert healed["last_error"] is None
     assert healed["needs_reconnect"] is False
 
 
-def test_SET_103_フォームから登録があれば知らせ_bot_なら知らせない(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
-    form = make_form(admin, ["name", "email", "role", "description"])
-    created = admin.post(
-        f"/api/v1/forms/{form['key']}",
-        data={"name": "山田 太郎", "email": "taro@example.jp", "role": "決裁者", "description": "資料を送ってください"},
-    )
-    assert created.status_code == 200, created.text
-    record_id = created.json()["record"]["id"]
+def test_SET_107_ワークフローが使っているチャンネルは外せない(admin: TestClient, slack: FakeSlack) -> None:
+    channel_id = connect(admin)
+    body = {
+        "name": "新しい取引先責任者",
+        "object": "contacts",
+        "enabled": True,
+        "trigger": {"event": "created", "origins": ["app"]},
+        "actions": [{"id": "a1", "type": "slack", "channel": channel_id, "fields": ["email"]}],
+    }
+    workflow = admin.post("/api/v1/settings/workflows", json=body).json()
+    refused = admin.delete(f"/api/v1/settings/slack/{channel_id}")
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "channel_in_use"
+    assert "新しい取引先責任者" in refused.json()["message"]
+    # ワークフローを削除すれば(削除中は数えない)外せる
+    assert admin.delete(f"/api/v1/settings/workflows/{workflow['id']}").status_code == 204
+    assert admin.delete(f"/api/v1/settings/slack/{channel_id}").status_code == 204
 
-    assert len(slack.posts) == 1
-    url, payload = slack.posts[0]
-    assert url == HOOK
-    assert payload["text"] == "[Works] Web フォーム「お問い合わせ」: 山田 太郎"
-    body = texts(payload)
-    assert "📨 Web フォームから登録がありました" in body
-    assert "*氏名*\n山田 太郎" in body
-    assert "*メール*\ntaro@example.jp" in body
-    # 選択肢はラベルで
-    assert "*役割*\n決裁者" in body
-    # 長い文は 1 段ぶん(横に並べない)
-    assert {"type": "section", "text": {"type": "mrkdwn", "text": "*メモ*\n資料を送ってください"}} in payload["blocks"]
-    # 受け付けていない既定値(関係 = 新規)は載せない
-    assert not any("関係" in t for t in body)
-    link = f"/o/contacts?peek=contacts:{record_id}|Works で開く>"
-    assert any(link in t and "フォーム「お問い合わせ」から取引先責任者に登録" in t for t in body)
-    assert status(admin)["connection"]["last_sent_at"] is not None
 
-    # bot(隠し欄が埋まっている)は知らせない
-    admin.post(f"/api/v1/forms/{form['key']}", data={"name": "bot", "_gotcha": "罠"})
-    assert len(slack.posts) == 1
+def test_SET_108_許可のあとは頼んだ画面へ戻し_環境設定の外へは戻さない(admin: TestClient, slack: FakeSlack) -> None:
+    connect(admin, return_to="/settings/workflows")
+    for outside in ("https://evil.example/", "//evil.example", "/o/contacts", "/settings/../o"):
+        url = admin.post("/api/v1/settings/slack/connect", json={"return_to": outside}).json()["url"]
+        state = parse_qs(urlparse(url).query)["state"][0]
+        assert back_to(admin, {"code": "x", "state": state}).startswith("/settings/slack?")
 
 
 # --- 繋ぐ ---------------------------------------------------------------------------
@@ -219,7 +242,7 @@ def test_設定が無ければ繋げない(admin: TestClient, monkeypatch: pytes
     monkeypatch.setenv("WORKS_SLACK_CLIENT_SECRET", "")
     get_settings.cache_clear()
     try:
-        assert status(admin) == {"configured": False, "connection": None}
+        assert status(admin) == {"configured": False, "channels": []}
         res = admin.post("/api/v1/settings/slack/connect")
         assert res.status_code == 503
         assert res.json()["code"] == "slack_not_configured"
@@ -228,53 +251,48 @@ def test_設定が無ければ繋げない(admin: TestClient, monkeypatch: pytes
 
 
 def test_偽の_state_では繋がらない(admin: TestClient, slack: FakeSlack) -> None:
-    url = admin.post("/api/v1/settings/slack/connect").json()["url"]
+    url = admin.post("/api/v1/settings/slack/connect", json={"return_to": "/settings/workflows"}).json()["url"]
     state = parse_qs(urlparse(url).query)["state"][0]
     tampered = state[:-1] + ("0" if state[-1] != "0" else "1")
-    back = admin.get("/api/v1/slack/callback", params={"code": "x", "state": tampered}, follow_redirects=False)
-    assert back.headers["location"] == "/settings/notifications?slack=error"
-    assert status(admin)["connection"] is None
+    # 読めない state の戻り先は信じない(環境設定の Slack へ)
+    assert back_to(admin, {"code": "x", "state": tampered}) == "/settings/slack?slack=error"
+    assert status(admin)["channels"] == []
     assert slack.api_calls == []  # Slack には問い合わせない
 
 
 def test_Google_の_state_は使い回せない(admin: TestClient, slack: FakeSlack) -> None:
     from app.google import oauth
 
-    back = admin.get(
-        "/api/v1/slack/callback", params={"code": "x", "state": oauth.make_state(ADMIN_ID)}, follow_redirects=False
-    )
-    assert back.headers["location"] == "/settings/notifications?slack=error"
+    assert back_to(admin, {"code": "x", "state": oauth.make_state(ADMIN_ID)}) == "/settings/slack?slack=error"
 
 
-def test_許可を断られたら画面へ理由を返す(admin: TestClient, slack: FakeSlack) -> None:
-    back = admin.get("/api/v1/slack/callback", params={"error": "access_denied"}, follow_redirects=False)
-    assert back.status_code == 303
-    assert back.headers["location"] == "/settings/notifications?slack=denied"
+def test_許可を断られたら頼んだ画面へ理由を返す(admin: TestClient, slack: FakeSlack) -> None:
+    url = admin.post("/api/v1/settings/slack/connect", json={"return_to": "/settings/workflows"}).json()["url"]
+    state = parse_qs(urlparse(url).query)["state"][0]
+    assert back_to(admin, {"error": "access_denied", "state": state}) == "/settings/workflows?slack=denied"
+    assert back_to(admin, {"error": "access_denied"}) == "/settings/slack?slack=denied"
 
 
 def test_管理者でない人の_state_では繋がない(admin: TestClient, slack: FakeSlack) -> None:
     state = service.make_state(MEMBER_ID)
-    back = admin.get("/api/v1/slack/callback", params={"code": "x", "state": state}, follow_redirects=False)
-    assert back.headers["location"] == "/settings/notifications?slack=error"
-    assert status(admin)["connection"] is None
+    assert back_to(admin, {"code": "x", "state": state}) == "/settings/slack?slack=error"
+    assert status(admin)["channels"] == []
 
 
 def test_Slack_の_Webhook_でない_URL_は保存しない(admin: TestClient, slack: FakeSlack) -> None:
     slack.hook_url = "https://evil.example/hook"
     url = admin.post("/api/v1/settings/slack/connect").json()["url"]
     state = parse_qs(urlparse(url).query)["state"][0]
-    back = admin.get("/api/v1/slack/callback", params={"code": "x", "state": state}, follow_redirects=False)
-    assert back.headers["location"] == "/settings/notifications?slack=error"
-    assert status(admin)["connection"] is None
+    assert back_to(admin, {"code": "x", "state": state}) == "/settings/slack?slack=error"
+    assert status(admin)["channels"] == []
 
 
 def test_組織単位のインストールは断る(admin: TestClient, slack: FakeSlack) -> None:
     slack.enterprise = True
     url = admin.post("/api/v1/settings/slack/connect").json()["url"]
     state = parse_qs(urlparse(url).query)["state"][0]
-    back = admin.get("/api/v1/slack/callback", params={"code": "x", "state": state}, follow_redirects=False)
-    assert back.headers["location"] == "/settings/notifications?slack=error"
-    assert status(admin)["connection"] is None
+    assert back_to(admin, {"code": "x", "state": state}) == "/settings/slack?slack=error"
+    assert status(admin)["channels"] == []
 
 
 def test_Webhook_の_URL_は暗号化して持ち_ボットトークンは仕舞わない(
@@ -292,64 +310,42 @@ def test_Webhook_の_URL_は暗号化して持ち_ボットトークンは仕舞
     assert "xoxb-T0001" not in {str(v) for v in row._mapping.values()}
 
 
-def test_チャンネルを選び直してもアプリは外さない(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
-    slack.channel = "#営業"
-    connect(admin)
-    assert status(admin)["connection"]["channel_name"] == "#営業"
-    # 別のワークスペースへ繋ぎ直しても外さない
+def test_繋ぎ直すと要再接続が消え_アプリは外さない(admin: TestClient, slack: FakeSlack) -> None:
+    channel_id = connect(admin)
+    slack.results = [WebhookResult(404, "channel_is_archived")]
+    admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    assert channel(admin, channel_id)["needs_reconnect"] is True
+    assert connect(admin) == channel_id
+    assert channel(admin, channel_id)["needs_reconnect"] is False
+    # 別のワークスペースへ繋いでも外さない
     slack.team = {"id": "T0002", "name": "別のワークスペース"}
     connect(admin)
-    assert status(admin)["connection"]["team_name"] == "別のワークスペース"
+    assert len(status(admin)["channels"]) == 2
     assert "apps.uninstall" not in slack.methods()
+
+
+def test_外すチャンネルが無ければ_404(admin: TestClient, slack: FakeSlack) -> None:
+    assert admin.delete("/api/v1/settings/slack/00000000-0000-7000-8000-000000000000").status_code == 404
+    assert admin.delete("/api/v1/settings/slack/not-a-uuid").status_code == 404
 
 
 # --- 送る ---------------------------------------------------------------------------
 
 
-def test_繋いでいなければ知らせない(admin: TestClient, slack: FakeSlack) -> None:
-    form = make_form(admin, ["name"])
-    assert admin.post(f"/api/v1/forms/{form['key']}", data={"name": "太郎"}).status_code == 200
-    assert slack.posts == []
-
-
-def test_人が書いた文字は_Slack_の書式をエスケープする(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
-    form = make_form(admin, ["name", "description"])
-    admin.post(
-        f"/api/v1/forms/{form['key']}", data={"name": "<!channel> & 太郎", "description": "<https://evil|押して>"}
-    )
-    _, payload = slack.posts[-1]
-    joined = "\n".join([payload["text"], *texts(payload)])
-    assert "<!channel>" not in joined
-    assert "&lt;!channel&gt; &amp; 太郎" in joined
-    assert "&lt;https://evil|押して&gt;" in joined
-
-
 def test_一時的な失敗は_1_回だけ待って送り直す(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
+    channel_id = connect(admin)
     slack.results = [WebhookResult(429, "rate_limited", retry_after=2.0)]
-    connection = admin.post("/api/v1/settings/slack/test").json()["connection"]
-    assert connection["last_error"] is None
+    admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    assert channel(admin, channel_id)["last_error"] is None
     assert len(slack.posts) == 2
     assert slack.waits == [2.0]  # type: ignore[attr-defined]
 
     # 2 回とも落ちたら記録する(要再接続ではない)
     slack.results = [WebhookResult(503, ""), WebhookResult(503, "")]
-    failed = admin.post("/api/v1/settings/slack/test").json()["connection"]
+    admin.post(f"/api/v1/settings/slack/{channel_id}/test")
+    failed = channel(admin, channel_id)
     assert "503" in failed["last_error"]
     assert failed["needs_reconnect"] is False
-
-
-def test_送れなくてもフォームの送り手には成功を返す(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
-    form = make_form(admin, ["name"])
-    slack.results = [WebhookResult(404, "channel_not_found")]
-    res = admin.post(f"/api/v1/forms/{form['key']}", data={"name": "太郎"})
-    assert res.status_code == 200
-    connection = status(admin)["connection"]
-    assert connection["needs_reconnect"] is True
-    assert "channel_not_found" in connection["last_error"]
 
 
 def test_長い値は_Slack_の上限の内側で切る() -> None:

@@ -542,28 +542,92 @@ await formCard.getByRole('tab', { name: 'ブラウザから直接送る HTML' })
 ok((await formCard.locator('pre').innerText()).includes('name="phone"'), '埋め込み用の HTML も出る')
 await formCard.getByRole('button', { name: 'テスト送信' }).click(); await wait(800)
 ok(await page.getByText('取引先にレコードができました').count() === 1, 'テスト送信で、受け口からレコードができる')
-// Slack への通知(04 §14)。モックは「連携する」で架空のチャンネルに繋いだことにする。本物の API では Slack へ飛ばない
-await page.getByRole('link', { name: '通知' }).click(); await page.waitForURL(/notifications/); await wait(600)
+// Slack のチャンネルとワークフロー(04 §14・§15)。モックは「チャンネルを追加」で架空のチャンネルを足したことにする。
+// 本物の API では Slack へ飛ばない(許可の画面が本物の Slack なので)
+await page.getByRole('link', { name: 'Slack' }).click(); await page.waitForURL(/settings\/slack/); await wait(600)
 const slack = HTTP_API ? await page.evaluate(async () => (await fetch('/api/v1/settings/slack')).json()) : null
 if (!HTTP_API) {
-  await page.getByRole('button', { name: 'Slack と連携する' }).click(); await page.waitForURL(/notifications/); await wait(800)
+  await page.getByRole('button', { name: 'チャンネルを追加' }).first().click(); await page.waitForURL(/settings\/slack/); await wait(800)
   ok(
-    (await page.getByText('Slack と連携しました', { exact: false }).count()) === 1 &&
-      (await page.getByRole('heading', { name: /#web-問い合わせ/ }).count()) === 1 &&
+    (await page.getByText('Slack のチャンネルを繋ぎました', { exact: false }).count()) === 1 &&
+      (await page.getByText('web-問い合わせ', { exact: true }).count()) === 1 &&
       !page.url().includes('slack='),
-    'Slack と連携すると、選んだチャンネルが出る',
+    'チャンネルを追加すると、選んだチャンネルが並ぶ',
   )
-  await page.getByRole('button', { name: 'テスト通知を送る' }).click(); await wait(600)
+  await page.getByRole('button', { name: 'テスト通知' }).click(); await wait(600)
   ok((await page.getByText('テスト通知を送りました', { exact: false }).count()) === 1 && (await page.getByText(/最終送信/).count()) === 1, 'テスト通知を送ると、最終送信の時刻が出る')
-  await page.getByRole('button', { name: '連携を解除' }).click(); await wait(600)
-  ok((await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 1, 'Slack との連携を解除できる')
-} else if (slack.connection) {
+
+  // ワークフロー: Web フォーム(上で作ったセミナー申し込み。取引先に作る)から登録があったら、繋いだチャンネルに知らせる
+  await page.getByRole('link', { name: 'ワークフロー' }).click(); await page.waitForURL(/workflows/); await wait(500)
+  await page.getByRole('button', { name: 'ワークフローを作る' }).first().click(); await page.waitForSelector('dialog[open] #workflow-name')
+  await page.keyboard.type('セミナーの申し込み')
+  await page.getByLabel('テーブル', { exact: true }).selectOption('accounts'); await wait(200)
+  for (const name of ['画面', 'AI(MCP)', '自動作成']) await page.getByRole('switch', { name, exact: true }).click()
+  await page.keyboard.press('Control+Enter'); await wait(800)
+  const flowRow = page.locator('[data-workflow="セミナーの申し込み"]')
+  ok((await flowRow.count()) === 1 && (await flowRow.innerText()).includes('取引先が作成されたとき') && (await flowRow.innerText()).includes('Web フォームから'), 'ワークフローを作ると、いつ・どこからが一覧に出る')
+  const sendForm = async () => {
+    await page.getByRole('link', { name: 'Web フォーム' }).click(); await page.waitForURL(/forms/); await wait(400)
+    await formCard.getByRole('button', { name: 'テスト送信' }).click(); await wait(800)
+    await page.getByRole('link', { name: 'ワークフロー' }).click(); await page.waitForURL(/workflows/); await wait(600)
+  }
+  const runCount = async () => {
+    await flowRow.click(); await page.getByRole('tab', { name: '実行記録' }).click(); await wait(500)
+    const n = await page.locator('[aria-label=実行記録] li').count()
+    const text = n ? await page.locator('[aria-label=実行記録]').innerText() : ''
+    await page.keyboard.press('Escape'); await wait(300)
+    return { n, text }
+  }
+  await sendForm()
+  ok((await flowRow.innerText()).includes('送信済み'), 'Web フォームから登録があると、ワークフローが動いて直近の実行が「送信済み」になる')
+  const first = await runCount()
+  ok(first.n === 1 && first.text.includes('Web フォーム') && first.text.includes('#web-問い合わせ'), '実行記録に、動いたレコード・どこから・送り先が残る', `${first.n} 件`)
+  await page.getByRole('switch', { name: '「セミナーの申し込み」を動かす' }).click(); await wait(600)
+  await sendForm()
+  ok((await runCount()).n === 1, 'オフにすると、Web フォームから登録があっても動かない')
+
+  // チャンネルを足しながら作る: Slack の許可の画面へ出て戻っても、書きかけが残り、足したチャンネルが入る
+  await page.getByRole('button', { name: 'ワークフローを作る' }).first().click(); await page.waitForSelector('dialog[open] #workflow-name')
+  await page.keyboard.type('受注')
+  await page.getByLabel('テーブル', { exact: true }).selectOption('opportunities'); await wait(200)
+  await page.getByRole('button', { name: '送り先のチャンネル' }).click(); await wait(200)
+  await page.getByRole('listbox').getByRole('option', { name: /チャンネルを追加/ }).click()
+  await page.waitForURL(/workflows/); await page.waitForSelector('dialog[open] #workflow-name'); await wait(700)
+  ok(
+    (await page.locator('#workflow-name').inputValue()) === '受注' && (await page.getByRole('button', { name: '送り先のチャンネル' }).innerText()).includes('営業') && !page.url().includes('slack='),
+    'Slack の許可から戻ると、書きかけのワークフローに足したチャンネルが入る',
+  )
+  await page.getByRole('radio', { name: /条件を満たしたとき/ }).click()
+  await page.getByRole('button', { name: '条件', exact: true }).click(); await page.getByRole('listbox').getByRole('option', { name: 'フェーズ' }).click(); await wait(300)
+  await page.getByRole('button', { name: '値' }).click(); await page.getByRole('listbox').getByRole('option', { name: '受注' }).click(); await wait(200)
+  await page.keyboard.press('Escape'); await wait(200)
+  await page.locator('dialog[open]').getByRole('button', { name: /^作る/ }).click(); await wait(800)
+  const wonRow = page.locator('[data-workflow="受注"]')
+  ok((await wonRow.count()) === 1 && (await wonRow.innerText()).includes('商談が条件を満たしたとき') && (await wonRow.innerText()).includes('フェーズ が 受注'), '「条件を満たしたとき」は、条件が一覧に出る')
+  await wonRow.click(); await page.locator('dialog[open]').getByRole('button', { name: '削除' }).click(); await wait(600)
+  ok((await wonRow.count()) === 0, 'ワークフローを削除すると一覧から消える')
+  await page.getByRole('button', { name: '元に戻す' }).click(); await wait(700)
+  ok((await wonRow.count()) === 1, 'ワークフローの削除は「元に戻す」で戻る')
+
+  // 送っているチャンネルは外せない。使っていないものは外せる
+  await page.getByRole('link', { name: 'Slack' }).click(); await page.waitForURL(/settings\/slack/); await wait(500)
+  await page.getByRole('button', { name: '#web-問い合わせ を外す' }).click(); await wait(600)
+  ok((await page.getByText('がこのチャンネルへ送っています', { exact: false }).count()) === 1 && (await page.getByText('web-問い合わせ', { exact: true }).count()) === 1, 'ワークフローが送っているチャンネルは外せず、理由が出る')
+  await page.getByRole('button', { name: 'チャンネルを追加' }).first().click(); await page.waitForURL(/settings\/slack/); await wait(800)
+  await page.getByRole('button', { name: '#リード を外す' }).click(); await wait(600)
+  ok((await page.getByText('リード', { exact: true }).count()) === 0, '使っていないチャンネルは外せる')
+} else if (slack.channels.length) {
   // 本物の Slack に繋いでいる。E2E で本物のチャンネルに送らないよう、この節は飛ばす
-  console.log('SKIP  Slack への通知(本物の Slack に繋いでいるため)')
+  console.log('SKIP  Slack とワークフロー(本物の Slack に繋いでいるため)')
 } else if (!slack.configured) {
-  ok((await page.getByText('Slack アプリの資格情報が入っていません').count()) === 1 && (await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 0, 'Slack アプリが未設定なら、その旨が出て連携のボタンは出ない')
+  ok((await page.getByText('Slack アプリの資格情報が入っていません').count()) === 1 && (await page.getByRole('button', { name: 'チャンネルを追加' }).count()) === 0, 'Slack アプリが未設定なら、その旨が出て「チャンネルを追加」は出ない')
 } else {
-  ok((await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 1, 'Slack アプリが設定済みなら「Slack と連携する」が出る')
+  ok((await page.getByRole('button', { name: 'チャンネルを追加' }).count()) === 1, 'Slack アプリが設定済みなら「チャンネルを追加」が出る')
+}
+if (HTTP_API) {
+  // 本物の API: チャンネルが無いのでワークフローは作れない。画面が開き、空の案内が出るまで
+  await page.getByRole('link', { name: 'ワークフロー' }).click(); await page.waitForURL(/workflows/); await wait(600)
+  ok((await page.getByText('まだワークフローはありません').count()) === 1, 'ワークフローの画面が開き、まだ無ければ例が出る')
 }
 await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.getByRole('button', { name: 'ログアウト' }).click(); await page.waitForURL(/\/login/)
 await page.fill('#email', 'misaki@example.jp'); await page.fill('#password', 'x'); await page.click('button[type=submit]'); await page.waitForSelector('[role=table]')

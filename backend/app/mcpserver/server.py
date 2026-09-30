@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.errors import ApiError
 from app.mcpserver.oauth import SCOPE, WorksOAuthProvider, mcp_url
 from app.meta import store
-from app.records import service
+from app.records import origin, service
 from app.records.search import search as search_records
 from app.records.timeline import timeline
 
@@ -135,14 +135,14 @@ def get_record(table: str, id: str, include_timeline: bool = False) -> dict[str,
 def create_record(table: str, values: dict[str, Any]) -> dict[str, Any]:
     """レコードを 1 件作る。values は 列名 → 値。必須の項目と型は画面と同じく確かめる(間違いは理由付きで返る)。"""
     me = _me()
-    result: dict[str, Any] = _call(lambda conn: service.insert(conn, table, values, me))
+    result: dict[str, Any] = _call(lambda conn: service.insert(conn, table, values, me, origin=origin.mcp(me)))
     return result
 
 
 def update_record(table: str, id: str, values: dict[str, Any]) -> dict[str, Any]:
     """レコードの一部の列を書き換える。渡した列だけが変わる。タスクの完了は {"status": "done"}。"""
     me = _me()
-    result: dict[str, Any] = _call(lambda conn: service.update(conn, table, id, values, me))
+    result: dict[str, Any] = _call(lambda conn: service.update(conn, table, id, values, me, origin=origin.mcp(me)))
     return result
 
 

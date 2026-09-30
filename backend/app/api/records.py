@@ -6,7 +6,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import Conn, CurrentUser
-from app.records import service
+from app.records import origin, service
 from app.records.aggregate import aggregate
 from app.records.csv_io import export_csv, import_csv
 from app.records.search import search
@@ -36,14 +36,14 @@ def read_record(object_key: str, record_id: str, conn: Conn, user: CurrentUser) 
 
 @router.post("/objects/{object_key}/records", status_code=200)
 def create_record(object_key: str, values: dict[str, Any], conn: Conn, user: CurrentUser) -> dict[str, Any]:
-    return service.insert(conn, object_key, values, user["id"])
+    return service.insert(conn, object_key, values, user["id"], origin=origin.app(user["id"]))
 
 
 @router.patch("/objects/{object_key}/records/{record_id}")
 def patch_record(
     object_key: str, record_id: str, patch: dict[str, Any], conn: Conn, user: CurrentUser
 ) -> dict[str, Any]:
-    return service.update(conn, object_key, record_id, patch, user["id"])
+    return service.update(conn, object_key, record_id, patch, user["id"], origin=origin.app(user["id"]))
 
 
 @router.delete("/objects/{object_key}/records/{record_id}", status_code=204)

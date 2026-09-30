@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.errors import ApiError, bad_request
 from app.google import drive, oauth, store
 from app.meta import store as meta_store
+from app.records import origin
 from app.records import service as records
 
 
@@ -70,4 +71,11 @@ def create_document(conn: Connection, user_id: str, object_key: str, record_id: 
 
     file = drive.create_document(store.access_token(conn, user_id), object_label=obj["label"], name=name)
     next_value = [*_values(current.get(field_key)), file]
-    return records.update(conn, object_key, record_id, {field_key: json.dumps(next_value, ensure_ascii=False)}, user_id)
+    return records.update(
+        conn,
+        object_key,
+        record_id,
+        {field_key: json.dumps(next_value, ensure_ascii=False)},
+        user_id,
+        origin=origin.app(user_id),
+    )

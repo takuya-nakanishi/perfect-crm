@@ -3,7 +3,9 @@ import type { Session } from '@/api/types'
 import { exportCsv, importCsv } from './csv'
 import { connectDrive, createDocument, disconnectDrive, driveStatus, listFiles, resetDrive } from './drive'
 import * as settings from './settings'
+import * as slack from './slack'
 import * as db from './engine'
+import * as workflows from './workflows'
 
 const SESSION_KEY = 'works.mock.session'
 /** 通信の待ち時間を模す。0 にしないのは、楽観更新や読み込み中の見え方を本番に近づけるため */
@@ -223,23 +225,64 @@ export function createMockClient(): ApiClient {
     async slackStatus() {
       await sleep(READ_MS)
       settings.requireAdmin(requireUser())
-      return settings.slackStatus()
+      return slack.slackStatus()
     },
-    async slackConnect() {
+    async slackConnect(returnTo) {
       await sleep(READ_MS)
       const me = requireUser()
       settings.requireAdmin(me)
-      return settings.slackConnect(me)
+      return slack.slackConnect(me, returnTo)
     },
-    async slackTest() {
+    async slackTest(channelId) {
       await sleep(WRITE_MS)
       settings.requireAdmin(requireUser())
-      return settings.slackTest()
+      return slack.slackTest(channelId)
     },
-    async slackDisconnect() {
+    async slackDisconnect(channelId) {
       await sleep(WRITE_MS)
       settings.requireAdmin(requireUser())
-      settings.slackDisconnect()
+      workflows.disconnectChannel(channelId)
+    },
+    async listWorkflows() {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.listWorkflows()
+    },
+    async createWorkflow(input) {
+      await sleep(WRITE_MS)
+      const me = requireUser()
+      settings.requireAdmin(me)
+      return workflows.createWorkflow(input, me)
+    },
+    async updateWorkflow(id, input) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.updateWorkflow(id, input)
+    },
+    async deleteWorkflow(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      workflows.deleteWorkflow(id)
+    },
+    async restoreWorkflow(id) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.restoreWorkflow(id)
+    },
+    async listWorkflowRuns(id) {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.listRuns(id)
+    },
+    async retryWorkflowRun(runId) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.retryRun(runId)
+    },
+    async testWorkflow(input) {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return workflows.testWorkflow(input)
     },
     async googleStatus() {
       await sleep(READ_MS)
@@ -282,4 +325,6 @@ export function resetMockData() {
   db.resetTables()
   resetDrive()
   settings.resetSettings()
+  slack.resetSlack()
+  workflows.resetWorkflows()
 }
