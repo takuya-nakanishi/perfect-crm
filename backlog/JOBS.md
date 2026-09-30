@@ -39,6 +39,7 @@
   - 由来: J-048(コードは済み。残りは人が Slack の管理画面と `.env` を触るところ)。手順は docs/runbook/01 §6b
   - 繋いだら、テスト通知と Web フォームの「テスト送信」がチャンネルに届き、llm-wiki の稼働通知も止まっていないことを確かめる(docs/tests/settings.md SET-106)
   - [2026-09-30] 本人の判断で、新しいアプリは作らず llm-wiki の稼働通知のアプリ(A0BSU0MC9HN。SANEi CLOVER のワークスペース)を流用する。`incoming-webhook` は有効、Redirect URL は本人が足した。共有するので、解除でアプリを外さない作りに直した(04 §14)。残りは `.env`・本番への反映・連携
+  - [2026-09-30] 本人が `.env` に Client ID / Secret を入れ、本番へ反映(0006 → 0007。直前に `~/backups/perfect-crm/works-2026-09-30-before-J-048.dump`)。llm-wiki の `.claude/policies/notify.md` にも共有の旨を書いた。残りは画面で連携し、SET-106 を確かめること
 - [ ] **J-043** Codex のレビュー(eb634c5..f013a6f・185 コミット)で確かめられた指摘を直す(2026-09-25)
   - 由来: 2026-09-25 に Codex CLI(読み取り専用)へ 3 区間に分けて投げ、HEAD(f55bc43)で 1 件ずつ裏取りした。18 件が今も成り立つ(ログインの 1 件は J-023 で直り済み)。優先順は裏取りの提案で、並びは本人が決める
   - データを壊す・500 になる: ①`search_text`・`deleted_at` を列名に使える(`meta/schema.py:18`。`SYSTEM_COLUMNS` から予約を作る。モック・`tableDraft.ts` も)②CSV の `2026-02-30` が事前確認を通り本取り込みで全体が巻き戻る(`records/csv_io.py:100`・`:203`。04 §7)③不正な UUID で 500(`records/validate.py:41`、パスの ID も)④外した参照・利用者項目を戻すと FK 名がぶつかる(`meta/ddl.py:150`)⑤識別子を引用せず `group` などで DDL が 500(`meta/ddl.py:120`)
