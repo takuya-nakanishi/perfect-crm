@@ -11,10 +11,11 @@ from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Connection, Engine, text, update
+from sqlalchemy import Connection, Engine, func, text, update
 
+from app.auth import passwords, totp
 from app.meta import seed, store
-from app.meta.tables import activity_mentions, workspace
+from app.meta.tables import activity_mentions, users, workspace
 from app.records.normalize import search_text_of
 from app.records.richtext import mentions_value
 from app.records.rules import today_in
@@ -26,6 +27,11 @@ FIXTURES_DIR = BACKEND_DIR.parent / "frontend" / "src" / "mocks" / "fixtures"
 # 参照の向き(取引先 ← 取引先責任者 ← 商談 ← タスク・活動)に合わせて入れる
 ORDER = ("accounts", "contacts", "opportunities", "tasks", "activities")
 SUFFIX = "_e2e"
+
+# E2E(http)がログインに使う値(03 §5)。E2E 専用の DB にしか入らない。frontend/e2e/smoke.mjs と揃える。
+# 管理者は 2 段階認証を設定済みにし(E2E がこの秘密から 6 桁を計算する)、もう 1 人は初めてのログインで設定の段を通る
+E2E_PASSWORD = "works-e2e-password"
+E2E_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
 
 def _load(fixtures: Path, name: str) -> Any:
@@ -45,6 +51,7 @@ def load(conn: Connection, fixtures: Path = FIXTURES_DIR) -> None:
     """種の利用者・ワークスペース名・レコードを入れる。メタデータは `seed.seed` が入れたものを使う。"""
     meta = _load(fixtures, "workspace")
     conn.execute(update(workspace).values(name=meta["workspace"]["name"]))
+    hashed = passwords.hash_password(E2E_PASSWORD)
     for user in _load(fixtures, "users"):
         seed.ensure_user(
             conn,
@@ -54,6 +61,10 @@ def load(conn: Connection, fixtures: Path = FIXTURES_DIR) -> None:
             id=user["id"],
             avatar_color=user.get("avatar_color"),
         )
+        values: dict[str, Any] = {"password_hash": hashed, "password_changed_at": func.clock_timestamp()}
+        if user.get("admin"):
+            values.update(totp_secret=totp.encrypt(E2E_TOTP_SECRET), totp_enabled_at=func.clock_timestamp())
+        conn.execute(update(users).where(users.c.id == user["id"]).values(**values))
 
     timezone = store.get_workspace(conn)["timezone"]
     days = (date.fromisoformat(today_in(timezone)) - date.fromisoformat(meta["base_date"])).days

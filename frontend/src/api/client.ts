@@ -21,6 +21,11 @@ import type {
   Scalar,
   SearchResponse,
   Session,
+  SessionOptions,
+  LoginResult,
+  TotpSetup,
+  Account,
+  AccountSession,
   TimelineResponse,
   WebForm,
   WebFormInput,
@@ -38,8 +43,24 @@ import type {
  */
 export interface ApiClient {
   getSession(): Promise<Session | null>
-  login(email: string, password: string): Promise<Session>
+  getSessionOptions(): Promise<SessionOptions>
+  /** ログインの 1 段目。2 段階認証(6 桁)が要れば `totp` / `totp_setup` が返る(04 §16) */
+  login(email: string, password: string): Promise<LoginResult>
+  /** ログインの 2 段目(6 桁)。通ればセッションができる。`totp_setup` のときは、この 6 桁で設定も済む */
+  verifyTotp(code: string): Promise<Session>
   logout(): Promise<void>
+
+  /** アカウント(05 §15)。自分のパスワード・2 段階認証・ログイン中の端末 */
+  getAccount(): Promise<Account>
+  /** `current_password` は、10 分以内にログインしていれば要らない。通るとほかの端末とアプリは切れる */
+  changePassword(input: { current_password?: string; new_password: string }): Promise<void>
+  /** 2 段階認証を(やり直して)設定し始める。6 桁が通るまでは、いまの設定が生きている */
+  startTotpSetup(): Promise<TotpSetup>
+  confirmTotpSetup(code: string): Promise<void>
+  listAccountSessions(): Promise<AccountSession[]>
+  revokeAccountSession(id: string): Promise<void>
+  /** いま使っている端末以外を、すべて切る */
+  revokeOtherAccountSessions(): Promise<void>
 
   getMeta(): Promise<MetaResponse>
   /** テーブル設定。どれも変更後のメタデータ全体を返す(画面はそれをそのまま差し替える) */
@@ -144,10 +165,13 @@ export interface ApiClient {
 export class ApiError extends Error {
   status: number
   code: string
-  constructor(status: number, code: string, message: string) {
+  /** 429 のとき、何秒後に試せるか(Retry-After。待っても戻らないときは無い) */
+  retryAfter?: number
+  constructor(status: number, code: string, message: string, retryAfter?: number) {
     super(message)
     this.status = status
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -164,10 +188,25 @@ export function getApi(): Promise<ApiClient> {
   return instance
 }
 
+/**
+ * 使っている途中でセッションが切れた(30 日の期限・ほかの端末で切られた・パスワードを変えた)ときに投げる合図。
+ * AppShell が受けて、ログインの画面へ戻す(Access の頃は Access が戻していた。03 §5)
+ */
+export const SESSION_EXPIRED = 'works:session-expired'
+/** 合図を出さない口(未ログインが当たり前の、ログインの手順そのもの) */
+const LOGIN_CALLS = new Set<keyof ApiClient>(['getSession', 'getSessionOptions', 'login', 'verifyTotp', 'logout'])
+
 /** 呼び出し側を短くするための薄い包み。api.listRecords(...) のように使う */
 export const api: ApiClient = new Proxy({} as ApiClient, {
   get(_target, prop: keyof ApiClient) {
     return (...args: unknown[]) =>
-      getApi().then((client) => (client[prop] as (...a: unknown[]) => unknown)(...args))
+      getApi()
+        .then((client) => (client[prop] as (...a: unknown[]) => unknown)(...args))
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 401 && e.code === 'unauthenticated' && !LOGIN_CALLS.has(prop)) {
+            window.dispatchEvent(new Event(SESSION_EXPIRED))
+          }
+          throw e
+        })
   },
 })

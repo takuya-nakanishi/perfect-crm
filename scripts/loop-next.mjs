@@ -24,7 +24,7 @@ const MAIN_ROOT = ROOT.includes(`${path.sep}.claude${path.sep}worktrees${path.se
   : ROOT
 
 // 壊れたときの損失で決めた順(docs/tests/README.md §1)。ループもこの順に取る
-const AREAS = ['meta', 'io', 'tasks', 'activities', 'records', 'settings', 'workflows']
+const AREAS = ['auth', 'meta', 'io', 'tasks', 'activities', 'records', 'settings', 'workflows']
 const NONE = '—'
 const E2E_FILE = 'frontend/e2e/smoke.mjs'
 

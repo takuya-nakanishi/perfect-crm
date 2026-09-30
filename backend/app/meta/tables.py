@@ -6,6 +6,7 @@ Alembic が面倒を見るのはこのファイルの表だけ。
 """
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     ForeignKey,
@@ -51,11 +52,72 @@ users = Table(
     Column("avatar_color", Text, nullable=False, server_default=text("'blue'")),
     # 環境設定(テーブル定義・Web フォーム・MCP)を触れる印。ロールは持たない(J-038)
     Column("admin", Boolean, nullable=False, server_default=text("false")),
-    # J-023 で本物のログインにするまで NULL
+    # Argon2id の文字列(app/auth/passwords.py)。NULL ならパスワードでは入れない(Google だけで入る人。03 §5)
     Column("password_hash", Text, nullable=True),
+    Column("password_changed_at", TIMESTAMP(timezone=True), nullable=True),
+    # Google でログイン(J-054)。sub はアカウント固有で変わらない ID。初めて Google で入ったときに結ぶ
+    Column("google_sub", Text, nullable=True, unique=True),
+    Column("google_email", Text, nullable=True),
+    # 2 段階認証(TOTP)。秘密は照らすのに元の値が要るので、ハッシュではなく暗号化して持つ(app/auth/totp.py)
+    Column("totp_secret", Text, nullable=True),
+    Column("totp_enabled_at", TIMESTAMP(timezone=True), nullable=True),
+    # 最後に受けた 30 秒の刻み。これ以前のコードは受けない(同じコードを 2 度通さない)
+    Column("totp_last_step", BigInteger, nullable=True),
+    # 設定中の秘密(アカウントの画面でやり直すとき)。6 桁が通ったら totp_secret へ移す
+    Column("totp_pending_secret", Text, nullable=True),
+    Column("last_login_at", TIMESTAMP(timezone=True), nullable=True),
     Column("deleted_at", TIMESTAMP(timezone=True), nullable=True),
     _ts("created_at"),
     _ts("updated_at"),
+)
+
+# ブラウザのログイン 1 つ(03 §5)。Cookie の値そのものは持たず、sha256 だけを持つ。行を消せばその場で効かなくなる
+user_sessions = Table(
+    "user_sessions",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("token_hash", Text, nullable=False, unique=True),
+    # どう入ったか(password = パスワード + TOTP / google)
+    Column("method", Text, nullable=False),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
+    # 最後に使った時刻。1 時間に 1 回だけ書く(アカウントの画面の「最終」)
+    Column("last_seen_at", TIMESTAMP(timezone=True), nullable=False, server_default=NOW),
+    Column("user_agent", Text, nullable=True),
+    Column("ip", Text, nullable=True),
+    _ts("created_at"),
+)
+
+# パスワードが通り、2 段目(TOTP)を待っているログイン(03 §5)。札は Cookie で渡し、sha256 だけを持つ。5 分・5 回まで
+login_challenges = Table(
+    "login_challenges",
+    metadata,
+    Column("token_hash", Text, primary_key=True),
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    # totp = 6 桁を待つ / totp_setup = 2 段階認証を設定してから入る(秘密は users.totp_pending_secret)
+    Column("purpose", Text, nullable=False),
+    Column("attempts", Integer, nullable=False, server_default=text("0")),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
+    _ts("created_at"),
+)
+
+# ログインの試み 1 回(03 §5)。失敗の間引きの数えと、あとから見る記録を兼ねる。90 日を過ぎたら消す
+login_attempts = Table(
+    "login_attempts",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    # 打たれた値を小文字にしたもの(利用者にいなくても残す)
+    Column("email", Text, nullable=False),
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
+    # password / totp / google
+    Column("method", Text, nullable=False),
+    Column("ip", Text, nullable=True),
+    Column("succeeded", Boolean, nullable=False),
+    # 失敗の理由(no_user・bad_password・bad_code・throttled・locked など)
+    Column("reason", Text, nullable=True),
+    _ts("created_at"),
+    Index("login_attempts_user", "user_id", "created_at"),
+    Index("login_attempts_ip", "ip", "created_at"),
 )
 
 # サイドバーのフォルダ(05 §13)。テーブルをまとめて畳む。1 段だけ(フォルダの中にフォルダは入れない)。
@@ -184,6 +246,9 @@ SYSTEM_TABLES = frozenset(
     {
         "workspace",
         "users",
+        "user_sessions",
+        "login_challenges",
+        "login_attempts",
         "meta_objects",
         "meta_fields",
         "meta_views",
@@ -342,7 +407,7 @@ Index("workflow_runs_due", workflow_runs.c.status, workflow_runs.c.next_attempt_
 Index("workflow_runs_by_workflow", workflow_runs.c.workflow_id, workflow_runs.c.created_at)
 
 # --- MCP を Claude のカスタムコネクタから使うための OAuth(03 §6・04 §13)------------------------
-# Works 自身が認可サーバになる。人の確認は Access の内側の画面で行い、Anthropic からの機械の呼び出し
+# Works 自身が認可サーバになる。人の確認は Works にログインした画面で行い、Anthropic からの機械の呼び出し
 # (トークンの交換・MCP)はアプリのトークンで守る。**コードもトークンも全文は保存しない**(sha256 だけ)
 
 # 動的登録(RFC 7591)で来たアプリ。`info` は SDK の OAuthClientInformationFull をそのまま
@@ -354,7 +419,7 @@ oauth_clients = Table(
     _ts("created_at"),
 )
 
-# 認可の途中。/authorize で受けた中身を置き、画面(Access の内側)で本人が許可するのを待つ。数分で切れる
+# 認可の途中。/authorize で受けた中身を置き、画面(ログインの内側)で本人が許可するのを待つ。数分で切れる
 oauth_requests = Table(
     "oauth_requests",
     metadata,

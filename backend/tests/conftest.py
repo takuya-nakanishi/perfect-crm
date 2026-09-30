@@ -8,8 +8,10 @@
 """
 
 import os
+import secrets
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -20,9 +22,11 @@ from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.engine import Engine
 
 from app import db
+from app.auth import sessions
 from app.main import app
 from app.meta import seed as seed_module
 from app.meta import store
+from app.meta.tables import user_sessions
 from app.records.normalize import search_text_of
 from app.records.tables import table_of
 
@@ -74,9 +78,11 @@ def engine() -> Iterator[Engine]:
     os.environ["WORKS_DATABASE_URL"] = TEST_URL
     # TestClient は http://testserver を名乗るので、Secure 付きの Cookie は保存されない(本番は https)
     os.environ["WORKS_SECURE_COOKIE"] = "false"
-    # ログインは dev(メールアドレスだけ)を既定にする。.env に WORKS_AUTH=access があっても、テストはこちら。
+    # ログインは自前(local)。.env に WORKS_AUTH=access があっても、テストはこちら。
     # Access の JWT を確かめるテストは、そのテストの中だけ access に切り替える(test_session.py)
-    os.environ["WORKS_AUTH"] = "dev"
+    os.environ["WORKS_AUTH"] = "local"
+    # パスワードの決まりで、漏えいした一覧(外のサービス)に問い合わせない。問い合わせの形は差し替えて確かめる
+    os.environ["WORKS_PWNED_CHECK"] = "false"
     # ワークフローの送り係(スレッド)は起こさない。テストは `runner.run_due()` を直に呼ぶ
     os.environ["WORKS_WORKFLOW_RUNNER"] = "false"
     from app.config import get_settings
@@ -128,9 +134,40 @@ def client(conn: Connection) -> Iterator[TestClient]:
     # FastAPI の依存を通らない入口(MCP・OAuth)も、同じトランザクションの SAVEPOINT にする
     db.set_transaction(contextmanager(override))
     with TestClient(app) as test_client:
+        # ブラウザは書き込みに必ず Origin を付ける。Cookie で入った書き込みは、公開 URL と同じものだけが通る(03 §5)
+        test_client.headers["origin"] = public_origin()
         yield test_client
     app.dependency_overrides.clear()
     db.set_transaction(None)
+
+
+def public_origin() -> str:
+    from app.api.deps import public_origin as origin
+
+    return origin()
+
+
+def login_as(
+    client: TestClient, user_id: str, *, created_at: datetime | None = None, user_agent: str | None = None
+) -> TestClient:
+    """その利用者のセッションを直に作り、Cookie を置く(ログインの手順そのものは test_session.py で確かめる)。
+
+    `created_at` を昔にすると、「10 分以内にログインした」に当たらないセッションになる。
+    """
+    token = secrets.token_urlsafe(32)
+    values: dict[str, object] = {
+        "user_id": user_id,
+        "token_hash": sessions.token_hash(token),
+        "method": "password",
+        "expires_at": datetime.now(UTC) + sessions.SESSION_TTL,
+        "user_agent": user_agent,
+    }
+    if created_at is not None:
+        values["created_at"] = created_at
+    with db.transaction() as conn:
+        conn.execute(user_sessions.insert().values(**values))
+    client.cookies.set(sessions.session_cookie(), token)
+    return client
 
 
 @pytest.fixture
@@ -149,14 +186,10 @@ def make(conn: Connection) -> Callable[..., str]:
 @pytest.fixture
 def admin(client: TestClient) -> TestClient:
     """管理者としてログイン済みのクライアント。"""
-    response = client.post("/api/v1/session", json={"email": ADMIN_EMAIL, "password": "x"})
-    assert response.status_code == 200, response.text
-    return client
+    return login_as(client, ADMIN_ID)
 
 
 @pytest.fixture
 def member(client: TestClient) -> TestClient:
     """管理者でない利用者としてログイン済みのクライアント。"""
-    response = client.post("/api/v1/session", json={"email": MEMBER_EMAIL, "password": "x"})
-    assert response.status_code == 200, response.text
-    return client
+    return login_as(client, MEMBER_ID)

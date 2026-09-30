@@ -3,8 +3,8 @@ import type { ApiErrorBody } from './types'
 
 /**
  * Python バックエンド向けの実装。エンドポイントの一覧は docs/design/04-api.md と対で保つ。
- * 本番の認証は Cloudflare Access(03 §5 の B 案)。Access が付ける JWT をサーバが確かめるので、画面は何も持たない。
- * バックエンドを WORKS_AUTH=dev で動かすときだけ、メールアドレスで入るセッション Cookie になる。
+ * ログインはアプリ自身が持つ(03 §5)。セッションは HttpOnly の Cookie で、画面は値に触れない。
+ * 本番を切り替える(J-055)までは Cloudflare Access が付ける JWT をサーバが確かめるので、そのあいだも画面は何も持たない。
  */
 const BASE = '/api/v1'
 
@@ -19,7 +19,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const data: unknown = await res.json().catch(() => null)
   if (!res.ok) {
     const err = (data ?? {}) as Partial<ApiErrorBody>
-    throw new ApiError(res.status, err.code ?? 'error', err.message ?? `HTTP ${res.status}`)
+    const retryAfter = Number(res.headers.get('Retry-After'))
+    throw new ApiError(res.status, err.code ?? 'error', err.message ?? `HTTP ${res.status}`, retryAfter > 0 ? retryAfter : undefined)
   }
   return data as T
 }
@@ -28,14 +29,16 @@ const enc = encodeURIComponent
 
 export function createHttpClient(): ApiClient {
   return {
-    // null はログイン画面を出す合図(dev だけ)。Access を通っていない(access_required)・
+    // null はログイン画面を出す合図。切り替え(J-055)までの本番(Access)で門を通れていない(access_required)・
     // 利用者でない(not_registered)はエラーのまま返し、ログイン画面がその旨を出す
     getSession: () =>
       request<Awaited<ReturnType<ApiClient['getSession']>>>('GET', '/session').catch((e) => {
-        if (e instanceof ApiError && e.status === 401 && e.code === 'unauthorized') return null
+        if (e instanceof ApiError && e.status === 401 && e.code === 'unauthenticated') return null
         throw e
       }),
+    getSessionOptions: () => request('GET', '/session/options'),
     login: (email, password) => request('POST', '/session', { email, password }),
+    verifyTotp: (code) => request('POST', '/session/totp', { code }),
     logout: async () => {
       const res = await request<{ logout_url?: string } | undefined>('DELETE', '/session')
       if (res?.logout_url) {
@@ -44,6 +47,14 @@ export function createHttpClient(): ApiClient {
         await new Promise<never>(() => {})
       }
     },
+
+    getAccount: () => request('GET', '/account'),
+    changePassword: (input) => request('PUT', '/account/password', input),
+    startTotpSetup: () => request('POST', '/account/totp'),
+    confirmTotpSetup: (code) => request('PUT', '/account/totp', { code }),
+    listAccountSessions: () => request('GET', '/account/sessions'),
+    revokeAccountSession: (id) => request('DELETE', `/account/sessions/${enc(id)}`),
+    revokeOtherAccountSessions: () => request('DELETE', '/account/sessions'),
 
     getMeta: () => request('GET', '/meta'),
     createObject: (input) => request('POST', '/meta/objects', input),

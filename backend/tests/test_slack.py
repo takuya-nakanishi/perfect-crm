@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.settings import forms as form_service
 from app.slack import service
 from app.slack.http import WebhookResult
-from tests.conftest import ADMIN_ID, MEMBER_ID
+from tests.conftest import ADMIN_ID, MEMBER_ID, login_as
 
 HOOK = "https://hooks.slack.com/services/T0001/B0001/secret-part"
 
@@ -158,12 +158,12 @@ def test_SET_100_チャンネルを繋ぐと並び_繋ぎ直しても増えず_�
 
 def test_SET_101_管理者でなければ_Slack_の設定を触れない(admin: TestClient, slack: FakeSlack) -> None:
     channel_id = connect(admin)
-    admin.post("/api/v1/session", json={"email": "misaki@example.jp", "password": "x"})
+    login_as(admin, MEMBER_ID)
     assert admin.get("/api/v1/settings/slack").status_code == 403
     assert admin.post("/api/v1/settings/slack/connect").status_code == 403
     assert admin.post(f"/api/v1/settings/slack/{channel_id}/test").status_code == 403
     assert admin.delete(f"/api/v1/settings/slack/{channel_id}").status_code == 403
-    admin.post("/api/v1/session", json={"email": "takuya@example.jp", "password": "x"})
+    login_as(admin, ADMIN_ID)
     assert [c["id"] for c in status(admin)["channels"]] == [channel_id]
 
 

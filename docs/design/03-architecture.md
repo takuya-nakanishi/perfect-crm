@@ -101,7 +101,7 @@ Claude ────────┘                                              
 
 - `current_user`(`app/api/deps.py`)は、Cookie → `Authorization: Bearer` の順に見る。どちらも無い・効かない → 401 `unauthenticated`。**Bearer はスコープ `api` のものだけを通す**(`wks_` と `works` は MCP のためのもので、画面の API へ広げない)
 - 利用者を消す(`deleted_at`)と、その人のセッション・許可・トークンはどれも効かなくなる。管理者(`admin`)の扱いは変わらない
-- **手元・テスト・E2E も同じログインを通る。**`WORKS_AUTH`(`access` / `dev`)は無くす。公開する場所で「メールアドレスだけで入れる」形を誤って有効にする事故を、形ごと無くすため。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
+- **手元・テスト・E2E も同じログインを通る。**メールアドレスだけで入れた `WORKS_AUTH=dev` は無くし、自前のログインの `local` を既定にした(2026-10-01。J-053)。公開する場所で「メールアドレスだけで入れる」形を誤って有効にする事故を、形ごと無くすため。**`access` は本番の切り替え(J-055)まで残す**(compose の既定も access。J-052 など別の反映で先に本番へ出ても、ログインが変わらないように)。J-055 で `WORKS_AUTH` ごと消す。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
 - `WORKS_SECRET_KEY` は、公開する場所では必須にする(空なら起動しない)。Google の戻りの Cookie の署名と、Google・Slack の鍵の暗号化に使う
 
 ### パスワード
@@ -186,7 +186,7 @@ Claude ────────┘                                              
 
 - 2026-09-22: 外側の門を Cloudflare Access に決めた(Q-035)。IdP は One-time PIN と Google Workspace(Q-039)
 - 2026-09-24: アプリは Access の JWT(`Cf-Access-Jwt-Assertion`)を確かめ、そのメールアドレスで利用者を決める形にした(J-023)。当時は、A 案「アプリが自分で認証する。どこへ引っ越しても同じ」と、B 案「Access を信頼する。楽だが Cloudflare の外では成り立たない」を比べ、本人が B を選んだ
-- 2026-10-01: Android のネイティブアプリ(01 D-15)を作るにあたり、A 案に切り替えた(01 D-14)。Access の頃の実装(`app/access.py`、`WORKS_AUTH`)は、自前のログインを作るとき(J-053)に消す。本番から Access を外すのは J-055(06 §3)
+- 2026-10-01: Android のネイティブアプリ(01 D-15)を作るにあたり、A 案に切り替えた(01 D-14)。自前のログインは J-053 でコードに入れた(`dev` は消し、`access` は残した)。本番から Access を外し、`app/access.py` と `WORKS_AUTH` を消すのは J-055(06 §3)
 - 2026-10-01(同日): 2 段階認証は TOTP で、パスワードで入るときは必須と決めた(Q-048)。Google で入れるのが Workspace のアカウントだけなこと、既定値(セッション 30 日・メールでの再設定を持たない・Android アプリに許可のカードを出さない)も本人が了承
 
 ## 6. MCP サーバ(ローンチ後・J-028)

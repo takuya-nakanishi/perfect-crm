@@ -689,6 +689,58 @@ export interface Session {
   workspace: Workspace
 }
 
+/** ログインの画面が出すもの(未ログインで読める。04 §16) */
+export interface SessionOptions {
+  /** Google でログインが使えるか(J-054) */
+  google: boolean
+}
+
+/**
+ * 2 段階認証(TOTP)の設定の中身(04 §16)。QR はサーバが作り、画面は <img> で描く
+ * (画面に QR のライブラリを足さず、CSP の img-src 'self' data: の中に収まる)
+ */
+export interface TotpSetup {
+  /** base32 の秘密。QR を読めないとき(スマホ 1 台で設定するとき)に打ち込む。画面は 4 文字ずつ区切って見せる */
+  secret: string
+  /** otpauth://totp/…。対応する認証アプリなら、開くだけで登録できる */
+  otpauth_uri: string
+  /** data:image/svg+xml,… 白地に黒 */
+  qr_svg: string
+}
+
+/**
+ * ログインの 1 段目(メールアドレスとパスワード)の結果(04 §16)。
+ * 2 段目(6 桁)が通るまで、セッションは作られない。モックは 2 段目を出さずに ok を返す
+ */
+export type LoginResult =
+  | { status: 'ok'; session: Session }
+  | { status: 'totp' }
+  | { status: 'totp_setup'; setup: TotpSetup }
+
+/** アカウントの画面(05 §15)。自分のログインの状態 */
+export interface Account {
+  has_password: boolean
+  password_changed_at: string | null
+  /** 2 段階認証を設定した日時。まだなら null */
+  totp_enabled_at: string | null
+  /** 結んだ Google のアドレス(J-054)。結んでいなければ null */
+  google_email: string | null
+  /** このセッションが 10 分以内のログインか。true なら、いまのパスワードを求めずに変えられる */
+  recent_login: boolean
+}
+
+/** ログイン中の端末(ブラウザのセッション)とアプリ(Android の許可。J-056) */
+export interface AccountSession {
+  id: string
+  kind: 'browser' | 'app'
+  /** 「Chrome · Windows」「Works · Android」 */
+  label: string
+  created_at: string
+  last_seen_at: string
+  /** いま使っている端末か */
+  current: boolean
+}
+
 /** エラーは HTTP ステータス + この形 */
 export interface ApiErrorBody {
   code: string

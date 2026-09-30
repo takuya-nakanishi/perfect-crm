@@ -40,13 +40,13 @@
 
 **切り替えの手順**(J-055)。順を崩さない(門もログインも無い時間を作らないため)。
 
-1. 自前のログイン(J-053。Google を使うなら J-054 も)を本番へ出す。このときはまだ Access が前にいて、門とアプリのログインの二重になる。表が変わるので、直前に `pg_dump`
+1. 自前のログイン(J-053。Google を使うなら J-054 も)を本番へ出す。**本番の `.env` に `WORKS_AUTH=local` を入れて建て直す**(compose の既定は access なので、入れるまでは本番のログインは変わらない)。`WORKS_SECRET_KEY` が空だと api は起動しない(2 段階認証の秘密を読めなくなるため)。このときはまだ Access が前にいて、門とアプリのログインの二重になる。表が変わる(0009)ので、直前に `pg_dump`
 2. 本人のパスワードを決め(`python -m app.cli set-password <メール>`)、パスワードで入って 2 段階認証を設定する(認証アプリで QR を読む)。Google を使うなら、GCP のクライアントに戻り先を足して(03 §5)Google で入れることを確かめ、Workspace の管理コンソールで 2 段階認証を必須にしておく
 3. Access の内側で、ログイン・ログアウト・アカウントの画面・Claude のコネクタ(許可の画面が Works のログインになる)を確かめる
 4. **Access のアプリを消す**(本体と、Anthropic の送信元の例外。§7 の「切り替えまで」)。スクリプトで消し、消したものを記録に残す
 5. 縁の率の上限を足す(上)
 6. 外から確かめる: 未ログインの `GET /api/v1/session` が 401 `unauthenticated`(Access の 302 ではない)、`/healthz` が 200、ログインの画面が開く、違うパスワードで 401、スマホからパスワード + 6 桁と Google で入れる、Claude から MCP が使える
-7. 後片付け: `.env` から `WORKS_AUTH`・`WORKS_ACCESS_*` を消す。`cloudflare-tunnel-setup.py` が works に Access を作らないようにし、`cloudflare-access-check.py` を 6 の確かめに置き換える。環境設定の Web フォーム・MCP の「繋ぎ方」からサービストークンを外す。本番では `/api/v1/docs`・`openapi.json` を出さない(§7)。runbook §3・§5b と CLAUDE.md を直す
+7. 後片付け: `app/access.py` と `WORKS_AUTH` の分岐を消し(compose の既定も)、`.env` から `WORKS_AUTH`・`WORKS_ACCESS_*` を消す。`cloudflare-tunnel-setup.py` が works に Access を作らないようにし、`cloudflare-access-check.py` を 6 の確かめに置き換える。環境設定の Web フォーム・MCP の「繋ぎ方」からサービストークンを外す。本番では `/api/v1/docs`・`openapi.json` を出さない(§7)。runbook §3・§5b と CLAUDE.md を直す
 
 - 戻すとき: `cloudflare-tunnel-setup.py … --allow <メール>` をもう一度打てば、Access のアプリと許可を作り直せる(何度打っても同じ結果)。アプリのログインはそのまま残るので、二重の状態に戻る
 - Access の頃の決めごと(セッション 30 日、One-time PIN、Google の IdP、`cloudflare-access-check.py` の一時的なサービストークン)は、git の履歴にある

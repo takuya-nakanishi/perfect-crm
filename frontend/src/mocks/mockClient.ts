@@ -1,5 +1,6 @@
 import { ApiError, type ApiClient } from '@/api/client'
 import type { Session } from '@/api/types'
+import * as account from './account'
 import { exportCsv, importCsv } from './csv'
 import { connectDrive, createDocument, disconnectDrive, driveStatus, listFiles, resetDrive } from './drive'
 import * as settings from './settings'
@@ -28,7 +29,7 @@ function currentSession(): Session | null {
 
 function requireUser(): string {
   const session = currentSession()
-  if (!session) throw new ApiError(401, 'unauthorized', 'ログインが必要です')
+  if (!session) throw new ApiError(401, 'unauthenticated', 'ログインしてください')
   return session.user.id
 }
 
@@ -42,17 +43,63 @@ export function createMockClient(): ApiClient {
       await sleep(READ_MS)
       return currentSession()
     },
+    async getSessionOptions() {
+      await sleep(READ_MS)
+      return { google: false }
+    },
     async login(email, password) {
       await sleep(WRITE_MS * 3)
-      if (!email.trim() || !password) throw new ApiError(400, 'invalid', 'メールアドレスとパスワードを入力してください')
-      // モックでは誰でも通す。入力したメールの利用者がいればその人、いなければ最初の利用者
+      if (!email.trim() || !password) throw new ApiError(400, 'invalid', 'メールアドレスとパスワードを入れてください')
+      // モックでは誰でも通し、2 段目(6 桁)も出さない。入力したメールの利用者がいればその人、いなければ最初の利用者
       const user = db.users.find((u) => u.email === email.trim().toLowerCase()) ?? db.users[0]
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user_id: user.id }))
-      return { user, workspace: db.workspace }
+      account.onLogin(user.id)
+      return { status: 'ok', session: { user, workspace: db.workspace } }
+    },
+    async verifyTotp() {
+      await sleep(WRITE_MS)
+      // モックは 2 段目の札を出さないので、ここへ来るのは古い画面だけ
+      throw new ApiError(401, 'login_expired', '時間が経ちすぎました。もう一度ログインしてください')
     },
     async logout() {
       await sleep(READ_MS)
       localStorage.removeItem(SESSION_KEY)
+    },
+
+    async getAccount() {
+      await sleep(READ_MS)
+      return account.getAccount(requireUser())
+    },
+    async changePassword(input) {
+      await sleep(WRITE_MS)
+      const me = currentSession()?.user
+      if (!me) throw new ApiError(401, 'unauthenticated', 'ログインしてください')
+      const context = [me.email, me.email.split('@')[0], me.name, 'works', db.workspace.name]
+      account.changePassword(me.id, input.new_password, context)
+    },
+    async startTotpSetup() {
+      await sleep(WRITE_MS)
+      const me = currentSession()?.user
+      if (!me) throw new ApiError(401, 'unauthenticated', 'ログインしてください')
+      return account.startTotp(me.id, me.email, db.workspace.name)
+    },
+    async confirmTotpSetup(code) {
+      await sleep(WRITE_MS)
+      account.confirmTotp(requireUser(), code)
+    },
+    async listAccountSessions() {
+      await sleep(READ_MS)
+      return account.listSessions(requireUser())
+    },
+    async revokeAccountSession(id) {
+      await sleep(WRITE_MS)
+      requireUser()
+      if (id !== account.MOCK_SESSION_ID) notFound()
+      localStorage.removeItem(SESSION_KEY)
+    },
+    async revokeOtherAccountSessions() {
+      await sleep(WRITE_MS)
+      requireUser()
     },
 
     async getMeta() {
@@ -323,6 +370,7 @@ export function createMockClient(): ApiClient {
 /** モックのデータを初期状態へ戻す(利用者メニューから呼ぶ) */
 export function resetMockData() {
   db.resetTables()
+  account.resetAccount()
   resetDrive()
   settings.resetSettings()
   slack.resetSlack()

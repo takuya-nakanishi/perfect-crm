@@ -14,6 +14,8 @@ const FormsSettings = lazy(() => import('@/pages/settings/FormsSettings').then((
 const WorkflowsSettings = lazy(() => import('@/pages/settings/WorkflowsSettings').then((m) => ({ default: m.WorkflowsSettings })))
 const SlackSettings = lazy(() => import('@/pages/settings/SlackSettings').then((m) => ({ default: m.SlackSettings })))
 const McpSettings = lazy(() => import('@/pages/settings/McpSettings').then((m) => ({ default: m.McpSettings })))
+// アカウントもめったに開かないので、同じく開くときに読む
+const AccountPage = lazy(() => import('@/pages/Account').then((m) => ({ default: m.AccountPage })))
 
 function Home() {
   return <Navigate to={homePath(useOutletContext<MetaResponse>())} replace />
@@ -28,6 +30,7 @@ function ObjectRoute() {
  *   /login            ログイン
  *   /oauth/consent    Claude のカスタムコネクタから繋ぐときの許可(?request=。サイドバーは出さない)
  *   /o/:objectKey     テーブル(?view= でビュー、?peek=テーブル名:ID で右のパネル)
+ *   /account          アカウント(パスワード・2 段階認証・ログイン中の端末。だれでも)
  *   /settings/…       環境設定(テーブル・Web フォーム・ワークフロー・Slack・MCP。管理者だけ)
  */
 export default function App() {
@@ -38,6 +41,14 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
         <Route path="/o/:objectKey" element={<ObjectRoute />} />
+        <Route
+          path="/account"
+          element={
+            <Suspense fallback={null}>
+              <AccountPage />
+            </Suspense>
+          }
+        />
         <Route
           path="/settings"
           element={

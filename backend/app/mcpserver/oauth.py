@@ -3,9 +3,10 @@
 流れ(Claude の Web・デスクトップ・スマホ・Claude Code のどれから繋いでも同じ):
 
 1. Claude が `/register` で自分を登録する(RFC 7591 の動的登録。公開クライアント)
-2. 本人のブラウザが `/authorize` へ来る。ここは **Access の内側**なので、Access でログインした人だけが通る。
-   受けた中身を `oauth_requests` に置き、画面の許可のページ(`/oauth/consent`)へ送る
-3. 本人が許可すると(`POST /api/v1/oauth/requests/{id}/approve`。利用者は Access の JWT で決まる)、
+2. 本人のブラウザが `/authorize` へ来る。受けた中身を `oauth_requests` に置き、
+   画面の許可のページ(`/oauth/consent`)へ送る。許可のページは Works にログインした人だけが開ける
+   (未ログインならログインの画面を経る。切り替えの J-055 までは Access)
+3. 本人が許可すると(`POST /api/v1/oauth/requests/{id}/approve`。利用者はログインで決まる)、
    許可(`oauth_grants`)と認可コードを作り、Claude の戻り先へ送る
 4. Claude のサーバが `/token` でコードをトークンに替える(PKCE S256 は SDK が確かめる)。
    以後は access token で `/mcp` を叩き、切れたら refresh token で取り直す(使うたびに新しいものへ替える)
@@ -249,7 +250,7 @@ class WorksOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Ref
             )
 
         await _run(fn)
-        # 画面の許可のページ(Access の内側)。本人が許可すると decide() が Claude へ戻す
+        # 画面の許可のページ(ログインの内側)。本人が許可すると decide() が Claude へ戻す
         return f"{get_settings().public_url.rstrip('/')}/oauth/consent?request={request_id}"
 
     async def load_authorization_code(

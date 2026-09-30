@@ -7,7 +7,8 @@ from fastapi import APIRouter, FastAPI
 from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
-from app.api import google, meta, oauth, records, session, settings, slack, workflows
+from app.api import account, google, meta, oauth, records, session, settings, slack, workflows
+from app.config import get_settings
 from app.errors import install_error_handlers
 from app.mcpserver import server as mcp_server
 from app.workflows import runner
@@ -21,8 +22,19 @@ async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
     await _mcp["app"](scope, receive, send)
 
 
+def check_settings() -> None:
+    """公開する場所(https)で自前のログインを使うなら、WORKS_SECRET_KEY は必須(03 §5)。
+
+    空だと起動ごとに鍵が変わり、2 段階認証の秘密・Google と Slack の鍵を読めなくなる。黙って動かさずに止める。
+    """
+    s = get_settings()
+    if s.auth == "local" and s.secure_cookie and not s.secret_key:
+        raise RuntimeError("WORKS_SECRET_KEY が空です。.env に入れてから起動してください(docs/runbook/01 §6 の A)")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    check_settings()
     server = mcp_server.build()
     _mcp["app"] = mcp_server.asgi_app(server)
     # ワークフローの送り係(04 §15)。テストは起こさない(WORKS_WORKFLOW_RUNNER=false)
@@ -46,6 +58,7 @@ install_error_handlers(app)
 
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(session.router)
+v1.include_router(account.router)
 v1.include_router(meta.router)
 v1.include_router(records.router)
 v1.include_router(settings.router)

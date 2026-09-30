@@ -41,7 +41,7 @@ npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtu
 ```
 
 - E2E の向き先は引数で変えられる: `npm run e2e -- http://127.0.0.1:8610`(コンテナの本番ビルド)
-- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=dev`)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる(止めるコマンドを最後に出す)。**ポートが既に使われていたら始めない**(残っていた古い画面に向けて E2E が通ってしまうため)。別のポートで流すなら `E2E_API_PORT`・`E2E_WEB_PORT`
+- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=local`。種の利用者のパスワードと 2 段階認証の秘密は `backend/app/demo.py`。E2E はそこから 6 桁を計算する)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる(止めるコマンドを最後に出す)。**ポートが既に使われていたら始めない**(残っていた古い画面に向けて E2E が通ってしまうため)。別のポートで流すなら `E2E_API_PORT`・`E2E_WEB_PORT`
 - `smoke.mjs` は画面の `<html data-api-mode>` を読み、モック専用の検査(Google ドライブを繋いだ状態、モックのデータの初期化)を http では飛ばす。http では契約どおりの 4xx(ログイン前の 401 など)をブラウザのエラーに数えず、api の 5xx を失敗に数える
 - E2E のブラウザは Playwright の Chromium(`~/.cache/ms-playwright/chromium-*`)。無ければ `npx playwright install chromium`。別の場所にあるなら `CHROMIUM_PATH`
 - モックのデータはブラウザごと。画面の利用者メニュー「モックのデータを初期化」で戻る。メタデータ(`fixtures/objects.json`・`views.json`)は手で直す
@@ -105,9 +105,9 @@ docker compose logs -f api
 
 - **道具は uv。**入っていなければ `curl -LsSf https://astral.sh/uv/install.sh | sh`(公式の入れ方)。`scripts/verify.sh` は uv が無いと red になる
 - 初回の起動で `python -m app.cli init` が走り、マイグレーション → 初期メタデータ → 管理者まで揃う。**`WORKS_ADMIN_EMAIL` が空だと管理者が作られず、ログインできない**
-- **ログインは Cloudflare Access**(`docs/design/03` §5)。api は Access の JWT を確かめるので、`.env` に `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` が要る。`scripts/cloudflare-tunnel-setup.py`(§3。再実行しても重複しない)が書く。空のままだと画面は「ログインし直してください」+ 503 で止まる
+- **本番のログインは、切り替え(J-055)までは Cloudflare Access**(`docs/design/03` §5。compose の既定 `WORKS_AUTH=access`)。api は Access の JWT を確かめるので、`.env` に `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` が要る。`scripts/cloudflare-tunnel-setup.py`(§3。再実行しても重複しない)が書く。空のままだと画面は「ログインし直してください」+ 503 で止まる
 - **人を足すときは 2 か所**: Access のポリシーにメールアドレスを足し(門)、`docker compose exec api python -m app.cli add-user <メール> [名前] [--admin]` で Works の利用者にする。片方だけだと、門で止まるか、「登録されていません」が出る
-- **Access の無い手元で API を触るとき**(E2E など)は `.env` に `WORKS_AUTH=dev` と `WORKS_SECURE_COOKIE=false`。メールアドレスだけで入れるので、**公開する場所では使わない**
+- **自前のログイン**(`WORKS_AUTH=local`。手元・E2E。J-055 から本番も): 利用者は `add-user` で足し、`docker compose exec api python -m app.cli set-password <メール>`(標準入力から読む)でパスワードを決める。最初のログインで 2 段階認証(TOTP)を設定する。端末を無くした人は `reset-totp <メール>`。手元を http で開くときは `WORKS_SECURE_COOKIE=false`
 - `.env` に要る値は `backend/README.md`(`WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`)
 - **db はホストの 127.0.0.1:55432 に出ている**(pytest が実物に繋ぐため)。外へは出さない
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない

@@ -56,11 +56,12 @@ services:
       WORKS_DB_HOST: db
       WORKS_DB_PASSWORD: ${WORKS_DB_PASSWORD:-}
       WORKS_SECRET_KEY: ${WORKS_SECRET_KEY:-} # 空だと再起動のたびに Google と Slack の繋ぎ直しになる
-      # ログイン(03 §5 の B 案)。access = Cloudflare Access の JWT で利用者を決める。dev は Access の無い手元だけ
+      # ログイン(03 §5)。access = Cloudflare Access の JWT で利用者を決める / local = アプリ自身のログイン。
+      # 既定を access にしているのは、本番の切り替え(J-055。06 §3 の手順)より前に別の反映で出ても、ログインが変わらないように
       WORKS_AUTH: ${WORKS_AUTH:-access}
       WORKS_ACCESS_TEAM_DOMAIN: ${WORKS_ACCESS_TEAM_DOMAIN:-} # scripts/cloudflare-tunnel-setup.py が書く
       WORKS_ACCESS_AUD: ${WORKS_ACCESS_AUD:-}
-      WORKS_SECURE_COOKIE: ${WORKS_SECURE_COOKIE:-true} # dev を http で開くときだけ false
+      WORKS_SECURE_COOKIE: ${WORKS_SECURE_COOKIE:-true} # 手元を http で開くときだけ false
       # 外から見た URL。MCP の接続先(<ここ>/mcp)と OAuth の発行元(03 §6)。Claude のコネクタに入れる URL と揃える
       WORKS_PUBLIC_URL: ${WORKS_PUBLIC_URL:-https://works.sanei-clover.com}
       WORKS_ADMIN_EMAIL: ${WORKS_ADMIN_EMAIL:-} # 最初の管理者(初回だけ作る)

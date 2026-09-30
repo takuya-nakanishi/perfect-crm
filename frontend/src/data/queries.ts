@@ -6,6 +6,8 @@ import { sidebarObjects } from '@/lib/sidebar'
 /** キャッシュのキー。更新系(mutations.ts)が同じ形で無効化する */
 export const keys = {
   session: ['session'] as const,
+  account: ['account'] as const,
+  accountSessions: ['account', 'sessions'] as const,
   meta: ['meta'] as const,
   records: (object: string, params?: ListParams) => (params ? (['records', object, params] as const) : (['records', object] as const)),
   record: (object: string, id: string) => ['record', object, id] as const,

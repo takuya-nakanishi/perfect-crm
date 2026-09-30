@@ -4,12 +4,34 @@
 //   ../scripts/e2e-http.sh                       本物の API + PostgreSQL(E2E 用の DB を作り直して)に対して
 //
 // **本番(works.sanei-clover.com・127.0.0.1:8610)には流さない。**この E2E はテーブルを足したり消したりする。
-// 本番は 2026-09-24 から http モード + Access のログインなので、流してもログインで止まる(サービストークンは利用者になれない)。
+// 本番は 2026-09-24 から http モード。ログインは Access(J-055 から自前のパスワード + 2 段階認証)なので、流してもログインで止まる。
 //
 // ブラウザは Playwright が入れた Chromium を使う(CHROMIUM_PATH で指定。無ければ ~/.cache/ms-playwright から探す)。
 // モックのデータはブラウザごとに初期化されるので、何度走らせても同じ結果になる。
+import { createHmac } from 'node:crypto'
 import { readdirSync } from 'node:fs'
 import { chromium } from 'playwright-core'
+
+// 本物の API(scripts/e2e-http.sh)の種の利用者のパスワードと 2 段階認証の秘密。backend/app/demo.py と揃える。
+// 管理者は 2 段階認証を設定済み、もう 1 人は初めてのログインで設定の段を通る(03 §5)
+const E2E_PASSWORD = 'works-e2e-password'
+const E2E_TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+
+/** RFC 6238 の 6 桁(SHA-1・30 秒)。サーバは同じ刻みの 6 桁を 2 度受けないので、同じ秘密で続けて入るときは次の刻みを使う */
+const usedSteps = new Map()
+function totpCode(secret) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  const bits = [...secret.replace(/=+$/, '')].map((c) => alphabet.indexOf(c).toString(2).padStart(5, '0')).join('')
+  const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)))
+  const step = Math.max(Math.floor(Date.now() / 30000), (usedSteps.get(secret) ?? -1) + 1)
+  usedSteps.set(secret, step)
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(step))
+  const h = createHmac('sha1', key).update(counter).digest()
+  const o = h[h.length - 1] & 15
+  const n = (((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1_000_000
+  return String(n).padStart(6, '0')
+}
 
 function findChromium() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH
@@ -61,12 +83,37 @@ const markDrift = () => page.evaluate(() => {
 await page.goto(BASE + '/o/accounts')
 await page.waitForURL(/\/login/)
 ok(page.url().includes('next='), '未ログインで /login へ送られ、戻り先を持っている')
-await page.fill('#email', 'takuya@example.jp'); await page.fill('#password', 'x'); await page.click('button[type=submit]')
-await page.waitForSelector('[role=table]')
-ok(page.url().includes('/o/accounts'), 'ログイン後、元の画面へ戻る')
 // 本物の API に繋がっているか(VITE_API_MODE=http)。画面が <html data-api-mode> に出している(src/main.tsx)
 const HTTP_API = (await page.evaluate(() => document.documentElement.dataset.apiMode)) === 'http'
 console.log(`INFO  データ: ${HTTP_API ? '本物の API(http)' : 'モック'}`)
+/** ログインする。本物の API ならパスワードの次に 6 桁(まだの人は設定の段で QR の文字列から計算し、覚えておく)。モックは 2 段目が無い */
+const totpSecrets = new Map([['takuya@example.jp', E2E_TOTP_SECRET]])
+async function logIn(email) {
+  await page.fill('#email', email); await page.fill('#password', HTTP_API ? E2E_PASSWORD : 'x'); await page.click('button[type=submit]')
+  if (!HTTP_API) return
+  await page.waitForSelector('#code')
+  const secret = await page.locator('[data-totp-secret]').getAttribute('data-totp-secret', { timeout: 300 }).catch(() => null)
+  if (secret) totpSecrets.set(email, secret)
+  await page.fill('#code', totpCode(totpSecrets.get(email)))
+}
+if (HTTP_API) {
+  // 違うパスワード → 赤い帯。正しいパスワード → 6 桁の段。違う 6 桁 → 赤い帯で欄が空に戻る。正しい 6 桁で入る
+  await page.fill('#email', 'takuya@example.jp'); await page.fill('#password', 'wrong password here'); await page.click('button[type=submit]')
+  await page.waitForSelector('[role=alert]')
+  ok((await page.locator('[role=alert]').textContent()).includes('メールアドレスかパスワードが違います'), '違うパスワードでは赤い帯が出る')
+  await page.fill('#password', E2E_PASSWORD); await page.click('button[type=submit]')
+  await page.waitForSelector('#code')
+  await page.fill('#code', '000000')
+  await page.waitForFunction(() => document.querySelector('[role=alert]')?.textContent?.includes('確認コードが違います'))
+  ok((await page.inputValue('#code')) === '' && (await page.evaluate(() => document.activeElement?.id)) === 'code', '違う 6 桁では赤い帯が出て、欄が空に戻る')
+  await page.fill('#code', totpCode(E2E_TOTP_SECRET))
+  await page.waitForSelector('[role=table]')
+  ok(page.url().includes('/o/accounts'), 'パスワードの次に 6 桁を入れると入れて、元の画面へ戻る')
+} else {
+  await logIn('takuya@example.jp')
+  await page.waitForSelector('[role=table]')
+}
+ok(page.url().includes('/o/accounts'), 'ログイン後、元の画面へ戻る')
 
 await page.goto(BASE + '/')
 await page.waitForSelector('[role=row][data-row]')
@@ -629,10 +676,31 @@ if (HTTP_API) {
   await page.getByRole('link', { name: 'ワークフロー' }).click(); await page.waitForURL(/workflows/); await wait(600)
   ok((await page.getByText('まだワークフローはありません').count()) === 1, 'ワークフローの画面が開き、まだ無ければ例が出る')
 }
+// アカウントの画面(05 §15): メニューから開け、この端末が一覧に出る
+await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.getByRole('button', { name: 'アカウント' }).click()
+await page.waitForURL(/\/account/)
+await page.getByText('この端末', { exact: true }).waitFor(); await page.getByRole('heading', { name: 'パスワード', exact: true }).waitFor()
+ok((await page.getByText('この端末', { exact: true }).count()) === 1 && (await page.getByRole('heading', { name: 'パスワード', exact: true }).count()) === 1, 'アカウントの画面に、この端末とパスワードの節が出る')
+
 await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.getByRole('button', { name: 'ログアウト' }).click(); await page.waitForURL(/\/login/)
-await page.fill('#email', 'misaki@example.jp'); await page.fill('#password', 'x'); await page.click('button[type=submit]'); await page.waitForSelector('[role=table]')
+await logIn('misaki@example.jp')
+if (HTTP_API) {
+  // 2 人目は 2 段階認証がまだ。QR の段(文字列から 6 桁を計算して入れた)を経て入る
+  await page.waitForSelector('[role=table]')
+  ok(true, '初めての人は QR の段で 2 段階認証を設定してから入る')
+}
+await page.waitForSelector('[role=table]')
 await page.goto(BASE + '/settings/mcp'); await wait(600)
 ok(!page.url().includes('/settings') && await page.locator('nav[aria-label=メイン]').getByText('環境設定').count() === 0, '管理者でない人は環境設定に入れない(サイドバーにも出ない)')
+
+// 使っている途中でセッションが切れたら(期限・ほかの端末で切られた)、次の操作でログインの画面へ戻り、その旨が出る
+if (HTTP_API) await ctx.clearCookies()
+else await page.evaluate(() => localStorage.removeItem('works.mock.session'))
+await page.locator('nav[aria-label=メイン]').getByText('取引先責任者').click()
+await page.waitForURL(/\/login\?.*expired=1/)
+ok((await page.locator('[role=alert]').textContent()).includes('ログインが切れました'), '使っている途中で切れたら、次の操作でログインの画面へ戻る')
+await logIn('misaki@example.jp')
+await page.waitForSelector('[role=table]')
 
 // 18. ログアウト
 await page.getByRole('button', { name: /Sanei Clover/ }).click()

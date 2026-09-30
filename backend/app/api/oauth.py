@@ -1,6 +1,6 @@
 """MCP の接続を許可する画面(`/oauth/consent`)の API(04 §13)。
 
-画面は Access の内側なので、ここに来るのは Access でログインした人だけ。許可すると、その人として MCP が使える。
+ここに来るのは Works にログインした人だけ(`CurrentUser`)。許可すると、その人として MCP が使える。
 """
 
 from typing import Any

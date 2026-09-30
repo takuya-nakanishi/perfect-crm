@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronsUpDown, FolderPlus, Keyboard, LogOut, Monitor, Moon, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sun } from 'lucide-react'
+import { ChevronsUpDown, FolderPlus, Keyboard, LogOut, Monitor, Moon, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sun, UserRound } from 'lucide-react'
 import { lazy, Suspense, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { api, API_MODE } from '@/api/client'
@@ -110,6 +110,17 @@ function WorkspaceMenu({ session }: { session: Session }) {
               <Keyboard size={15} className="text-ink-2" aria-hidden />
               <span className="flex-1">ショートカット</span>
               <Kbd>?</Kbd>
+            </button>
+            <button
+              type="button"
+              className={itemCls}
+              onClick={() => {
+                setAnchor(null)
+                navigate('/account')
+              }}
+            >
+              <UserRound size={15} className="text-ink-2" aria-hidden />
+              アカウント
             </button>
             {API_MODE === 'mock' && (
               <button

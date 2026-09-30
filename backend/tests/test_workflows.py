@@ -15,7 +15,7 @@ from sqlalchemy import Connection, select, text
 from app.meta.tables import workflow_runs, workflows
 from app.slack.http import WebhookResult
 from app.workflows import runner
-from tests.conftest import ADMIN_ID
+from tests.conftest import ADMIN_ID, MEMBER_ID, login_as
 from tests.test_slack import HOOK, FakeSlack, connect, slack, texts
 
 __all__ = ["slack"]  # 偽の Slack の fixture を、このファイルでも使う
@@ -112,7 +112,7 @@ def test_WF_001_作ると一覧に出て_直すと変わる(admin: TestClient, c
 
 def test_WF_002_管理者でなければ触れない(admin: TestClient, channel: str) -> None:
     created = create(admin, new_workflow(channel))
-    admin.post("/api/v1/session", json={"email": "misaki@example.jp", "password": "x"})
+    login_as(admin, MEMBER_ID)
     wid = created["id"]
     assert admin.get("/api/v1/settings/workflows").status_code == 403
     assert admin.post("/api/v1/settings/workflows", json=new_workflow(channel)).status_code == 403

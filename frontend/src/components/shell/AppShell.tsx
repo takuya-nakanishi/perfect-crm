@@ -1,10 +1,12 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { SESSION_EXPIRED } from '@/api/client'
 import type { MetaResponse, Session } from '@/api/types'
 import { CreateRecordModal } from '@/components/record/CreateRecordModal'
 import { RecordPanel } from '@/components/record/RecordPanel'
 import { Toaster } from '@/components/ui/Toaster'
-import { findObject, homePath, useMeta, useRecord, useSession, viewsOf } from '@/data/queries'
+import { findObject, homePath, keys, useMeta, useRecord, useSession, viewsOf } from '@/data/queries'
 import { cx } from '@/lib/cx'
 import { isPlainKey, isTyping, useKeydown } from '@/lib/hotkeys'
 import { recordName } from '@/lib/records'
@@ -178,13 +180,27 @@ export function AppShell() {
   const meta = useMeta(Boolean(session.data))
   const location = useLocation()
   const setMobileNav = useUI((s) => s.setMobileNav)
+  const qc = useQueryClient()
+  // 使っている途中で切れたか(ログインの画面に、その旨を出す)
+  const [expired, setExpired] = useState(false)
 
   useEffect(() => setMobileNav(false), [location.pathname, setMobileNav])
+  useEffect(() => {
+    const onExpired = () => {
+      setExpired(true)
+      qc.setQueryData(keys.session, null)
+    }
+    window.addEventListener(SESSION_EXPIRED, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired)
+  }, [qc])
 
   if (session.isPending) return <Splash />
   if (!session.data) {
-    const next = location.pathname === '/' ? '' : `?next=${encodeURIComponent(location.pathname + location.search)}`
-    return <Navigate to={`/login${next}`} replace />
+    const params = new URLSearchParams()
+    if (location.pathname !== '/') params.set('next', location.pathname + location.search)
+    if (expired) params.set('expired', '1')
+    const query = params.toString()
+    return <Navigate to={`/login${query ? `?${query}` : ''}`} replace />
   }
   if (!meta.data) return <Splash />
   return <Shell meta={meta.data} session={session.data} />

@@ -21,6 +21,11 @@ dependencies = [
     "pyjwt>=2.15.0",
     # MCP サーバと、Claude のカスタムコネクタが通る OAuth の認可サーバ(app/mcpserver/。03 §6)
     "mcp>=2.2.0",
+    # 自前のログイン(03 §5。2026-10-01 確認は 03 §13)。パスワードは Argon2id(passlib は使わない)、
+    # 2 段階認証は TOTP、その設定の QR はサーバが作る
+    "argon2-cffi>=25.1.0",
+    "pyotp>=2.10.0",
+    "segno>=1.6.6",
 ]
 
 [dependency-groups]
