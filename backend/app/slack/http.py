@@ -1,6 +1,6 @@
 """Slack を叩く**2 本の口**。テストはこの 2 つだけを差し替える(本物へは繋がない)。
 
-- `api`: Web API(`https://slack.com/api/<メソッド>`)。認可コードの交換と、連携の解除(`apps.uninstall`)
+- `api`: Web API(`https://slack.com/api/<メソッド>`)。いま使うのは認可コードの交換(`oauth.v2.access`)だけ
 - `webhook`: Incoming Webhook への投稿。応答は JSON ではなく文字(成功は 200 の `ok`、失敗は `no_service` などのコード)
 """
 

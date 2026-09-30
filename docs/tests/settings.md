@@ -69,7 +69,7 @@ L2 は `mocks/settings.ts` の擬似(Slack の許可の画面は無く、「繋�
 
 | ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 | API の資産 |
 |---|---|---|---|---|---|---|---|
-| SET-100 | 管理者 | 通知 | 整合 | L2 | 初めは繋いでいない。`slackConnect` → チャンネルと繋いだ人が出る。`slackDisconnect` → 消える(本物は Slack のワークスペースからもアプリを外す) | `mockClient.test.ts` | `test_slack.py` |
+| SET-100 | 管理者 | 通知 | 整合 | L2 | 初めは繋いでいない。`slackConnect` → チャンネルと繋いだ人が出る。`slackDisconnect` → 消える(本物は Works が Webhook を捨てるだけで、Slack のアプリは外さない。`apps.uninstall` を呼んだら落ちる) | `mockClient.test.ts` | `test_slack.py` |
 | SET-101 | 利用者 | 通知 | 権限 | L2 | 管理者でない利用者: `slackStatus` / `slackConnect` / `slackTest` / `slackDisconnect` → 403。繋ぎ先は変わらない | `mockClient.test.ts` | `test_slack.py` |
 | SET-102 | 管理者 | 通知 | 証跡 | L2 | `slackTest`: 繋いでいない → 409。繋いでいれば最終送信の時刻が入り、失敗は空。送れなければ理由が残り、投稿先が消えた類なら「要再接続」。送れたら消える(失敗の再現は API の資産だけ) | `mockClient.test.ts` | `test_slack.py` |
 | SET-103 | 外部 | 通知 | 整合 | L2 | `submitWebForm`: Slack と繋いでいれば知らせる(最終送信が更新される)。bot(`_gotcha`)は知らせない。繋いでいなければ何も送らない | `mockClient.test.ts` | `test_slack.py` |

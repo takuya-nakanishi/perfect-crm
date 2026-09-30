@@ -22,7 +22,6 @@ def upgrade() -> None:
         "slack_connections",
         sa.Column("id", sa.UUID(), server_default=sa.text("uuidv7()"), nullable=False),
         sa.Column("webhook_url", sa.Text(), nullable=False),
-        sa.Column("access_token", sa.Text(), nullable=False),
         sa.Column("team_id", sa.Text(), nullable=False),
         sa.Column("team_name", sa.Text(), nullable=False),
         sa.Column("channel_id", sa.Text(), nullable=False),

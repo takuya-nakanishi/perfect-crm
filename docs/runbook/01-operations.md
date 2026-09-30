@@ -196,61 +196,34 @@ docker compose --profile backend up -d --build api
 
 出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)。
 
-## 6b. Slack に通知する(Slack アプリを SANEi CLOVER の Slack に作る・2026-09-30)
+## 6b. Slack に通知する(llm-wiki の稼働通知の Slack アプリを流用する・2026-09-30)
 
 環境設定 › 通知 の「Slack と連携する」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §14。
-**ここで取る値(Client ID と Client Secret)は `.env` に入れるだけで、コミットしない。**
+**新しい Slack アプリは作らない。**llm-wiki の稼働通知(株価の通知など)に使っているアプリを流用する(2026-09-30 本人の判断)。
+**Client ID と Client Secret は `.env` に入れるだけで、コミットしない。**
 
 | | |
 |---|---|
-| アプリを置く Slack | **SANEi CLOVER Inc. の Slack**(通知を受けるのと同じワークスペース)。leadcast-sales の Slack アプリ(LEADCAST Inc. の Slack)とは別に作る |
-| 管理画面 | `https://api.slack.com/apps` |
+| アプリ | `https://api.slack.com/apps/A0BSU0MC9HN`(llm-wiki の稼働通知と共有。agent-commons の notify が、このアプリの Webhook へ送っている) |
+| ワークスペース | **SANEi CLOVER Inc.**(アプリの所属と、通知を受けるワークスペースが同じなので、配布〈Public Distribution〉は要らない) |
 | リダイレクト URL | `https://works.sanei-clover.com/api/v1/slack/callback`(= `WORKS_PUBLIC_URL` + `/api/v1/slack/callback`) |
-| 配布(Public Distribution) | **しない**。作ったワークスペースに入れるだけなら要らない(一次資料「Distributing your app」)。Slack Marketplace にも出さない |
 
-**A. アプリを作る(App Manifest)**
+**共有しているので守ること**
 
-1. SANEi CLOVER の Slack にログインしたブラウザで `https://api.slack.com/apps` を開き、「Create New App」→「From a manifest」
-2. ワークスペースに **SANEi CLOVER** を選んで「Next」
-3. 入力欄を **YAML** に切り替え、下を貼って「Next」。要約で、Bot の権限が `incoming-webhook` だけ・Redirect URL が上の 1 本だけであることを確かめて「Create」
+- **アプリを削除しない・ワークスペースから外さない。**そのアプリが払い出した Webhook が全部止まり、llm-wiki の稼働通知も Works の通知も止まる(2026-08-22 に、アプリの削除の道連れで llm-wiki の Webhook が失効した)。Works の「連携を解除」も、アプリは外さない作りにしてある
+- **名前・アイコンは両方の通知の差出人になる**(Incoming Webhook は 1 通ごとに差出人を変えられない)。変えると llm-wiki の通知の見え方も変わる。Slack の許可の画面にも、このアプリの名前が出る
+- **権限を増やさない。**Works が求めるのは `incoming-webhook` だけ。権限を足すと、アプリの入れ直しが要る
 
-   ```yaml
-   display_information:
-     name: Works
-     description: Works の Web フォームから登録があったとき、選んだチャンネルへ知らせます
-   features:
-     bot_user:
-       display_name: works
-       always_online: false
-   oauth_config:
-     redirect_urls:
-       - https://works.sanei-clover.com/api/v1/slack/callback
-     scopes:
-       bot:
-         - incoming-webhook
-   settings:
-     incoming_webhooks:
-       incoming_webhooks_enabled: true
-     org_deploy_enabled: false
-     socket_mode_enabled: false
-     token_rotation_enabled: false
-   ```
+**A. アプリの設定を確かめる(2026-09-30 に本人が確認・設定済み)**
 
-4. 「Basic Information」→「Display Information」でアイコンを登録する(通知の差出人として出る。任意)
-5. 左の「Collaborators」に、もう 1 人の管理者を足しておく(作った人しか設定を触れない状態にしない)
-6. **「Incoming Webhooks」の「Add New Webhook to Workspace」と「Install to Workspace」は押さない。**Works の画面から許可すると、そのとき選んだチャンネルの Webhook ができる
-
-| 設定 | 値 | 理由 |
-|---|---|---|
-| 権限(Bot Token Scopes) | `incoming-webhook` だけ | 許可の画面にチャンネルの選択欄が出る。`chat:write` も `channels:read` も求めない。User Token Scopes は空 |
-| ボットユーザ | 置く(`works`) | Bot の権限を求めるアプリは、無いと manifest が `Oauth requires bot_user` で通らない(leadcast-sales で 2026-09-29 に実際に出た)。ボットとして投稿・会話はさせない |
-| トークンの自動更新 | 無効 | Webhook の URL は期限を持たない。ボットトークンは連携の解除(`apps.uninstall`)にしか使わない |
-| 組織単位のインストール | 無効 | Enterprise Grid の組織単位では入れない(Works も断る) |
-| Event Subscriptions・Interactivity・Socket Mode・スラッシュコマンド | 使わない | Slack から Works へ呼び返す口を持たない(Works は Access の内側) |
+1. 所属のワークスペースが SANEi CLOVER であること
+2. 「OAuth & Permissions」の Bot Token Scopes に `incoming-webhook` があること(「Incoming Webhooks」が On)
+3. 同じ画面の Redirect URLs に、上のリダイレクト URL を足す(Redirect URL は複数持てる。llm-wiki の Webhook には影響しない)
 
 **B. `.env` に入れて建て直す**
 
 「Basic Information」→「App Credentials」の **Client ID** と **Client Secret**(「Show」)を `.env` へ。Signing Secret・Verification Token は使わない。
+llm-wiki 側は Webhook の URL しか持っていないので、Client Secret を持つのは perfect-crm だけ(作り直しても、既存の Webhook は止まらない)。
 
 ```
 WORKS_SLACK_CLIENT_ID=<...>
@@ -263,26 +236,28 @@ WORKS_SLACK_CLIENT_SECRET=<...>
 **C. 繋いで確かめる**
 
 1. Works の 環境設定 › 通知 で「Slack と連携する」
-2. Slack の許可の画面で、ワークスペース(SANEi CLOVER)と**通知先のチャンネル**を選んで「許可する」(非公開のチャンネルは、自分が入っていれば選べる)
+2. Slack の許可の画面で、ワークスペース(SANEi CLOVER)と**通知先のチャンネル**を選んで「許可する」(非公開のチャンネルは、自分が入っていれば選べる)。
+   Webhook が 1 本増えるだけで、llm-wiki の Webhook はそのまま
 3. 戻ってきたら「テスト通知を送る」→ そのチャンネルに「✅ Works からのテスト通知です」が届く
 4. 環境設定 › Web フォーム の「テスト送信」→「📨 Web フォームから登録がありました」が届き、「Works で開く」でそのレコードが開く(SET-106)
+5. llm-wiki の稼働通知が、これまでどおり届いていることも見ておく
 
 つまずいたとき:
 
 | 症状 | 見るところ |
 |---|---|
 | 通知の節に「Slack アプリの資格情報が入っていません」 | `.env` に 2 つを入れたあと api を建て直したか |
-| Slack の画面で `redirect_uri did not match` | Slack アプリの Redirect URL と、`WORKS_PUBLIC_URL` + `/api/v1/slack/callback` の不一致(末尾の `/`・http と https) |
+| Slack の画面で `redirect_uri did not match` | アプリの Redirect URLs と、`WORKS_PUBLIC_URL` + `/api/v1/slack/callback` の不一致(末尾の `/`・http と https) |
 | Slack の画面で「承認が必要」と出る | ワークスペースの設定でアプリの承認制が有効。Slack の管理者が承認してから、もう一度「Slack と連携する」 |
 | 戻ってきて「Slack と連携できませんでした」 | `docker compose logs api`。Client Secret の誤り(`invalid_client`)、許可の画面を開いてから 15 分を過ぎた、押した人が管理者でない |
-| 「要再接続」になった | チャンネルがアーカイブされた・Slack 側でアプリを外された。「チャンネルを選び直す」 |
+| 「要再接続」になった | チャンネルがアーカイブされた・アプリが外された(llm-wiki の通知も止まっていないか見る)。「チャンネルを選び直す」 |
 | 再起動したら「要再接続」(`undecryptable`) | `WORKS_SECRET_KEY` が変わった。固定してから「チャンネルを選び直す」 |
 
-- チャンネルを選び直すと、Slack 側に古い Webhook が残る(送るのは新しい方だけ)。消したければ、通知の節の「Slack で設定を開く」から消す
-- Client Secret を替えるとき: 「App Credentials」の Regenerate → `.env` を書き換えて api を建て直す。繋いだ Webhook はそのまま届く(Client Secret が要るのは、繋ぐときと解除だけ)
+- チャンネルを選び直したり連携を解除したりすると、Slack 側に古い Webhook が残る(Works が送るのは新しい方だけ)。消したければ、通知の節の「Slack で設定を開く」(解除のときはトーストの「Slack で開く」)から、**Works が使っていた Webhook だけを**消す。llm-wiki の Webhook を消さない
+- Client Secret を替えるとき: 「App Credentials」の Regenerate → `.env` を書き換えて api を建て直す。繋いだ Webhook はそのまま届く(Client Secret が要るのは繋ぐときだけ)
 
-出典(2026-09-30 確認。いずれも非推奨の表示なし): Slack「Sending messages using incoming webhooks」(`https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks`。`oauth.v2.access` の `incoming_webhook`、エラーコード、投稿先を本文で変えられないこと)、「Installing with OAuth」(`https://docs.slack.dev/authentication/installing-with-oauth`。`redirect_uri` は HTTPS で、登録した URL と一致かその下)、「Distributing your app」(`https://docs.slack.dev/app-management/distribution`)。
-leadcast-sales の同じ仕組みの記録は、そのリポジトリの `docs/notifications/SLACK.md`。
+出典(2026-09-30 確認。いずれも非推奨の表示なし): Slack「Sending messages using incoming webhooks」(`https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks`。`oauth.v2.access` の `incoming_webhook`、エラーコード、投稿先を本文で変えられないこと)、「Installing with OAuth」(`https://docs.slack.dev/authentication/installing-with-oauth`。`redirect_uri` は HTTPS で、登録した URL と一致かその下)、「Distributing your app」(`https://docs.slack.dev/app-management/distribution`。作ったワークスペースに入れるだけなら配布は要らない)。
+leadcast-sales の同じ仕組み(専用のアプリを作って配布する形)は、そのリポジトリの `docs/notifications/SLACK.md`。
 
 ## 7. 版を上げる
 

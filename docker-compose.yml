@@ -69,7 +69,7 @@ services:
       WORKS_GOOGLE_CLIENT_ID: ${WORKS_GOOGLE_CLIENT_ID:-}
       WORKS_GOOGLE_CLIENT_SECRET: ${WORKS_GOOGLE_CLIENT_SECRET:-}
       WORKS_GOOGLE_REDIRECT_URI: ${WORKS_GOOGLE_REDIRECT_URI:-https://works.sanei-clover.com/api/v1/google/callback}
-      # Slack への通知(04 §14)。空なら連携できない。作り方は docs/runbook/01 §6b
+      # Slack への通知(04 §14)。空なら連携できない。アプリは llm-wiki の稼働通知と共有(docs/runbook/01 §6b)
       WORKS_SLACK_CLIENT_ID: ${WORKS_SLACK_CLIENT_ID:-}
       WORKS_SLACK_CLIENT_SECRET: ${WORKS_SLACK_CLIENT_SECRET:-}
     read_only: true

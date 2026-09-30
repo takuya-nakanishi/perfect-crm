@@ -88,9 +88,10 @@ Works(このリポジトリで作る自作 CRM)が何であり、何を決めた
 - **中から**: サイドバーをチャット欄に切り替えられるようにする(Notion AI / Twenty 風。J-029)。LLM は **Amazon Bedrock でも、個人の Claude API キーでも使えるように差し替え可能にする**(本人の前提。設計は 03 §7)
 - どちらも、画面と同じ書き込み経路(検証・業務ルール・記録)を通す。AI 専用の抜け道を作らない
 
-### D-12 通知は Slack の Incoming Webhook。自社の Slack に作った Slack アプリで(2026-09-30)
+### D-12 通知は Slack の Incoming Webhook。llm-wiki の稼働通知と同じ Slack アプリを流用する(2026-09-30)
 
 - 本人の指示: 「Web フォームから登録がなされたとき、自社の Slack に飛ばす。Slack アプリは SANEi CLOVER Inc. の Slack から出す」(leadcast-sales の Slack アプリは LEADCAST Inc. の Slack から出している)
+- 新しいアプリは作らず、SANEi CLOVER の Slack にある llm-wiki の稼働通知のアプリを流用する(同日、本人の判断)。共有するので、Works からはアプリを外さない
 - 権限は `incoming-webhook` だけ。チャンネルは Slack の許可の画面で選ぶ。知らせるのはいまは Web フォームの登録だけ(04 §14)。Q-027(通知の経路。2026-09-19 に「要るときに決める」)の答え
 
 ## 4. 非機能要件

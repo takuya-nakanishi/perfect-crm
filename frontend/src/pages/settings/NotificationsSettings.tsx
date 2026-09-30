@@ -40,7 +40,12 @@ function Connected({ meta, connection }: { meta: MetaResponse; connection: Slack
     mutationFn: () => api.slackDisconnect(),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['slack'] })
-      toast({ message: 'Slack との連携を解除しました。通知は届かなくなります' })
+      // Slack のアプリは外さない(ほかの仕組みと共有している。04 §14)。Slack 側の Webhook は残るので、消す場所を添える
+      const url = connection.configuration_url
+      toast({
+        message: 'Slack との連携を解除しました。Works からはもう送りません。Slack 側に残った Webhook は、Slack のアプリの設定から消せます',
+        action: url ? { label: 'Slack で開く', run: () => void window.open(url, '_blank', 'noreferrer') } : undefined,
+      })
     },
     onError: (e) => toast({ message: e instanceof ApiError ? e.message : '解除できませんでした', tone: 'danger' }),
   })

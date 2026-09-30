@@ -49,15 +49,16 @@ class FakeSlack:
                 },
             }
         if method == "apps.uninstall":
-            return {"ok": True}
+            # アプリは llm-wiki の稼働通知と共有している。外すと、そのアプリの Webhook が全部止まる
+            raise AssertionError("Slack のアプリを外してはいけない(ほかの仕組みと共有している)")
         raise AssertionError(f"偽物が知らない呼び出し: {method}")
 
     def webhook(self, url: str, payload: dict[str, Any]) -> WebhookResult:
         self.posts.append((url, payload))
         return self.results.pop(0) if self.results else WebhookResult(200, "ok")
 
-    def uninstalled(self) -> list[str]:
-        return [data["token"] for method, data in self.api_calls if method == "apps.uninstall"]
+    def methods(self) -> list[str]:
+        return [method for method, _ in self.api_calls]
 
 
 @pytest.fixture
@@ -130,8 +131,8 @@ def test_SET_100_繋ぐとチャンネルが出て_外すと消える(admin: Tes
 
     assert admin.delete("/api/v1/settings/slack").status_code == 204
     assert status(admin)["connection"] is None
-    # Slack のワークスペースからもアプリを外す
-    assert slack.uninstalled() == ["xoxb-T0001"]
+    # Works が Webhook を捨てるだけで、Slack のアプリは外さない(共有しているアプリなので)
+    assert slack.methods() == ["oauth.v2.access"]
 
 
 def test_SET_101_管理者でなければ_Slack_の設定を触れない(member: TestClient, slack: FakeSlack) -> None:
@@ -276,7 +277,9 @@ def test_組織単位のインストールは断る(admin: TestClient, slack: Fa
     assert status(admin)["connection"] is None
 
 
-def test_URL_とトークンは暗号化して持つ(admin: TestClient, slack: FakeSlack, conn: Any) -> None:
+def test_Webhook_の_URL_は暗号化して持ち_ボットトークンは仕舞わない(
+    admin: TestClient, slack: FakeSlack, conn: Any
+) -> None:
     from sqlalchemy import select
 
     from app.meta.tables import slack_connections
@@ -286,25 +289,19 @@ def test_URL_とトークンは暗号化して持つ(admin: TestClient, slack: F
     row = conn.execute(select(slack_connections)).one()
     assert row.webhook_url != HOOK
     assert decrypt(row.webhook_url) == HOOK
-    assert row.access_token != "xoxb-T0001"
-    assert decrypt(row.access_token) == "xoxb-T0001"
+    assert "xoxb-T0001" not in {str(v) for v in row._mapping.values()}
 
 
-def test_同じワークスペースで選び直してもアプリは外さない(admin: TestClient, slack: FakeSlack) -> None:
+def test_チャンネルを選び直してもアプリは外さない(admin: TestClient, slack: FakeSlack) -> None:
     connect(admin)
     slack.channel = "#営業"
     connect(admin)
     assert status(admin)["connection"]["channel_name"] == "#営業"
-    # 外すと新しい Webhook も止まる
-    assert slack.uninstalled() == []
-
-
-def test_別のワークスペースへ繋ぎ直したら前からアプリを外す(admin: TestClient, slack: FakeSlack) -> None:
-    connect(admin)
+    # 別のワークスペースへ繋ぎ直しても外さない
     slack.team = {"id": "T0002", "name": "別のワークスペース"}
     connect(admin)
     assert status(admin)["connection"]["team_name"] == "別のワークスペース"
-    assert slack.uninstalled() == ["xoxb-T0001"]
+    assert "apps.uninstall" not in slack.methods()
 
 
 # --- 送る ---------------------------------------------------------------------------

@@ -96,7 +96,7 @@ export interface ApiClient {
   slackConnect(): Promise<{ url: string }>
   /** テスト通知を送り、結果を記録した状態を返す(送れたかは connection.last_error が空か) */
   slackTest(): Promise<SlackStatus>
-  /** 連携を解除する(Slack のワークスペースからもアプリを外す) */
+  /** 連携を解除する。Works が Webhook を捨てるだけで、Slack のアプリは外さない(ほかの仕組みと共有している) */
   slackDisconnect(): Promise<void>
 
   /** Google を繋いでいるか(利用者ごと)。繋いでいなければドライブの API は 409 `google_reauth` を返す */

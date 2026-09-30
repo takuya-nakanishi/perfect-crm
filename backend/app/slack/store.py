@@ -1,7 +1,8 @@
 """Slack の繋ぎ先の置き場(`slack_connections`)。ワークスペースに 1 行だけ。
 
-**Webhook の URL とボットトークンは暗号化して持つ**(鍵は `.env` の `WORKS_SECRET_KEY` から導く。Google と同じ)。
+**Webhook の URL は暗号化して持つ**(鍵は `.env` の `WORKS_SECRET_KEY` から導く。Google と同じ)。
 Webhook の URL は、知っていれば誰でもそのチャンネルに投稿できる鍵そのもの。DB の吸い出しだけでは使えないようにする。
+**ボットトークンは持たない。**認可の応答に入っているが、使い道(アプリを外す `apps.uninstall`)を持たないので捨てる。
 """
 
 import base64
@@ -100,22 +101,12 @@ def target(conn: Connection) -> Target | None:
     return Target(str(row.id), row.channel_name, decrypt(row.webhook_url))
 
 
-@dataclass(frozen=True)
-class Previous:
-    """置き換えた前の繋ぎ先。別のワークスペースだったら、そこからアプリを外すのに使う。"""
-
-    team_id: str
-    access_token: str | None
-
-
-def replace(conn: Connection, values: dict[str, Any], user_id: str) -> Previous | None:
-    """繋ぎ直しは置き換え(ワークスペースで 1 つ)。前の繋ぎ先を返す。"""
-    old = _row(conn)
+def replace(conn: Connection, values: dict[str, Any], user_id: str) -> None:
+    """繋ぎ直しは置き換え(ワークスペースで 1 つ)。前の Webhook は Slack 側に残る(送るのは新しい方だけ)。"""
     conn.execute(delete(slack_connections))
     conn.execute(
         slack_connections.insert().values(
             webhook_url=encrypt(values["webhook_url"]),
-            access_token=encrypt(values["access_token"]),
             team_id=values["team_id"],
             team_name=values["team_name"],
             channel_id=values["channel_id"],
@@ -124,16 +115,10 @@ def replace(conn: Connection, values: dict[str, Any], user_id: str) -> Previous 
             connected_by=user_id,
         )
     )
-    if old is None:
-        return None
-    return Previous(old.team_id, decrypt(old.access_token))
 
 
-def remove(conn: Connection) -> str | None:
-    """行を消し、アプリを外すためのボットトークンを返す(読めなければ None)。"""
-    old = _row(conn)
+def remove(conn: Connection) -> None:
     conn.execute(delete(slack_connections))
-    return decrypt(old.access_token) if old is not None else None
 
 
 def record(conn: Connection, connection_id: str, *, error: str | None, code: str | None) -> None:

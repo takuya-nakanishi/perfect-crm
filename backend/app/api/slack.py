@@ -55,5 +55,5 @@ def slack_test(conn: Conn, admin: Admin) -> dict[str, Any]:
 
 @router.delete("/settings/slack", status_code=204)
 def slack_disconnect(conn: Conn, admin: Admin) -> None:
-    """連携を解除する。Slack のワークスペースからもアプリを外す。"""
+    """連携を解除する。Works が Webhook を捨てるだけで、Slack のアプリは外さない(ほかの仕組みと共有しているため)。"""
     service.disconnect(conn)

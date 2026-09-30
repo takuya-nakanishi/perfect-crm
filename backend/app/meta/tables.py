@@ -254,16 +254,14 @@ google_accounts = Table(
 
 
 # Slack への通知の繋ぎ先(04 §14)。**ワークスペースに 1 つだけ**(繋ぎ直したら置き換える)。
-# Slack アプリの認可で払い出された Incoming Webhook の URL とボットトークンは**暗号化して持つ**(`app/slack/store.py`)。
-# 連携を解除したら行ごと消す
+# Slack アプリの認可で払い出された Incoming Webhook の URL は**暗号化して持つ**(`app/slack/store.py`)。
+# ボットトークンは持たない(Slack のアプリはほかの仕組みと共有していて、外さないため)。連携を解除したら行ごと消す
 slack_connections = Table(
     "slack_connections",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
     # 投稿先(認可で選ばれたチャンネル専用。本文でチャンネルを変えられない)
     Column("webhook_url", Text, nullable=False),
-    # 連携の解除(`apps.uninstall`)にだけ使う
-    Column("access_token", Text, nullable=False),
     Column("team_id", Text, nullable=False),
     Column("team_name", Text, nullable=False),
     Column("channel_id", Text, nullable=False),

@@ -3,6 +3,10 @@
 認可は OAuth v2 で、求める権限は `incoming-webhook` だけ。投稿先のチャンネルは Slack の認可画面で、許可する人が選ぶ。
 認可が済むと、Slack が選ばれたチャンネル専用の Incoming Webhook の URL を払い出す。Works はそこへ投稿する。
 state は署名だけで持つ(DB にも Cookie にも置かない。Google と同じ。04 §8)。
+
+**Slack のワークスペースからアプリを外さない**(`apps.uninstall` を呼ばない)。アプリはほかの仕組み
+(llm-wiki の稼働通知)と共有していて、外すとそのアプリが払い出した Webhook が全部止まる
+(2026-08-22 に実際に止まった)。解除は Works が Webhook を捨てるだけ。
 """
 
 import hashlib
@@ -115,13 +119,12 @@ def complete(conn: Connection, code: str, state: str) -> None:
     url = str(hook.get("url") or "")
     if not url.startswith(WEBHOOK_PREFIX):
         raise ApiError(502, "slack_error", "Slack から投稿先の URL をもらえませんでした")
-    team_id = str(team.get("id") or "")
-    previous = store.replace(
+    # ボットトークン(`access_token`)は仕舞わない。使い道が無い(アプリを外さない)
+    store.replace(
         conn,
         {
             "webhook_url": url,
-            "access_token": str(payload.get("access_token") or ""),
-            "team_id": team_id,
+            "team_id": str(team.get("id") or ""),
             "team_name": str(team.get("name") or ""),
             "channel_id": str(hook.get("channel_id") or ""),
             "channel_name": str(hook.get("channel") or ""),
@@ -129,33 +132,11 @@ def complete(conn: Connection, code: str, state: str) -> None:
         },
         user_id,
     )
-    # 別のワークスペースへ繋ぎ直したら、前のワークスペースからアプリを外す。
-    # **同じワークスペースなら外さない**(インストールは 1 つで、外すと新しい Webhook も止まる)
-    if previous is not None and previous.team_id != team_id and previous.access_token:
-        _uninstall(previous.access_token)
-
-
-def _uninstall(token: str) -> None:
-    """Slack のワークスペースからアプリを外す。失敗しても Works 側の繋ぎ先は消えたまま(ログにだけ残す)。"""
-    settings = get_settings()
-    if not settings.slack_enabled:
-        return
-    try:
-        res = http.api(
-            "apps.uninstall",
-            {"token": token, "client_id": settings.slack_client_id, "client_secret": settings.slack_client_secret},
-        )
-    except ApiError as exc:
-        log.warning("Slack からアプリを外せませんでした: %s", exc.message)
-        return
-    if not res.get("ok"):
-        log.warning("Slack からアプリを外せませんでした: %s", res.get("error"))
 
 
 def disconnect(conn: Connection) -> None:
-    token = store.remove(conn)
-    if token:
-        _uninstall(token)
+    """Works が持つ Webhook を捨てる。Slack 側の Webhook は残る(消すなら Slack のアプリの設定から)。"""
+    store.remove(conn)
 
 
 # --- 送る -------------------------------------------------------------------------

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     google_return_path: str = "/"
 
     # --- Slack への通知(04 §14。ワークスペースで 1 つ)------------------------------
-    # 自社の Slack に作った Slack アプリの資格情報(docs/runbook/01 §6b)。空なら連携できない(画面はその旨を出す)。
+    # Slack アプリの資格情報(docs/runbook/01 §6b)。空なら連携できない(画面はその旨を出す)。
     # 認可の戻り先は `<public_url>/api/v1/slack/callback`(Slack アプリに登録するリダイレクト URL と揃える)
     slack_client_id: str = ""
     slack_client_secret: str = ""
