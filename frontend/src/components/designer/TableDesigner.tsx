@@ -747,7 +747,11 @@ export function TableDesigner({ meta, target }: { meta: MetaResponse; target: { 
                   value={draft.key}
                   aria-invalid={showErrors && Boolean(errors.key)}
                   {...keyInputHandlers((key) => setDraft((d) => ({ ...d, key, keyTouched: true })))}
-                  onBlur={(e) => setDraft((d) => ({ ...d, key: normalizeKey(e.currentTarget.value) }))}
+                  onBlur={(e) => {
+                    // 値はここで読む。更新関数の中で読むと、React が描くときには e.currentTarget が null に戻っていて落ちる
+                    const key = normalizeKey(e.currentTarget.value)
+                    setDraft((d) => ({ ...d, key }))
+                  }}
                   className="h-6 w-44 rounded bg-transparent px-1 text-sm text-ink-2 outline-none hover:bg-sunken focus:bg-paper focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
                 />
               ) : (
