@@ -239,6 +239,34 @@ export interface WebForm {
 
 export type WebFormInput = Pick<WebForm, 'name' | 'object' | 'fields' | 'defaults' | 'enabled' | 'redirect_url'>
 
+/**
+ * GET /api/v1/settings/slack — Slack への通知の繋がり具合(ワークスペースで 1 つ。04 §14)。
+ * 繋いでいれば、Web フォームから登録があるたびに、Slack の許可の画面で選んだチャンネルへ知らせる
+ */
+export interface SlackStatus {
+  /** 管理者が Slack アプリの資格情報(.env)を入れているか。false なら繋ぐこともできない */
+  configured: boolean
+  connection: SlackConnection | null
+}
+
+/** 繋いでいる Slack。Webhook の URL とトークンはサーバだけが持ち、ここには出ない */
+export interface SlackConnection {
+  team_name: string
+  /** 投稿先のチャンネル(# 付き)。Slack の許可の画面で選んだもの */
+  channel_name: string
+  /** Slack 側のこのアプリの設定ページ */
+  configuration_url: string | null
+  /** 繋いだ人(利用者の ID) */
+  connected_by: string | null
+  connected_at: string
+  last_sent_at: string | null
+  /** 最後の送信の失敗。送れたら消える */
+  last_error: string | null
+  last_error_at: string | null
+  /** 投稿先が使えなくなった(Webhook が消された・チャンネルがアーカイブされた等)。選び直す(繋ぎ直す)まで届かない */
+  needs_reconnect: boolean
+}
+
 export type ViewType = 'list' | 'kanban' | 'report'
 
 export interface ListViewConfig {

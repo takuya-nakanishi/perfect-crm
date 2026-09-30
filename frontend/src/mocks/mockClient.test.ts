@@ -406,6 +406,80 @@ describe('環境設定の権限(mocks/mockClient.ts)', () => {
   })
 })
 
+describe('Slack への通知の擬似(mocks/settings.ts)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetTables()
+    resetSettings()
+  })
+
+  it('SET-100 初めは繋いでいない。slackConnect で繋ぐとチャンネルと繋いだ人が出て、slackDisconnect で消える', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    expect(await api.slackStatus()).toEqual({ configured: true, connection: null })
+
+    const { url } = await api.slackConnect()
+    expect(url, '戻り先は通知の設定').toBe('/settings/notifications?slack=connected')
+    const { connection } = await api.slackStatus()
+    expect(connection).toMatchObject({ channel_name: '#web-問い合わせ', connected_by: admin.id, last_sent_at: null, last_error: null, needs_reconnect: false })
+
+    await api.slackDisconnect()
+    expect((await api.slackStatus()).connection, '解除すると消える').toBeNull()
+  })
+
+  it('SET-101 管理者でない利用者の slackStatus / slackConnect / slackTest / slackDisconnect は 403 で、繋ぎ先は変わらない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    await api.slackConnect()
+    const before = await api.slackStatus()
+    await api.logout()
+
+    await api.login(member.email, 'x')
+    expect(await statusOf(() => api.slackStatus()), 'slackStatus').toBe(403)
+    expect(await statusOf(() => api.slackConnect()), 'slackConnect').toBe(403)
+    expect(await statusOf(() => api.slackTest()), 'slackTest').toBe(403)
+    expect(await statusOf(() => api.slackDisconnect()), 'slackDisconnect').toBe(403)
+
+    // 対照: 管理者から見ると、繋ぎ先はそのまま
+    await api.logout()
+    await api.login(admin.email, 'x')
+    expect(await api.slackStatus()).toEqual(before)
+  })
+
+  it('SET-102 slackTest は繋いでいなければ 409、繋いでいれば最終送信の時刻が入って失敗は空', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    expect(await statusOf(() => api.slackTest()), '繋いでいない').toBe(409)
+
+    await api.slackConnect()
+    const startedAt = new Date().toISOString()
+    const { connection } = await api.slackTest()
+    expect(connection!.last_sent_at! >= startedAt, '最終送信の時刻が入る').toBe(true)
+    expect(connection!.last_error).toBeNull()
+    expect(connection!.needs_reconnect).toBe(false)
+  })
+
+  it('SET-103 submitWebForm は Slack と繋いでいれば最終送信の時刻を更新し、bot(_gotcha)なら更新しない。繋いでいなければ何も起きない', async () => {
+    const api = createMockClient()
+    await api.login(admin.email, 'x')
+    const form = listForms().find((f) => f.enabled)!
+    const name = getMeta().objects.find((o) => o.key === form.object)!.name_field
+
+    // 繋ぐ前の送信は、繋いだあとの状態に残らない
+    await api.submitWebForm(form.key, { [name]: '繋ぐ前' })
+    await api.slackConnect()
+    expect((await api.slackStatus()).connection!.last_sent_at).toBeNull()
+
+    await api.submitWebForm(form.key, { [name]: '山田 太郎' })
+    const sent = (await api.slackStatus()).connection!.last_sent_at
+    expect(sent, '知らせた').not.toBeNull()
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await api.submitWebForm(form.key, { [name]: 'bot', _gotcha: '罠' })
+    expect((await api.slackStatus()).connection!.last_sent_at, 'bot は知らせない').toBe(sent)
+  })
+})
+
 describe('Google ドライブの擬似(mocks/drive.ts)', () => {
   beforeEach(() => {
     localStorage.clear()

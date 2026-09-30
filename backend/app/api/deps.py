@@ -16,6 +16,9 @@ from app.meta.tables import users
 from app.security import COOKIE_NAME, verify
 
 Conn = Annotated[Connection, Depends(connection)]
+# 関数を抜けたところで確定する接続(既定の `Conn` は応答を送ったあとで確定する)。
+# 応答のあとに走る仕事(Slack への通知)が、確定したデータだけを知らせるように
+CommittedConn = Annotated[Connection, Depends(connection, scope="function")]
 
 
 def user_dict(row: Any) -> dict[str, Any]:

@@ -2,17 +2,18 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.deps import Admin, Conn
+from app.api.deps import Admin, CommittedConn, Conn
 from app.errors import ApiError
 from app.mcpserver import oauth
 from app.meta.tables import web_forms
 from app.settings import forms as form_service
 from app.settings import service
+from app.slack import service as slack
 
 router = APIRouter()
 
@@ -88,8 +89,11 @@ def _wants_html(request: Request) -> bool:
 
 
 @router.post("/forms/{key}")
-async def submit_form(key: str, request: Request, conn: Conn) -> Response:
-    """**認証なしの受け口**。ここだけは外(Web サイト)から直に届く。"""
+async def submit_form(key: str, request: Request, conn: CommittedConn, background: BackgroundTasks) -> Response:
+    """**認証なしの受け口**。ここだけは外(Web サイト)から直に届く。
+
+    Slack と繋いでいれば、確定して応答したあとで知らせる(04 §14)。Slack が遅くても送り手を待たせない。
+    """
     values = await _values(request)
     source = request.client.host if request.client else "unknown"
     try:
@@ -103,6 +107,9 @@ async def submit_form(key: str, request: Request, conn: Conn) -> Response:
         if _wants_html(request):
             return HTMLResponse(_page("送信しました", "ありがとうございました。"))
         return JSONResponse(_blank_record())
+    notice = slack.form_notice(conn, key, created)
+    if notice is not None:
+        background.add_task(slack.notify, notice)
     if _wants_html(request):
         row = conn.execute(select(web_forms.c.redirect_url).where(web_forms.c.key == key)).first()
         if row is not None and row.redirect_url:

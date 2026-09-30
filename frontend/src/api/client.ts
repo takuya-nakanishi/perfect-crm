@@ -16,6 +16,7 @@ import type {
   RecordResponse,
   Row,
   SidebarItem,
+  SlackStatus,
   ViewInput,
   Scalar,
   SearchResponse,
@@ -88,6 +89,15 @@ export interface ApiClient {
   rotateWebFormKey(id: string): Promise<WebForm>
   /** 受け口そのもの(認証なし)。画面からは「テスト送信」で使う */
   submitWebForm(key: string, values: Record<string, Scalar>): Promise<RecordResponse>
+
+  /** Slack への通知(ワークスペースで 1 つ。管理者だけ)。繋いでいれば、Web フォームから登録があるたびに知らせる */
+  slackStatus(): Promise<SlackStatus>
+  /** Slack の許可の画面の URL。チャンネルはそこで選ぶ。戻ると /settings/notifications?slack=connected */
+  slackConnect(): Promise<{ url: string }>
+  /** テスト通知を送り、結果を記録した状態を返す(送れたかは connection.last_error が空か) */
+  slackTest(): Promise<SlackStatus>
+  /** 連携を解除する(Slack のワークスペースからもアプリを外す) */
+  slackDisconnect(): Promise<void>
 
   /** Google を繋いでいるか(利用者ごと)。繋いでいなければドライブの API は 409 `google_reauth` を返す */
   googleStatus(): Promise<GoogleStatus>

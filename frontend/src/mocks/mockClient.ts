@@ -220,6 +220,27 @@ export function createMockClient(): ApiClient {
       // 受け口は認証なし(公開の Web から呼ばれる)
       return settings.submitForm(key, values)
     },
+    async slackStatus() {
+      await sleep(READ_MS)
+      settings.requireAdmin(requireUser())
+      return settings.slackStatus()
+    },
+    async slackConnect() {
+      await sleep(READ_MS)
+      const me = requireUser()
+      settings.requireAdmin(me)
+      return settings.slackConnect(me)
+    },
+    async slackTest() {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      return settings.slackTest()
+    },
+    async slackDisconnect() {
+      await sleep(WRITE_MS)
+      settings.requireAdmin(requireUser())
+      settings.slackDisconnect()
+    },
     async googleStatus() {
       await sleep(READ_MS)
       requireUser()

@@ -7,7 +7,7 @@ from fastapi import APIRouter, FastAPI
 from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
-from app.api import google, meta, oauth, records, session, settings
+from app.api import google, meta, oauth, records, session, settings, slack
 from app.errors import install_error_handlers
 from app.mcpserver import server as mcp_server
 
@@ -44,6 +44,7 @@ v1.include_router(meta.router)
 v1.include_router(records.router)
 v1.include_router(settings.router)
 v1.include_router(google.router)
+v1.include_router(slack.router)
 v1.include_router(oauth.router)
 app.include_router(v1)
 

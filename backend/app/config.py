@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     # 戻したあとに画面のどこを開くか(同じオリジンの中だけ)
     google_return_path: str = "/"
 
+    # --- Slack への通知(04 §14。ワークスペースで 1 つ)------------------------------
+    # 自社の Slack に作った Slack アプリの資格情報(docs/runbook/01 §6b)。空なら連携できない(画面はその旨を出す)。
+    # 認可の戻り先は `<public_url>/api/v1/slack/callback`(Slack アプリに登録するリダイレクト URL と揃える)
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+
     # 外から見た Works の URL(末尾の / なし)。MCP の接続先(`<ここ>/mcp`)と OAuth の発行元になる(03 §6)。
     # **Claude のコネクタに入れる URL と 1 文字も違ってはいけない**。既定は手元の web(compose が本番の値を渡す)
     public_url: str = "http://127.0.0.1:8610"
@@ -66,6 +72,16 @@ class Settings(BaseSettings):
     def google_enabled(self) -> bool:
         """OAuth クライアントが `.env` にあるか。無ければドライブの API は 503 を返す。"""
         return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def slack_enabled(self) -> bool:
+        """Slack アプリの資格情報が `.env` にあるか。無ければ連携の画面は「未設定」を出す。"""
+        return bool(self.slack_client_id and self.slack_client_secret)
+
+    @property
+    def slack_redirect_uri(self) -> str:
+        """Slack の認可のあとに戻る先。**Slack アプリに登録したリダイレクト URL と 1 文字も違ってはいけない**。"""
+        return f"{self.public_url.rstrip('/')}/api/v1/slack/callback"
 
     @property
     def sqlalchemy_url(self) -> str:

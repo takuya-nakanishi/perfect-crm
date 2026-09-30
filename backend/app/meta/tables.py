@@ -191,6 +191,7 @@ SYSTEM_TABLES = frozenset(
         "mcp_tokens",
         "web_forms",
         "google_accounts",
+        "slack_connections",
         "oauth_clients",
         "oauth_requests",
         "oauth_grants",
@@ -251,6 +252,32 @@ google_accounts = Table(
     _ts("updated_at"),
 )
 
+
+# Slack への通知の繋ぎ先(04 §14)。**ワークスペースに 1 つだけ**(繋ぎ直したら置き換える)。
+# Slack アプリの認可で払い出された Incoming Webhook の URL とボットトークンは**暗号化して持つ**(`app/slack/store.py`)。
+# 連携を解除したら行ごと消す
+slack_connections = Table(
+    "slack_connections",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
+    # 投稿先(認可で選ばれたチャンネル専用。本文でチャンネルを変えられない)
+    Column("webhook_url", Text, nullable=False),
+    # 連携の解除(`apps.uninstall`)にだけ使う
+    Column("access_token", Text, nullable=False),
+    Column("team_id", Text, nullable=False),
+    Column("team_name", Text, nullable=False),
+    Column("channel_id", Text, nullable=False),
+    Column("channel_name", Text, nullable=False),
+    # Slack 側のこのアプリの設定ページ(画面の「Slack で設定を開く」)
+    Column("configuration_url", Text, nullable=True),
+    Column("connected_by", UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+    Column("last_sent_at", TIMESTAMP(timezone=True), nullable=True),
+    # 最後の送信の失敗。送れたら消す。`last_error_code` が「接続が失われた」の類なら、画面は「要再接続」を出す
+    Column("last_error", Text, nullable=True),
+    Column("last_error_code", Text, nullable=True),
+    Column("last_error_at", TIMESTAMP(timezone=True), nullable=True),
+    _ts("created_at"),
+)
 
 # --- MCP を Claude のカスタムコネクタから使うための OAuth(03 §6・04 §13)------------------------
 # Works 自身が認可サーバになる。人の確認は Access の内側の画面で行い、Anthropic からの機械の呼び出し

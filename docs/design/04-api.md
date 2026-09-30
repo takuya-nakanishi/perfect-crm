@@ -44,6 +44,11 @@
 | `GET /oauth/requests/{id}` / `POST`(`{ approve }`) | 許可の画面(`/oauth/consent`)。依頼の中身を見せ、決めたら Claude の戻り先を返す。無い・期限切れは 404。§13 | `OAuthRequest` / `{ redirect_url }` |
 | `GET /settings/forms` / `POST` / `PUT …/{id}` / `DELETE …/{id}` / `POST …/{id}/rotate` | Web フォームの定義(管理者)。§10 | `WebForm` |
 | `POST /forms/{key}` | **Web フォームの受け口(認証なし)**。form-urlencoded か JSON。§10 | `RecordResponse`(HTML のフォームからは `redirect_url` へ 303、無ければ小さな「受け付けました」の画面) |
+| `GET /settings/slack` | Slack への通知の繋がり具合(管理者。ワークスペースで 1 つ)。§14 | `SlackStatus` |
+| `POST /settings/slack/connect` | Slack の許可の画面の URL をもらう(管理者)。チャンネルはそこで選ぶ。§14 | `{ url }` |
+| `GET /slack/callback?code&state` | **Slack からの戻り**(誰の許可かは署名付きの `state` が持つ)。§14 | 303 で `/settings/notifications?slack=connected` / `denied` / `error` |
+| `POST /settings/slack/test` | テスト通知を送り、結果を記録する(管理者)。繋いでいなければ 409 `slack_not_connected`。§14 | `SlackStatus`(送れたかは `connection.last_error` が空か) |
+| `DELETE /settings/slack` | 連携を解除する(管理者)。Slack のワークスペースからもアプリを外す。§14 | 204 |
 | `GET /google/status` | その利用者が Google を繋いでいるか。§8 | `GoogleStatus` |
 | `POST /google/connect` | 許可の画面の URL をもらう。§8 | `{ url }` |
 | `GET /google/callback?code&state` | **Google からの戻り**(ここだけ Cookie を見ない)。§8 | 303 で画面へ(`?google=connected` / `denied` / `error`) |
@@ -198,3 +203,29 @@
 
 - 許可(`oauth_grants`)が環境設定の「接続中のアプリ」の 1 行。コードとトークンは sha256 だけを持つ。利用者を消すと、その人の許可も消える
 - ツールの呼び出しは、許可した人を「誰として」にして、画面と同じ関数を通る(既定値の「担当は自分」も同じ)。失敗は 400 の文(`定義に無い列です` など)をツールのエラーとして返し、AI が読んで直せるようにする
+
+## 14. Slack への通知(2026-09-30)
+
+本人の指示: 「Web フォームから登録がなされたとき、自社の Slack に飛ばす」。leadcast-sales の Slack 通知(`docs/notifications/SLACK.md`)と同じ方式にした。
+違いは、**Slack アプリを自社の Slack(SANEi CLOVER Inc.)に作り、その Slack にだけ入れる**こと(leadcast-sales は LEADCAST Inc. の Slack から他社へ配布している)。作り方は `docs/runbook/01` §6b。
+
+**方式: OAuth v2 で `incoming-webhook` の権限だけを求め、投稿先のチャンネルは Slack の許可の画面で選ばせる。**
+許可が済むと、Slack が選ばれたチャンネル専用の Incoming Webhook の URL を払い出し、Works はそこへ投稿する。
+
+| 手順 | 中身 |
+|---|---|
+| 繋ぐ | `POST /settings/slack/connect` で許可の画面(`https://slack.com/oauth/v2/authorize?scope=incoming-webhook&…`)の URL をもらい、画面はそこへ送り出す。戻り(`GET /slack/callback`)でサーバが `oauth.v2.access` に認可コードを渡し、**Webhook の URL とボットトークンを暗号化して `slack_connections` に仕舞う**。終わったら `?slack=connected` を付けて画面へ 303 |
+| 知らせる | `POST /forms/{key}` がレコードを作ったら、**確定して応答したあとで**(`BackgroundTasks`。受け口の接続は `Depends(scope="function")` で関数を抜けたところで確定する)Webhook へ投稿する。Slack が遅くても送り手を待たせず、確定していないレコードを知らせない |
+| 確かめる | `POST /settings/slack/test` でテスト通知。結果は繋ぎ先に記録し、状態を返す |
+| 外す | `DELETE /settings/slack`。行を消し、`apps.uninstall` で Slack のワークスペースからもアプリを外す(失敗してもこちらの行は消えたまま。ログに残す) |
+
+- **繋ぎ先はワークスペースで 1 つ**(1 チャンネル)。チャンネルを変えるには、もう一度許可からやり直す(Incoming Webhook は投稿先を本文で上書きできない)。**同じ Slack のワークスペースで選び直すときはアプリを外さない**(インストールは 1 つで、外すと新しい Webhook も止まる)。別のワークスペースへ繋ぎ直したら、前のワークスペースからは外す
+- 求める権限は 1 つ(`chat:write` も `channels:read` も求めない)。非公開のチャンネルも、許可する本人が入っていれば選べる。投稿した通知は後から直せない・消せない(Incoming Webhook の仕様)
+- **state は署名だけで持つ**(Google と同じ。§8)。用途を混ぜるので、Google の state は Slack の戻りに使えない。戻ったとき、その人がまだ管理者かを見る。組織(Enterprise Grid)単位のインストールと、`https://hooks.slack.com/services/` で始まらない URL は保存しない
+- 知らせるのは **Web フォームから登録があったときだけ**(画面の「テスト送信」も含む。本物の受け口を通るため)。bot と判断した送信(§10 の 3)は知らせない。画面・MCP・CSV で作ったレコードは知らせない
+- 本文(`app/slack/message.py`): 見出し「📨 Web フォームから登録がありました」、**そのフォームが受け付けた項目**(既定値は載せない。選択肢はラベル、参照は表示名、日時はワークスペースの時刻。長い文は 1 段ぶん使う)、「フォーム『…』から〈テーブル〉に登録 · Works で開く」(`<公開 URL>/o/<テーブル>?peek=<テーブル>:<ID>`)。要約(`text`)は `[Works] Web フォーム「…」: <表示名>`
+- **人が書いた文字は Slack の書式の `&` `<` `>` をエスケープしてから載せる**(`<!channel>` でチャンネル全員に通知を飛ばす・`<https://…|…>` で偽のリンクを作る、を防ぐ。Web フォームは誰でも送れる)。リンクはボタンにせず mrkdwn のリンクにする(ボタンは Slack がアプリの Interactivity の口へ知らせようとし、Works はその口を持たない)。ブロックの上限(section 3000 字・field 2000 字・fields 10 個)の内側で切る
+- 失敗の扱い: 429・5xx・繋がらないは 1 回だけ待って送り直す(`Retry-After`、長くても 5 秒)。それでも駄目なら記録するだけで、**フォームの受け付けは止めない**(レコードはもうできている)。`no_service`・`channel_not_found`・`channel_is_archived`・`action_prohibited` などの「投稿先が失われた」類は `needs_reconnect`(画面は「要再接続」と「チャンネルを選び直す」を出す)。送れたら前の失敗を消す。後から送り直す仕組み(送信待ちの表)は持たない — 件数が少なく、レコードは Works に残るため
+- 繋いでいない・資格情報が無い: 何も送らない。管理者が `.env` を入れていなければ、`configured: false`(画面は「資格情報が入っていません」)、`connect` は 503 `slack_not_configured`
+- 戻り先(`<WORKS_PUBLIC_URL>/api/v1/slack/callback`)は Access の内側のまま(戻ってくるのは、Works にログインしている本人のブラウザ)。Slack は HTTPS 以外の戻り先を受け付けないので、手元(`http://127.0.0.1`)では本物の往復は試せない。本物の往復は `test_slack.py` が偽物の Slack で確かめる
+

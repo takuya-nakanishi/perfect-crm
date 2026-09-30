@@ -11,6 +11,7 @@ import { OAuthConsent } from '@/pages/OAuthConsent'
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const TablesSettings = lazy(() => import('@/pages/settings/TablesSettings').then((m) => ({ default: m.TablesSettings })))
 const FormsSettings = lazy(() => import('@/pages/settings/FormsSettings').then((m) => ({ default: m.FormsSettings })))
+const NotificationsSettings = lazy(() => import('@/pages/settings/NotificationsSettings').then((m) => ({ default: m.NotificationsSettings })))
 const McpSettings = lazy(() => import('@/pages/settings/McpSettings').then((m) => ({ default: m.McpSettings })))
 
 function Home() {
@@ -26,7 +27,7 @@ function ObjectRoute() {
  *   /login            ログイン
  *   /oauth/consent    Claude のカスタムコネクタから繋ぐときの許可(?request=。サイドバーは出さない)
  *   /o/:objectKey     テーブル(?view= でビュー、?peek=テーブル名:ID で右のパネル)
- *   /settings/…       環境設定(テーブル・Web フォーム・MCP。管理者だけ)
+ *   /settings/…       環境設定(テーブル・Web フォーム・通知・MCP。管理者だけ)
  */
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
           <Route index element={<Navigate to="/settings/tables" replace />} />
           <Route path="tables" element={<Suspense fallback={null}><TablesSettings /></Suspense>} />
           <Route path="forms" element={<Suspense fallback={null}><FormsSettings /></Suspense>} />
+          <Route path="notifications" element={<Suspense fallback={null}><NotificationsSettings /></Suspense>} />
           <Route path="mcp" element={<Suspense fallback={null}><McpSettings /></Suspense>} />
         </Route>
         <Route path="*" element={<Home />} />

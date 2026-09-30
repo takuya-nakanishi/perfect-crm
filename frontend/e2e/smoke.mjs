@@ -536,6 +536,29 @@ await formCard.getByRole('tab', { name: 'ブラウザから直接送る HTML' })
 ok((await formCard.locator('pre').innerText()).includes('name="phone"'), '埋め込み用の HTML も出る')
 await formCard.getByRole('button', { name: 'テスト送信' }).click(); await wait(800)
 ok(await page.getByText('取引先にレコードができました').count() === 1, 'テスト送信で、受け口からレコードができる')
+// Slack への通知(04 §14)。モックは「連携する」で架空のチャンネルに繋いだことにする。本物の API では Slack へ飛ばない
+await page.getByRole('link', { name: '通知' }).click(); await page.waitForURL(/notifications/); await wait(600)
+const slack = HTTP_API ? await page.evaluate(async () => (await fetch('/api/v1/settings/slack')).json()) : null
+if (!HTTP_API) {
+  await page.getByRole('button', { name: 'Slack と連携する' }).click(); await page.waitForURL(/notifications/); await wait(800)
+  ok(
+    (await page.getByText('Slack と連携しました', { exact: false }).count()) === 1 &&
+      (await page.getByRole('heading', { name: /#web-問い合わせ/ }).count()) === 1 &&
+      !page.url().includes('slack='),
+    'Slack と連携すると、選んだチャンネルが出る',
+  )
+  await page.getByRole('button', { name: 'テスト通知を送る' }).click(); await wait(600)
+  ok((await page.getByText('テスト通知を送りました', { exact: false }).count()) === 1 && (await page.getByText(/最終送信/).count()) === 1, 'テスト通知を送ると、最終送信の時刻が出る')
+  await page.getByRole('button', { name: '連携を解除' }).click(); await wait(600)
+  ok((await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 1, 'Slack との連携を解除できる')
+} else if (slack.connection) {
+  // 本物の Slack に繋いでいる。E2E で本物のチャンネルに送らないよう、この節は飛ばす
+  console.log('SKIP  Slack への通知(本物の Slack に繋いでいるため)')
+} else if (!slack.configured) {
+  ok((await page.getByText('Slack アプリの資格情報が入っていません').count()) === 1 && (await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 0, 'Slack アプリが未設定なら、その旨が出て連携のボタンは出ない')
+} else {
+  ok((await page.getByRole('button', { name: 'Slack と連携する' }).count()) === 1, 'Slack アプリが設定済みなら「Slack と連携する」が出る')
+}
 await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.getByRole('button', { name: 'ログアウト' }).click(); await page.waitForURL(/\/login/)
 await page.fill('#email', 'misaki@example.jp'); await page.fill('#password', 'x'); await page.click('button[type=submit]'); await page.waitForSelector('[role=table]')
 await page.goto(BASE + '/settings/mcp'); await wait(600)

@@ -243,12 +243,13 @@ def export_csv(conn: Connection, object_key: str, params: dict[str, Any], me: st
     listed = service.query(conn, object_key, {**params, "limit": None, "offset": None}, me)
     lines = [[f["label"] for f in obj["fields"]]]
     for record in listed["records"]:
-        lines.append([_export_value(conn, obj, field, record) for field in obj["fields"]])
+        lines.append([display_text(conn, obj, field, record) for field in obj["fields"]])
     # 先頭の BOM は、Excel が UTF-8 として開くための印
     return ("﻿" + to_csv(lines)).encode("utf-8")
 
 
-def _export_value(conn: Connection, obj: dict[str, Any], field: dict[str, Any], record: dict[str, Any]) -> str:
+def display_text(conn: Connection, obj: dict[str, Any], field: dict[str, Any], record: dict[str, Any]) -> str:
+    """項目の値を人が読む 1 つの文字に(CSV の書き出しと、Slack への通知。04 §7・§14)。空なら ""。"""
     if field["type"] == "polymorphic" and field.get("columns"):
         from app.records.refs import ref_of
 
