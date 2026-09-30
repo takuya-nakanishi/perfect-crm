@@ -59,6 +59,8 @@ FONTCONFIG_FILE=/tmp/fonts.conf npm run e2e     # Playwright で撮るスクリ�
 
 ## 3. Cloudflare(Tunnel・DNS・Access)
 
+**Access は外すと決めた**(2026-10-01。ログインをアプリ自身が持つ。`docs/design/01` D-14)。外すまでは以下のとおり。外す手順は `docs/design/06` §3(J-055)。
+
 ```
 python3 scripts/cloudflare-api.py                  # API トークンが生きているか
 python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --app-name Works

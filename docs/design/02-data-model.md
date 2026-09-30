@@ -85,7 +85,7 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 | **opportunities** 商談 | `name`(必須)、`account_id`(必須)、`primary_contact_id`、`stage`(見込み → ヒアリング → 提案 → 見積 → 交渉 → 受注 / 失注。選択肢に確度の既定値と open / won / lost)、`amount`、`probability`、`close_date`(締め切り)、`type`、`lead_source`、`next_step`、`owner_id`、`description` |
 | **tasks** タスク | `title`(必須)、`status`(未着手 / 進行中 / 相手待ち / 完了)、`priority`(P1〜P4。色は Todoist と同じ赤・橙・青・灰)、`due_date`(締め切り)、`repeat`(繰り返し: 毎日 / 平日 / 毎週 / 隔週 / 毎月 / 毎年)、`repeat_from_completion`(完了した日から数える)、`repeat_of`(前回)、`labels`(複数選択)、`related_object` + `related_id`(関連先: 取引先か商談)、`contact_id`、`assignee_id`、`description`、`documents`(Google ドライブ)、`completed_at` |
 | **activities** 活動(2026-09-22) | `subject`(件名。必須)、`type`(種別: 電話 / メール / 打ち合わせ / 訪問 / Web 会議 / メモ / その他)、`occurred_on`(日付。必須。空なら今日)、`related_object` + `related_id`(関連先: **全テーブル**)、`body`(内容。書式付き。`@` で他のレコードに言及できる)、`mentions`(サーバが `body` から写す、言及先の `テーブル名:ID` の一覧。PostgreSQL では `activity_mentions` の結合表)、`owner_id`(記録者)。**タスク(未完了の管理)と活動(起きたことの記録)は別のテーブルで、完了したタスクを活動に複製しない**(時系列 API が合成する。04 §9)。商談には `documents`(Google ドライブ)も足した |
-| **users** 利用者 | `name`、`email`、`avatar_color`、`admin`(環境設定を触れる印。ロールは持たない。権限の設計は J-038)。サイドバーには出さない |
+| **users** 利用者 | `name`、`email`(ログイン ID。小文字)、`avatar_color`、`admin`(環境設定を触れる印。ロールは持たない。権限の設計は J-038)。ログインのための列(パスワード・Google)は §8。サイドバーには出さない |
 
 関連リスト(レコードのパネルの下半分)は定義しない。**メタデータから「このテーブルを参照している列」を探して自動で出す**(取引先を開くと、取引先責任者・商談・タスクが並ぶ)。テーブルが増えれば関連リストも増える。
 
@@ -160,3 +160,18 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 - **本文は、実行記録を入れたときのレコードの値で作って `payload` に写す。**送り係はレコードの表を読まない。あとでレコードが変わっても消えても、そのときの内容が届く(実行記録の名前も残る)
 - ワークフローを削除しても実行記録は残る(ワークフローを戻せば見える)。実行記録は今のところ消さない(1 日に数十件の規模。増えたら古いものを間引く)
 - 条件が指す項目を外したワークフローは動かない(条件を外して動かすと広く動く。ビューは外して表示を広げるのと逆。§5)。画面は「条件の項目 … がありません」と出す
+
+## 8. ログイン(2026-10-01。01 D-14)
+
+アプリ自身が持つログインのための表(システム表。Alembic が持つ)。仕組みは 03 §5、口は 04 §16。
+
+| 表 | 1 行 | 列(主なもの) |
+|---|---|---|
+| `users`(列を足す) | 利用者 | `password_hash`(0001 からある列。Argon2id の文字列。**NULL ならパスワードでは入れない** = Google だけで入る人)、`password_changed_at`、`google_sub`(Google アカウント固有の ID。一意。初めて Google で入ったときに結ぶ)、`google_email`(結んだアドレス。表示だけに使う)、`last_login_at` |
+| `user_sessions` | ブラウザのログイン 1 つ | `user_id`(→ `users`。消すと消える)、`token_hash`(Cookie の値の sha256。一意。**Cookie の値そのものは持たない**)、`method`(`password` / `google`)、`created_at`(= ログインした時刻)、`last_seen_at`、`expires_at`、`user_agent`・`ip`(一覧で「どの端末か」を見せるため) |
+| `login_attempts` | ログインの試み 1 回 | `email`(打たれた値を小文字にしたもの。利用者にいなくても残す)、`user_id`(当たれば)、`method`、`ip`、`succeeded`、`reason`(`no_user`・`bad_password`・`throttled`・`google_not_registered` など)、`created_at`。**間引きの数えと、あとから見る記録を兼ねる**。90 日を過ぎたら消す |
+
+- Android アプリのログインは OAuth の表(0004 の `oauth_clients`・`oauth_grants`・`oauth_tokens`)をそのまま使う。**Android アプリのクライアント(`works-android`)は `oauth_clients` に初めから入れる**(マイグレーションで。動的登録ではない。03 §5)。許可(`oauth_grants`)の 1 行が、アカウントの画面の「ログイン中のアプリ」の 1 行になる
+- パスワード、セッションの Cookie の値、OAuth のトークンは、どれも DB に置かない(ハッシュだけ)。DB の写し(`pg_dump`)が漏れても、それだけでは入れない
+- 利用者を消す(`deleted_at`)と、セッション・許可・トークンは行が残っていても効かない(引くたびに `users.deleted_at` を見る。いまの OAuth と同じ)
+- 切れたセッション(`expires_at` を過ぎたもの)は、折々に消す

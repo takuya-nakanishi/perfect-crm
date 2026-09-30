@@ -7,7 +7,7 @@
 
 ## 1. 約束ごと
 
-- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。認証は Cloudflare Access が付ける JWT(`Cf-Access-Jwt-Assertion`)。画面は何も持たない(03 §5)。`WORKS_AUTH=dev` のときだけセッション Cookie
+- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。**認証はアプリ自身が持つ**(2026-10-01。01 D-14、03 §5): 画面はセッションの Cookie、Android アプリは `Authorization: Bearer`(OAuth の access token)。無い・切れた → 401 `unauthenticated`。Cookie で入った書き込み(GET 以外)は `Origin` が公開 URL と同じものだけを受ける(違えば 403 `bad_origin`)。口の一覧は §16。**切り替え(J-055)までは、本番は Cloudflare Access の JWT(`Cf-Access-Jwt-Assertion`)で利用者を決めている**
 - JSON の列名は **DB の列名そのまま**(snake_case)。ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)、金額は円の整数。書式付きの文字(`richtext`)は HTML で、**サーバは保存前に許した要素だけを残し、その結果から `@` の言及を取る**(この順。`frontend/src/lib/richtext.ts` と同じ規則。Python では `nh3` のような現行のライブラリを使い、非推奨の `bleach` は使わない)
 - 参照は ID で返し、表示名は応答の `references` に添える(§2)
 - エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400、いまのデータの状態でできない操作(必須の参照で使われているレコードの削除など)は 409。`message` は人がそのまま読める文で、画面はそれを出す
@@ -16,9 +16,11 @@
 
 | メソッドとパス | 役割 | 応答 |
 |---|---|---|
-| `GET /session` | いまの利用者 | `Session`。Access を通っていない・JWT が確かめられない → 401 `access_required`。Works の利用者でない → 403 `not_registered`。Access の設定が無い → 503。dev の未ログインは 401 `unauthorized`(画面はログインのフォームを出す) |
-| `POST /session` | ログイン(`email`・`password`)。**dev だけ**(パスワードは見ない)。access では 400 `access_login` | `Session` |
-| `DELETE /session` | ログアウト | access は `{ "logout_url": "/cdn-cgi/access/logout" }`(画面はそこへ移る)。dev は 204 |
+| `GET /session` | いまの利用者 | `Session`。未ログイン・切れた → 401 `unauthenticated`(画面はログインの画面へ)。§16 |
+| `POST /session` | ログイン(`email`・`password`)。通ればセッションの Cookie を置く。§16 | `Session`。違う → 401 `invalid_credentials`。続けて失敗 → 429 `too_many_attempts` |
+| `DELETE /session` | ログアウト(このセッションを消し、Cookie を消す) | 204 |
+| `GET /session/google?next=` / `GET /session/google/callback` | Google でログイン(ブラウザで開く。fetch しない)と、その戻り。§16 | 303 |
+| `GET /account` ほか | パスワードの変更、Google の結び・外し、ログイン中の端末とアプリ。§16 | |
 | `GET /meta` | テーブル・項目・ビュー・サイドバーのフォルダ・利用者の定義。起動時に 1 回 | `MetaResponse` |
 | `POST /meta/objects` | テーブルを作る(本文に `ObjectInput`)。§6 | `MetaResponse` |
 | `PUT /meta/objects/{key}` | テーブル設定を保存する(本文に `ObjectInput`。項目は全量) | `MetaResponse` |
@@ -201,12 +203,13 @@
 | `GET /.well-known/oauth-protected-resource/mcp` | Claude | 資源のメタデータ(RFC 9728)。`resource` は `<公開 URL>/mcp` と 1 文字も違わない |
 | `GET /.well-known/oauth-authorization-server` | Claude | 認可サーバのメタデータ(RFC 8414)。発行元は公開 URL。`code_challenge_methods_supported: ["S256"]`、`registration_endpoint` あり |
 | `POST /register` | Claude | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)でなければ 400 `invalid_redirect_uri` |
-| `GET /authorize` | 本人のブラウザ(Access の内側) | 依頼を置き(10 分で切れる)、画面の `/oauth/consent?request=…` へ送る |
+| `GET /authorize` | 本人のブラウザ | 依頼を置き(10 分で切れる)、画面の `/oauth/consent?request=…` へ送る。ログインしていなければ、画面がログインの画面を経てから戻す(05 §15) |
 | `POST /token` | Claude | 認可コード(1 回きり、5 分)→ access(1 時間)+ refresh(90 日)。refresh は使うたびに新しい組に替え、古いものは `invalid_grant` |
 | `POST /revoke` | Claude | その許可ごと消す |
 
 - 許可(`oauth_grants`)が環境設定の「接続中のアプリ」の 1 行。コードとトークンは sha256 だけを持つ。利用者を消すと、その人の許可も消える
 - ツールの呼び出しは、許可した人を「誰として」にして、画面と同じ関数を通る(既定値の「担当は自分」も同じ)。失敗は 400 の文(`定義に無い列です` など)をツールのエラーとして返し、AI が読んで直せるようにする
+- **Android アプリも同じ `/authorize`・`/token`・`/revoke` を使う**(2026-10-01。03 §5)。違いは 3 つ: ①動的登録ではなく、初めから入れてある公開クライアント(`works-android`)②スコープは `api`(`/api/v1` に入れる。Claude の `works` は `/mcp` だけ)③許可のカードを出さない(戻り先が https で、Digital Asset Links によって Works のアプリだと確かめられるため。RFC 8252 §8.6。ログインが通れば許可したとみなす)。`/register` で `api` を求めても与えない
 
 ## 14. Slack のチャンネル(2026-09-30)
 
@@ -273,3 +276,44 @@
 **テスト送信**(`POST /settings/workflows/test`): 保存前の定義を同じ検証に通し、そのテーブルで条件を満たす最新の 1 件(無ければ最新の 1 件、テーブルが空なら見本の値)で、アクションをその場で 1 回動かす。実行記録には残さない。応答は使ったレコードと、アクションごとの成否。
 
 **これまでの Web フォームの通知の移行**(マイグレーション 0008): Slack と繋いでいて Web フォームがあれば、テーブルごとに「Web フォームからの登録」(作成されたとき・`origins: ["form"]`・載せる項目はそのテーブルのフォームの項目を合わせたもの・送り先は繋いでいたチャンネル)を作る。Web フォームの受け口は、もう自分では知らせない。
+
+## 16. ログインとアカウント(2026-10-01。03 §5)
+
+ログインはアプリ自身が持つ(01 D-14)。型は `Session`(いまと同じ)・`SessionOptions`・`Account`・`AccountSession`。**切り替え(J-055)までは、本番は §1 のとおり Access の JWT で動いている。**
+
+**画面のログイン**(Cookie `__Host-works_session`)
+
+| メソッドとパス | 役割 | 応答 |
+|---|---|---|
+| `GET /session/options` | ログインの画面が出すもの(未ログインで読める) | `SessionOptions`: `{ google: boolean }`(Google の設定が `.env` にあるか) |
+| `POST /session` | 本文 `{ email, password }`。通ればセッションを作って Cookie を置く(前のセッションは引き継がない) | `Session`。違う → 401 `invalid_credentials`「メールアドレスかパスワードが違います」(メールアドレスが無いときも同じ文・同じくらいの時間)。続けて失敗 → 429 `too_many_attempts`(`Retry-After` と、待つ時間の文)。空 → 400 |
+| `DELETE /session` | ログアウト。このセッションの行を消し、Cookie を消す | 204 |
+| `GET /session/google?next=/o/tasks` | Google でログイン。短命の Cookie(state・nonce・PKCE の verifier・戻り先)を置き、Google の許可の画面へ送る | 303 |
+| `GET /session/google?link=1` | ログイン中の本人に Google を結ぶ(アカウントの画面から) | 303 |
+| `GET /session/google/callback?code&state` | Google からの戻り。state を Cookie と照らし、ID トークンを確かめ、利用者を決めてセッションを作る | 303 で `next` へ。入れない → `/login?error=<code>`(`google_not_registered`・`google_failed`・`google_denied`)。結ぶとき → `/account?google=linked`、だめなら `?google=<code>`(`google_in_use`: 別の利用者に結ばれている) |
+
+- `next` は同じオリジンの中の道(`/` で始まり `//` で始まらない)だけ。外の URL は `/` に置き換える
+- Google の設定が無いのに `GET /session/google` を開いた → 303 で `/login?error=google_not_configured`
+
+**アカウント**(ログイン中の本人。画面は 05 §15)
+
+| メソッドとパス | 役割 | 応答 |
+|---|---|---|
+| `GET /account` | 自分のログインの状態 | `Account`: `has_password`、`password_changed_at`、`google_email`(結んでいなければ null)、`recent_login`(このセッションが 10 分以内のログインか) |
+| `PUT /account/password` | 本文 `{ current_password?, new_password }`。`current_password` は、10 分以内にログインしたセッションなら要らない(忘れたら Google で入り直して決める)。**通ったら、このセッション以外のセッションと、アプリの許可をすべて切る** | 204。短い・よく使われている・メールアドレスと同じ → 400 `weak_password`(理由の文)。いまのパスワードが要る → 400 `reauth_required`。違う → 400 `invalid_credentials`(ログインの間引きと同じ数えに入る) |
+| `DELETE /account/google` | Google を外す | 204。パスワードを持っていない → 409 `last_login_method`(入る手段が無くなる) |
+| `GET /account/sessions` | 自分のログイン中の端末(ブラウザのセッション)とアプリ(Android の許可) | `AccountSession[]`: `id`、`kind`(`browser` / `app`)、`label`(「Chrome · Windows」「Works · Android」。`User-Agent` とクライアントから作る)、`created_at`、`last_seen_at`、`current`(いま使っている端末か) |
+| `DELETE /account/sessions/{id}` | 1 つ切る。自分のもの以外は 404 | 204 |
+| `DELETE /account/sessions` | いま使っている端末以外を、すべて切る | 204 |
+
+- Claude のコネクタ(`works` の許可)は、ここには出さない。これまでどおり環境設定の MCP で見る(§13)
+- モックはこれまでどおりパスワードを確かめない(何を入れてもデモの利用者で入る)。`SessionOptions.google` は false。ログインの失敗・間引き・Google は、本物の API で確かめる(pytest と、E2E の http)
+
+**管理者のコマンド**(画面は J-038)
+
+```
+python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す。パスワードは持たない(Google で入るか、次で決める)
+python -m app.cli set-password <メール>               パスワードを決める(標準入力から読む。画面に出さない)。その人のセッションと許可はすべて切れる
+```
+
+**エラーの符号**(ログインまわり): `unauthenticated`(401)、`invalid_credentials`(401。アカウントの画面では 400)、`too_many_attempts`(429)、`bad_origin`(403)、`weak_password`・`reauth_required`(400)、`last_login_method`(409)。Access の頃の `access_required`・`not_registered`・`access_login` は、切り替え(J-055)で無くなる。

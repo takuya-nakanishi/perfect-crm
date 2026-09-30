@@ -21,23 +21,35 @@
 ## 2. 外からの経路
 
 ```
-ブラウザ ─https→ works.sanei-clover.com(Cloudflare。CNAME → <Tunnel ID>.cfargotunnel.com、プロキシ ON)
-        → Cloudflare Access(本人のメールだけを通す)→ Tunnel「sanei-clover-lan」→ cloudflared → http://web:8080
+ブラウザ・アプリ ─https→ works.sanei-clover.com(Cloudflare。CNAME → <Tunnel ID>.cfargotunnel.com、プロキシ ON)
+        → Tunnel「sanei-clover-lan」→ cloudflared → http://web:8080
 ```
+
+**切り替え(J-055)までは、Cloudflare と Tunnel のあいだに Cloudflare Access(本人のメールだけを通す)がいる。**ログインをアプリが持つと決めたので(01 D-14)、外す(§3)。
 
 - Surface から Cloudflare へ外向きに張るだけで、受信ポートを開けない。固定 IP もポート開放も要らない
 - **Tunnel はこの LAN で 1 本(`sanei-clover-lan`)に集約する。**サービスを増やすときは同じ Tunnel にホスト名を足す。`scripts/cloudflare-tunnel-setup.py` は既存の経路を残したまま、指定したホストの行だけを差し替える。別の Compose のサービスを載せるなら、cloudflared から届くネットワークに置くこと
-- 組み立てはすべて API(`scripts/cloudflare-tunnel-setup.py`。再実行しても重複しない): Tunnel → 経路 → CNAME → One-time PIN の IdP → Access アプリ → 許可ポリシー → `.env` のトークン更新
+- 組み立てはすべて API(`scripts/cloudflare-tunnel-setup.py`。再実行しても重複しない): Tunnel → 経路 → CNAME → One-time PIN の IdP → Access アプリ → 許可ポリシー → `.env` のトークン更新。Access を外したあとは、works には Access の 3 つを作らない(J-055 でスクリプトを直す)
 - API トークンは直下の `.env` の `CLOUDFLARE_API_TOKEN`。権限は必要最小より広い(ゾーン `sanei-clover.com` とアカウントの全権限。2026-09-19 に本人が受け入れたリスク)。前提は、`.env` の外に出さない・漏えいを疑ったら即失効
 
-## 3. Cloudflare Access
+## 3. Cloudflare の守りと、Access を外す手順(2026-10-01。01 D-14)
 
-- アプリ名 `Works`、種別 self-hosted、許可は本人のメールアドレス 1 件、ほかは拒否。ログインは One-time PIN(メールで届く 6 桁)
-- **セッションは 720 時間(30 日)。**既定の 24 時間だと毎日 PIN を往復することになり、日常の道具として使えない(Twenty のとき、それが理由で Access を外している)
-- One-time PIN は、許可されていないアドレスにはコードを送らない(届かないのは故障ではない)。コードは要求した同じタブに入れる
-- Google ログインを足すか(PIN の往復が無くなる)は未決 → **Q-039**
-- **Access の内側にあるものは、外部のサービスやエージェントからは届かない。**MCP(J-028)や Webhook を外へ見せるときは、そのパスだけ素通しにして(`--bypass`)アプリ側の認証で守るか、Access のサービストークンを使う
-- 自動の確認は `scripts/cloudflare-access-check.py`。確認のあいだだけ使うサービストークンと、それを通すポリシーを作り、終わったら(失敗しても)消す
+**Access は外す。**ログインをアプリが持つので(03 §5)、門は要らなくなる。外したあとに Cloudflare で持つのは、TLS、Tunnel(受信ポートを開けない)、縁の率の上限の 3 つ。
+
+- **縁の率の上限**(WAF の rate limiting rules。無料で 1 本。03 §13): パスが `/api/v1/session` と同じ要求を、IP ごとに 10 秒で 10 回を超えたら 10 秒遮る。無料ではメソッドで絞れないので、画面を開くたびの `GET /session` も数に入るが、ふつうに使って 10 秒に 10 回は越えない。ログインの連打を粗くふるうもので、本体はアプリの間引き(03 §5)
+
+**切り替えの手順**(J-055)。順を崩さない(門もログインも無い時間を作らないため)。
+
+1. 自前のログイン(J-053。Google を使うなら J-054 も)を本番へ出す。このときはまだ Access が前にいて、門とアプリのログインの二重になる。表が変わるので、直前に `pg_dump`
+2. 本人のパスワードを決める(`python -m app.cli set-password <メール>`)。Google を使うなら、GCP のクライアントに戻り先を足して(03 §5)、Google で入れることを確かめる
+3. Access の内側で、ログイン・ログアウト・アカウントの画面・Claude のコネクタ(許可の画面が Works のログインになる)を確かめる
+4. **Access のアプリを消す**(本体と、Anthropic の送信元の例外。§7 の「切り替えまで」)。スクリプトで消し、消したものを記録に残す
+5. 縁の率の上限を足す(上)
+6. 外から確かめる: 未ログインの `GET /api/v1/session` が 401 `unauthenticated`(Access の 302 ではない)、`/healthz` が 200、ログインの画面が開く、違うパスワードで 401、スマホからパスワードと Google で入れる、Claude から MCP が使える
+7. 後片付け: `.env` から `WORKS_AUTH`・`WORKS_ACCESS_*` を消す。`cloudflare-tunnel-setup.py` が works に Access を作らないようにし、`cloudflare-access-check.py` を 6 の確かめに置き換える。環境設定の Web フォーム・MCP の「繋ぎ方」からサービストークンを外す。本番では `/api/v1/docs`・`openapi.json` を出さない(§7)。runbook §3・§5b と CLAUDE.md を直す
+
+- 戻すとき: `cloudflare-tunnel-setup.py … --allow <メール>` をもう一度打てば、Access のアプリと許可を作り直せる(何度打っても同じ結果)。アプリのログインはそのまま残るので、二重の状態に戻る
+- Access の頃の決めごと(セッション 30 日、One-time PIN、Google の IdP、`cloudflare-access-check.py` の一時的なサービストークン)は、git の履歴にある
 
 ## 4. 配る側のヘッダ(`frontend/Caddyfile`)
 
@@ -59,11 +71,31 @@ Compose が動く場所ならどこでも同じ構成で動く。状態は Postg
 1. 移設先で `docker compose --profile public --profile backend up -d --build`
 2. `pg_dump` → `pg_restore`
 3. `.env` を移す(Tunnel のトークンを含む)
-4. 旧ホストの `tunnel` を止める。同じトークンで新ホストの cloudflared が繋がるので、DNS も Access も触らない
+4. 旧ホストの `tunnel` を止める。同じトークンで新ホストの cloudflared が繋がるので、DNS を触らない
 
-Tunnel をやめて ALB などで直接受けるなら、TLS と認証(03 §5 の A 案)を自前で持つ。**いまは Access を信頼する B 案なので(2026-09-24)、ここで作り直しになる**(引き受けたリスク。03 §5)。
+Tunnel をやめて ALB などで直接受けるなら、TLS を自前で持つ。**ログインはアプリが持つので(01 D-14)、作り直しは要らない**(Access を信頼していた 2026-09-24〜の形では、ここで作り直しになるのを引き受けていた)。縁の率の上限は、移った先の仕組み(AWS WAF など)で掛け直す。
 
-## 7. Access の内側のまま、外から使う(2026-09-22。Q-044 で決定)
+## 7. 外から届く口と、その守り(2026-10-01 に改める。01 D-14)
+
+Access を外すと(J-055)、次の口がインターネットから直に届く。守りはどれもアプリが持つ。
+
+| 口 | だれが | 守り |
+|---|---|---|
+| 画面(静的ファイル) | だれでも | 中身は公開しているコードと同じ。データは API にしか無い |
+| `/api/v1/*` | ログインした人(Cookie)、Android アプリ(Bearer) | 自前のログイン(03 §5)。Cookie で入った書き込みは `Origin` を確かめる |
+| `POST /api/v1/session` | だれでも | 続けて失敗したときの待ち(アプリ)と、縁の率の上限(§3) |
+| `/api/v1/session/google`・`…/callback` | だれでも(ブラウザ) | state を Cookie に結ぶ(03 §5) |
+| `/api/v1/forms/{key}` | Web サイトの訪問者 | URL の鍵、見えない欄、同じ IP からの間引き(04 §10) |
+| `/mcp`・`/token`・`/register`・`/revoke`・`/.well-known/oauth-*` | Claude、Android アプリ、Codex など | Works の OAuth と `wks_`(無ければ 401) |
+| `/authorize`・`/oauth/consent` | 本人のブラウザ | Works のログイン |
+| `/.well-known/assetlinks.json` | Chrome と Android(アプリの戻り先の確かめ) | 公開してよい値だけ(パッケージ名と署名の指紋) |
+| `/healthz` | だれでも | 中身なし |
+| `/api/v1/docs`・`/api/v1/openapi.json` | — | 本番では出さない |
+
+- Web フォームは、Web サイトのサーバから転送しなくても、訪問者のブラウザから直に送れるようになる(Access のサービストークンが要らない)。スパムが増えたら Cloudflare Turnstile(無料。サーバで確かめる。03 §13)を足す
+- MCP を Codex などから使うときも、Access のサービストークンは要らなくなり、`wks_` だけで繋がる
+
+### 切り替えまで: Access の内側のまま、外から使う(2026-09-22。Q-044 で決定。J-055 で片付ける)
 
 **経路は 1 本のまま**(本人の決定: 別のホストや素通しの経路は作らない)。外から叩くものは、**Access のサービストークンをヘッダ(`CF-Access-Client-Id` / `CF-Access-Client-Secret`)で渡して門を通る**。環境設定で作った 2 つの扱い:
 
@@ -77,7 +109,7 @@ Tunnel をやめて ALB などで直接受けるなら、TLS と認証(03 §5 �
 - 管理 API(`/settings/*`)と画面は、これまでどおり Access の内側で人だけが通る
 - **Slack の戻り(`/api/v1/slack/callback`)も Access の内側のまま**(04 §14)。戻ってくるのは、Works にログインして「チャンネルを追加」を押した本人のブラウザなので、素通しは要らない。api からは `slack.com`・`hooks.slack.com` へ出ていく(外向きの HTTPS。Tunnel とは別で、何も開けなくてよい)
 
-### Claude のカスタムコネクタのための例外(2026-09-24 決定。本人の承認。03 §6)
+#### Claude のカスタムコネクタのための例外(2026-09-24 決定。本人の承認。03 §6)
 
 Claude のカスタムコネクタは、端末ではなく **Anthropic のクラウドから** Works を叩く。サービストークンのヘッダは付けられない(送れるヘッダ名は Anthropic の承認制)。
 だから上の「素通しの経路は作らない」(Q-044)を、次の範囲でだけ破る(本人が承認し、同日に適用)。適用後、Anthropic 以外の送信元からは機械向けの口が 403、人の入口は Access のログインへ 302 になることを確かめた。

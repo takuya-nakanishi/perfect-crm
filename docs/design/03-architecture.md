@@ -3,18 +3,19 @@
 ## 1. 全体像
 
 ```
-ブラウザ / スマホ ──https──▶ Cloudflare(Access で本人確認)──Tunnel──▶ cloudflared ──▶ web(Caddy)
-                                                                                        │ 静的ファイル(画面)
-                                                                                        │ /api/*(これから)
-                                                                                        ▼
-Claude Code / Codex ──MCP(これから)──────────────────────────────────────────────▶ api(Python)
-                                                                                        │
-                                                                                        ▼
-                                                                                  db(PostgreSQL 18)
+ブラウザ ──────┐
+Android アプリ ─┼─https─▶ Cloudflare(TLS・率の上限)──Tunnel──▶ cloudflared ──▶ web(Caddy)
+Claude ────────┘                                                                   │ 静的ファイル(画面)
+                                                                                   │ /api/*・/mcp・OAuth の口
+                                                                                   ▼
+                                                                             api(Python)── ログイン・OAuth・MCP
+                                                                                   │
+                                                                                   ▼
+                                                                             db(PostgreSQL 18)
 ```
 
-**いま動いているのは `web` と `tunnel` だけ**(2026-09-21)。画面はブラウザ内の擬似 DB(モック)で完結している。
-`api` は J-021 で足す。`db` は Compose に定義だけあり、`--profile backend` を付けるまで起動しない。
+**2026-09-24 から `api` と `db` も本番で動いている**(実データ。J-041)。ログインはアプリ自身が持つ(§5。2026-10-01 の決定)。
+**切り替え(J-055)までは、Cloudflare と Tunnel のあいだに Cloudflare Access がいて、アプリは Access の JWT で利用者を決めている。**
 
 ## 2. 構成
 
@@ -23,6 +24,7 @@ Claude Code / Codex ──MCP(これから)────────────�
 | `frontend/` | 画面。Vite + React + TypeScript + Tailwind CSS v4。ビルドすると静的ファイルになる |
 | `frontend/Dockerfile` / `Caddyfile` | Node でビルドし、Caddy で配る。SPA の戻し、キャッシュ、CSP などのヘッダ、`/healthz` |
 | `backend/` | Python の JSON API。`/api/v1`(04)。中身の地図は `backend/README.md` |
+| `android/` | Android のネイティブアプリ(これから。01 D-15、§12)。Gradle のプロジェクトで、画面・API とは道具立てが別 |
 | `docker-compose.yml` | `web` / `tunnel`(profile `public`)/ `api`・`db`(profile `backend`) |
 | `scripts/` | Cloudflare の Tunnel・DNS・Access を API で組むスクリプトと、Access 越しの疎通確認。`verify.sh`(検証の関門)、無人ループ(`loop-run.sh`・`loop-next.mjs`)、worktree(`wt-new.sh`・`wt-land.sh`) |
 | `docs/` | 設計(`design/`)、運用手順(`runbook/`。`02-loop.md` が無人ループ)、テストケース表(`tests/`。4 軸で 6 領域) |
@@ -82,39 +84,103 @@ Claude Code / Codex ──MCP(これから)────────────�
 比較した時点(2026-09-21)の版: fastapi 0.141.1 / litestar 2.24.0 / Django 6.1.1 / django-ninja 1.7.1。
 **採用を決めた時点の一次資料での確認は §10**(2026-09-23 に引き直した)。
 
-## 5. 認証
+## 5. 認証(2026-10-01 に作り直す。01 D-14)
 
-**外側の門は Cloudflare Access で確定**(2026-09-22。Q-035・Q-039)。Access の IdP は One-time PIN に加えて **Cloudflare の IdP(Google Workspace の SSO)を手で足した**(Cloudflare 自身が Google Workspace でログインできるため。人が増えたら再考)。
-**アプリ自身のログインは B 案「Access を信頼する」に決定**(2026-09-24。本人の決定。J-023)。下の表の B のとおり、
-api は Access が付ける `Cf-Access-Jwt-Assertion` を確かめて(署名 = チームの公開鍵、`aud` = Access アプリの AUD タグ、`iss` = チーム、期限)、
-そのメールアドレスで `users` を引く。実装は `backend/app/access.py` と `app/api/deps.py`。
+**アプリ自身がログインを持つ。**メールアドレスとパスワード、または Google でログインする。Cloudflare Access は外す。
+**切り替え(J-055)までは、本番は末尾の「経緯」の形(Access を信頼する)で動いている。**
 
-- **門を通す人は Access のポリシー、Works の利用者は `users`**。Access は通ったが `users` にいない人は 403(`not_registered`)。足すのは `python -m app.cli add-user`(画面は J-038)。人が勝手に増えないよう、初めて来た人を自動で足すことはしない
-- **アプリはログイン画面もパスワードも持たない。**画面の `/login` は、門を通れていない(401 `access_required`)・利用者でない(403)ときの案内だけを出す。ログアウトは Access のログアウト(`/cdn-cgi/access/logout`)へ送る
-- サービストークン(MCP・Web フォームの送り手。06 §7)の JWT にはメールアドレスが無いので、画面の利用者にはならない(401)。それらは各自のトークンで守る
-- **Access の無い手元(E2E、テスト)だけは `WORKS_AUTH=dev`**: メールアドレスだけで入り、署名付きの Cookie を持つ。公開する場所では使わない。既定は `access`
-- 設定(`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD`)は `scripts/cloudflare-tunnel-setup.py` が `.env` に書く。無ければ 503 で、だれも入れない(門を開けたままにしない)
-- **引き受けたリスク**: Cloudflare の外(AWS など)へ出すと成り立たない。そのときは A 案を作る(06 §6)
+### だれが、何で入るか
 
-**管理者(2026-09-22)**: 環境設定(テーブルの定義、Web フォーム、Slack への通知、MCP のトークン。05 §11)は、利用者の `admin` が真の人だけが開ける。サーバは `/meta/objects`・`/settings/*` の書き込みで 403 を返す(`/meta/views` は誰でも書ける。05 §11)。**ロールや細かい権限の概念はまだ持たない**(印 1 つだけ)。人が増えたときの権限の設計は J-038。
+| 入口 | 証明するもの | 通る口 | 持ち時間 |
+|---|---|---|---|
+| 画面(ブラウザ) | セッションの Cookie `__Host-works_session` | `/api/v1/*` | ログインから 30 日(Access のころと同じ間隔) |
+| Android アプリ | OAuth の access token(スコープ `api`。`Authorization: Bearer`) | `/api/v1/*` | access 1 時間、refresh 90 日(使うたびに替わる。90 日使わなければ入り直す) |
+| Claude のカスタムコネクタ | OAuth の access token(スコープ `works`) | `/mcp` だけ | 同上 |
+| Codex など | 環境設定で発行したトークン(`wks_`。04 §10) | `/mcp` だけ | 失効するまで |
+| Web フォームの送り手 | なし(URL の鍵) | `/api/v1/forms/{key}` だけ | — |
 
-| 案 | 中身 | 向き |
-|---|---|---|
-| A. アプリが自分で認証する | メール + パスワード、セッション Cookie。Access はその外側の門として残す(二重) | どこへ引っ越しても同じ。Access を外しても守られる |
-| B. Access を信頼する | Cloudflare が付ける `Cf-Access-Jwt-Assertion` を検証して利用者を決める。ログイン画面は出さない | 楽。ただし Cloudflare の外(AWS など)へ出すと成り立たない |
+- `current_user`(`app/api/deps.py`)は、Cookie → `Authorization: Bearer` の順に見る。どちらも無い・効かない → 401 `unauthenticated`。**Bearer はスコープ `api` のものだけを通す**(`wks_` と `works` は MCP のためのもので、画面の API へ広げない)
+- 利用者を消す(`deleted_at`)と、その人のセッション・許可・トークンはどれも効かなくなる。管理者(`admin`)の扱いは変わらない
+- **手元・テスト・E2E も同じログインを通る。**`WORKS_AUTH`(`access` / `dev`)は無くす。公開する場所で「メールアドレスだけで入れる」形を誤って有効にする事故を、形ごと無くすため。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
+- `WORKS_SECRET_KEY` は、公開する場所では必須にする(空なら起動しない)。Google の戻りの Cookie の署名と、Google・Slack の鍵の暗号化に使う
 
-引っ越しやすさ(01 D-05)を取るなら A。当面の手軽さなら B。A を作ったうえで「Access の JWT があれば自動でログイン済みにする」という折衷もある。
-比べた結果、本人は B を選んだ(上)。A へ移るときは、`deps.py` の `current_user` にパスワードとセッションの経路を足せばよい(画面の `/login` のフォームは dev で既に動いている)。
+### パスワード
+
+- ログイン ID はメールアドレス(小文字にそろえる)。パスワードは任意で、Google だけで入る人は持たない(`password_hash` が NULL)
+- 決まりは NIST SP 800-63B-4 に従う(§13):
+  - **15 文字以上**(パスワードだけで入るため。二段階目の一部なら 8 文字でよいとされる → Q-048)。数えるのは NFKC で正規化したあとの文字(コードポイント)
+  - 256 文字まで受ける(64 文字以上を受けること、とされる。上限は、長すぎる入力で重くしないため)
+  - 文字の種類の縛りと、定期的な変更は求めない。空白も日本語も使える
+  - **よく漏れているパスワードは断る**: Have I Been Pwned の Pwned Passwords に照らす(SHA-1 の先頭 5 文字だけを送り、残りは手元で照らす。キーも費用も要らない)。届かないときは通し、記録を残す。ほかに、メールアドレス・その @ の前・名前・「works」・ワークスペースの名前と丸ごと同じものも断る
+- 保存は **Argon2id**(`argon2-cffi` の `PasswordHasher`。既定は RFC 9106 の低メモリの組で、64 MiB・3 回・並列 4。OWASP の最小(19 MiB・2 回・並列 1)より重い)。**同時に掛けるのは 2 本まで**(ログインを連打されても、64 MiB ずつメモリを食わせない)。ログインが通ったとき、強さが古ければ掛け直す(`check_needs_rehash`)
+- `passlib` は使わない。2020-10 から版が出ておらず、bcrypt 5.0 と組むと短いパスワードでも落ちる(§13)
+- 失敗の応答は、メールアドレスが無いときもパスワードが違うときも同じ文(「メールアドレスかパスワードが違います」)。無いときも見せかけのハッシュを 1 回照らし、かかる時間で見分けられないようにする
+
+### 続けて失敗したとき
+
+- **同じアカウントで 5 回続けて失敗したら、次を受けるまで待たせる。**待ちは 1 分から失敗のたびに倍にし、上限は 1 時間。アカウントを閉じてはしまわない(閉じると、他人が本人を締め出せる)。どの方法でもログインが通れば数え直す
+- **100 回続けて失敗したら、そのアカウントのパスワードでのログインを止める**(NIST の上限。§13)。戻すのは、本人が Google で入ってパスワードを決め直すか、管理者の `set-password`
+- **同じ IP から 10 分に 30 回失敗したら、その IP からのパスワードのログインを 10 分止める**(429 `too_many_attempts`、`Retry-After`)。待たせている間はパスワードを照らさない(ハッシュを掛けない)
+- IP は Cloudflare が付ける `CF-Connecting-IP` を使う(api には Tunnel の向こうからしか届かないので信じてよい。手元は接続元)
+- 縁でも間引く: Cloudflare の率の上限(無料で 1 本。IP ごと・10 秒単位)を `/api/v1/session` に掛ける(06 §3)。粗いふるいで、本体はアプリの間引き
+- 試みはすべて `login_attempts` に残す(02 §8)
+
+### 画面のセッション
+
+- ログインが通ったら、32 バイトの乱数を Cookie `__Host-works_session`(`HttpOnly`・`Secure`・`SameSite=Lax`・`Path=/`、`Domain` なし)に入れ、DB には sha256 だけを置く(`user_sessions`)。Cookie に署名はしない(DB の行が正。行を消せばその場で効かなくなる)
+- 期限はログインから 30 日。使っていても延ばさない(Access のころと同じく、月に 1 回入り直す)。最後に使った時刻は 1 時間に 1 回だけ書く(アカウントの画面の「最終」)
+- ログインのたびに新しいセッションを作る(前の Cookie は引き継がない)。ログアウトは行を消す
+- **パスワードを変えたら、いま使っているもの以外のセッションと、アプリの許可をすべて切る**
+- 自分のセッションとアプリを一覧で見て、1 つずつ・まとめて切れる(04 §16、05 §15)
+
+### 書き込みの偽造(CSRF)を防ぐ
+
+- Cookie で入った要求のうち、読む以外(POST・PUT・PATCH・DELETE)は、`Origin` が公開 URL と同じものだけを受ける(無い・違う → 403 `bad_origin`)。`SameSite=Lax` と重ねる
+- ログイン(`POST /session`)にも同じ確かめをする(よそのサイトから、攻撃者のアカウントでログインさせられるのを防ぐ)
+- Bearer で入る要求(アプリ・MCP)と、Web フォームの受け口は対象外(前者は Cookie を使わず、後者はよそのサイトから送られるもの)
+
+### Google でログイン
+
+- OpenID Connect の認可コード + PKCE。スコープは `openid email`。OAuth クライアントはドライブと同じもの(GCP `citric-earth-449901-e7`、種類はウェブ、**対象は「内部」**。runbook §6)。「内部」なので、**Google で入れるのは Workspace のアカウントだけ**(ほかは Google が `org_internal` で断り、Works には戻ってこない)
+- 流れ: `GET /api/v1/session/google?next=…` → 短命の Cookie `__Host-works_oidc`(state・nonce・PKCE の verifier・戻り先を署名して入れる。10 分)を置いて Google へ → 戻り `GET /api/v1/session/google/callback` で、state を Cookie と照らし、コードをトークンに替え、ID トークンを確かめる(署名 = Google の公開鍵、`iss` が `https://accounts.google.com` か `accounts.google.com`、`aud` = クライアント ID、期限、nonce)→ 利用者を決めてセッションを作り、`next` へ。Google の口(許可・トークン・公開鍵)は discovery document(`https://accounts.google.com/.well-known/openid-configuration`)から読む
+- **利用者との結び付けは Google の `sub`**(アカウント固有で変わらない ID)。Google は「メールアドレスを利用者の ID に使うな」としている(§13)。初めて Google で入るときだけ、`email_verified` が真のメールアドレスで `users.email` を探し、見つかれば `google_sub` を結ぶ。以後は `sub` で引く(Google 側でアドレスが変わっても入れる)。見つからなければ入れない(`google_not_registered`)
+- state を Cookie に結ぶのは、他人が用意した戻りの URL を踏まされて、その人のアカウントでログインさせられるのを防ぐため(ドライブの繋ぎは利用者の ID を state に署名しているが、ログインの前には利用者がいない)
+- 戻り先(`<公開 URL>/api/v1/session/google/callback`)を、GCP のクライアントの「承認済みのリダイレクト URI」に足す(J-040 と同じ画面)
+- 結ぶ・外すはアカウントの画面から。外せるのはパスワードを持っているときだけ(入る手段が無くならないように)
+- Google で入る人には、Workspace 側の 2 段階認証が効く
+
+### パスワードを変える・忘れたとき、利用者を足す
+
+- 変えるには、いまのパスワードか、**10 分以内にログインしたこと**が要る。忘れたら Google で入り直し、10 分のうちにアカウントの画面で決め直す
+- 管理者は `python -m app.cli set-password <メール>` で決められる(標準入力から読む。画面にもログにも出さない)。その人のセッションと許可はすべて切れる
+- **メールでの再設定は持たない**(Works にはメールを送る仕組みが無い。人が増えたら考える)
+- 利用者を足すのは管理者だけ(`python -m app.cli add-user`。画面は J-038)。**名乗り出て登録する口は作らない**。足した人は、Google で入るか、`set-password` で決めた最初のパスワードで入って変える
+
+### Android アプリのログイン(§12)
+
+- RFC 8252(ネイティブアプリの OAuth)に従う。**ログインの画面はアプリの中に作らず、ブラウザで Works の `/login` を開く**(パスワードも Google も、Web と同じ 1 枚で済む)。埋め込みの WebView は使わない(RFC 8252 が禁じ、Google も WebView の中のログインを断る)
+- 開き方は **Auth Tab**(Chrome 137 以降。androidx.browser 1.9.0 で安定版)。Auth Tab の無いブラウザでは、自動で Custom Tabs に落ちる
+- クライアントは初めから入れてある公開クライアント `works-android`(動的登録ではない)。PKCE(S256)は必須。スコープは `api`
+- **戻り先は https**(`<公開 URL>/app/oauth/callback`)。Works が `/.well-known/assetlinks.json`(Digital Asset Links)で「この URL を受けてよいのは Works のアプリ(パッケージ名と署名の指紋)」と示し、Chrome と Android がそれを確かめる。値は `.env`(`WORKS_ANDROID_PACKAGE`・`WORKS_ANDROID_CERT_SHA256`)から api が返す(Caddy が api へ流す道に足す)
+- 戻り先の持ち主を確かめられるので、**許可のカードを出さない**。RFC 8252 §8.6 は「クライアントを確かめられないなら自動で許可しない」としていて、https の戻り先はその確かめに当たる。ログインが通れば、そのままアプリへ戻す
+- あとは Claude のコネクタと同じ(access 1 時間、refresh 90 日で使うたびに替わる)。refresh は同時に 1 本だけ走らせる(2 本走ると後の 1 本が `invalid_grant` になり、ログアウトしたように見える。J-043 の refresh の件も参照)
+- ログアウトは `/revoke` で許可ごと消す。アカウントの画面からも切れる
+
+### 経緯
+
+- 2026-09-22: 外側の門を Cloudflare Access に決めた(Q-035)。IdP は One-time PIN と Google Workspace(Q-039)
+- 2026-09-24: アプリは Access の JWT(`Cf-Access-Jwt-Assertion`)を確かめ、そのメールアドレスで利用者を決める形にした(J-023)。当時は、A 案「アプリが自分で認証する。どこへ引っ越しても同じ」と、B 案「Access を信頼する。楽だが Cloudflare の外では成り立たない」を比べ、本人が B を選んだ
+- 2026-10-01: Android のネイティブアプリ(01 D-15)を作るにあたり、A 案に切り替えた(01 D-14)。Access の頃の実装(`app/access.py`、`WORKS_AUTH`)は、自前のログインを作るとき(J-053)に消す。本番から Access を外すのは J-055(06 §3)
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
 **2026-09-24 に作った**(J-028)。本人の要望: 「Google スライドなどのカスタム MCP と同じく、Claude のアプリで 1 回設定したら、同じ Claude を使うほかの端末でも使えるようにしたい」。
 
 - **繋ぎ方の本筋は Claude のカスタムコネクタ(リモート MCP + OAuth)。**Claude の設定 › コネクタで URL(`https://works.sanei-clover.com/mcp`)を 1 回足して許可すれば、Claude.ai の Web・デスクトップ・スマホ・Claude Code(claude.ai のコネクタとして)のどれでも使える。コネクタはアカウントに付き、端末ごとの設定が要らないため。一次資料: Claude のコネクタの認証の説明(https://claude.com/docs/connectors/building/authentication、2026-09-24 確認)。「Claude.ai・Desktop・モバイル・Claude Code・Cowork は同じ仕組みを使う」
-- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7(Anthropic の送信元からだけ、機械向けの口を素通しにする。2026-09-24 本人が承認)
-- **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Access の内側の画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる(03 §5 の B 案と同じく、利用者は Access の JWT で決まる)
-- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ
-- 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(こちらは Access のサービストークンも要る。06 §7)
+- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7(Anthropic の送信元からだけ、機械向けの口を素通しにする。2026-09-24 本人が承認)。**Access を外したあと(J-055)は、この例外は要らない**(機械向けの口はだれからでも届き、守るのは Works の OAuth)
+- **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Works にログインした画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる(切り替え(J-055)までは、ログインは Access の JWT で決まる。§5)
+- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ。Android アプリは動的登録ではなく、初めから入れてあるクライアント(§5)
+- 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(Access を外すまでは、Access のサービストークンも要る。06 §7)
 - ツールは 6 つ: `list_tables`・`search`・`list_records`・`get_record`(時系列も)・`create_record`・`update_record`。**画面と同じ関数を呼ぶ**(検証、既定値、業務ルール、繰り返し、言及)。DB を直接触らせない。**削除のツールは持たない**(会話の中では「元に戻す」に気づきにくい)。環境設定(テーブル定義など)も MCP からは変えない
 - 状態を持たない形(stateless HTTP + JSON の応答)。1 プロセス・利用者 1〜3 名の前提。プロトコルは SDK が最新版(2026-07-28)と 1 つ前(2025-11-25)の両方を受ける(`backend/tests/test_mcp.py`)
 
@@ -244,3 +310,42 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 - 1 プロセスの前提(利用者 1〜3 名。uvicorn は 1 ワーカー)。プロセスを増やしても `skip locked` で同じ行は取り合わないが、同じチャンネルの 1 秒の間隔はプロセスごとにしか守れない
 - テストは送り係を起こさない(`WORKS_WORKFLOW_RUNNER=false`)。`runner.run_due()` を直に呼んで送る
 - leadcast-sales の通知(台帳 `notification_deliveries` + SQS + Lambda)と同じ考え方を、1 プロセスの規模に落とした
+
+## 12. Android アプリ(2026-10-01。01 D-15)
+
+何を作るか(範囲)は Q-047 で決める。ここでは、何を作っても変わらない作りを決める。
+
+- 置き場は `android/`。Gradle のプロジェクトで、Android Studio ではここを開く。npm(画面)・uv(API)とは道具立てが独立していて、モノレポ用の道具は要らない
+- 言語と画面は **Kotlin + Jetpack Compose** を想定する。採るときに一次資料で非推奨でないことを確かめ、§13 に書き足す。SDK は `android sdk`(Android CLI)で入れ、`sdkmanager` は使わない(共通ルール)
+- データは画面と同じ `/api/v1`(04)。契約の型は `frontend/src/api/types.ts` を Kotlin に写す(バックエンドは応答の型を OpenAPI に出していないので、生成には頼れない)。**契約を変えたら、型・モック・`http.ts`・04 に加えて `android/` も同じコミットで揃える**(`android/` ができたら CLAUDE.md の決まりに足す)
+- 画面はメタデータで描く(01 D-01)。Web で足したテーブル・項目・ビューは、アプリを出し直さずに出る
+- 色・文字の正は `frontend/src/styles/index.css` のトークン。Android のテーマはそれを写す
+- ログインは §5(Auth Tab + OAuth + PKCE、戻り先は https)。**Google の SDK は入れない**(旧 Google Sign-In for Android は 2026-08 に SDK から消え、後継は Credential Manager。ブラウザで Works にログインする作りなら、どちらも要らない)。**AppAuth-Android も使わない**(最後の版が 2021-12)。Auth Tab と PKCE は、ライブラリ無しで書ける量
+- トークンの置き場: refresh token は Android Keystore の鍵(AES-GCM)で暗号化して、アプリの中に置く。`androidx.security:security-crypto`(EncryptedSharedPreferences)は 2025 年に全 API が非推奨になったので使わない(§13)
+- 確かめは `scripts/verify-android.sh`(ビルド・lint・単体テスト)。**`verify.sh` には入れない**(無人ループと着地の関門で、Android SDK の無い worktree が落ちるため)
+- 公開リポジトリなので、署名鍵(`*.jks`・`*.keystore`)・`local.properties`・`google-services.json` は入れない(`.gitignore`)。署名の指紋は公開してよい値で、`.env` から assetlinks に出す
+- Android だけの決まりは `android/CLAUDE.md` に書く(そのディレクトリを触るときだけ読まれ、Web・API の作業の文脈を増やさない)
+- 配り方(APK を直に入れる・Google Play の内部テスト)は、作ってから決める
+
+## 13. 一次資料での確認結果(ログインと Android・2026-10-01)
+
+共通ルールに従い、採るもの・採らないものを一次資料で確かめた(2026-10-01。公式の頁を直に取得)。
+
+| もの | 確かめたこと | 出典 |
+|---|---|---|
+| NIST SP 800-63B-4 | 2025-07-31 に確定版。パスワードだけで入るなら 15 文字以上(二段階目の一部なら 8 文字以上)、64 文字以上を受ける(SHOULD)、文字の種類の縛りは禁止、漏えいした一覧との照合は必須(全体で照らす)、同じアカウントの続けての失敗は 100 回まで | https://pages.nist.gov/800-63-4/sp800-63b.html |
+| OWASP Password Storage Cheat Sheet | Argon2id の最小は 19 MiB・2 回・並列 1 | https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html |
+| argon2-cffi(採る) | 25.1.0(2025-06-03)。Production/Stable、Python 3.13・3.14 対応。リポジトリは 2026-09 もコミットがある。`PasswordHasher` の既定は RFC 9106 の低メモリの組(t=3・m=64 MiB・p=4)、`check_needs_rehash` あり | https://pypi.org/project/argon2-cffi/ |
+| passlib(採らない) | 最後の版が 1.7.4(2020-10-08)。Python 3.13 では `crypt` が消えた。bcrypt 5.0.0 と組むと、起動時の自己診断が 72 バイトを超える値を渡して `ValueError` で落ちる(手元で再現)。FastAPI の手引きは `pwdlib` + Argon2 を勧めている。Argon2 を 1 つ使うだけなので、その下の `argon2-cffi` を直に使う | https://pypi.org/project/passlib/ 、https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/ |
+| Google OpenID Connect | `iss` は `https://accounts.google.com` か `accounts.google.com`、`aud` はクライアント ID、期限を確かめる。利用者の ID には `sub` を使い、メールアドレスを使わない | https://developers.google.com/identity/openid-connect/openid-connect |
+| Google の「内部」 | 組織のメンバーだけが許可でき、ほかは `org_internal`。審査は要らない | https://support.google.com/cloud/answer/15549945 |
+| Google の WebView の禁止 | 開発者が操れる埋め込みの user-agent で、Google の OAuth を開いてはいけない(`disallowed_useragent`) | https://developers.google.com/identity/protocols/oauth2/policies |
+| RFC 8252 | ネイティブアプリの OAuth は外のブラウザで。PKCE は必須。戻り先は private-use scheme・https・loopback の 3 つで、https を優先する(SHOULD)。確かめられないクライアントは自動で許可しない(§8.6) | https://www.rfc-editor.org/rfc/rfc8252 |
+| Auth Tab(androidx.browser。採る) | Chrome 137 以降。戻り先は独自の scheme か https(Digital Asset Links の確かめが必須。http は不可)。無いブラウザでは Custom Tabs に落ちる。1.9.0 が 2025-07-30 に安定版、最新は 1.10.0(2026-03-25)。Chrome の手引きは今も「alpha」と書いているが、リリースノートのほうが新しい | https://developer.chrome.com/docs/android/custom-tabs/guide-auth-tab 、https://developer.android.com/jetpack/androidx/releases/browser |
+| Google Sign-In for Android(採らない) | 非推奨を経て、2026-08-26 の play-services-auth 22.0.0 で API が消えた。後継は Credential Manager | https://developers.google.com/android/guides/releases |
+| AppAuth-Android(採らない) | 最後の版が 0.11.1(2021-12-22) | https://github.com/openid/AppAuth-Android |
+| androidx.security:security-crypto(採らない) | 1.1.0-alpha07(2025-04-09)で全 API が非推奨。「プラットフォームの API と Android Keystore を直に使うこと」 | https://developer.android.com/jetpack/androidx/releases/security |
+| Cloudflare の率の上限 | 無料で 1 本。数えるのは IP ごと、期間 10 秒、遮る時間 10 秒、条件に使えるのはパスと Verified Bot だけ(メソッドは Business 以上) | https://developers.cloudflare.com/waf/rate-limiting-rules/ |
+| Cookie の `__Host-` | `Secure`、https から置く、`Domain` なし、`Path=/` が要る | https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie |
+| Have I Been Pwned の Pwned Passwords | 無料・キー不要・率の上限なし。送るのは SHA-1 の先頭 5 文字だけ。`User-Agent` が無いと 403 | https://haveibeenpwned.com/API/v3#PwnedPasswords |
+| Cloudflare Turnstile | 無料。サーバから siteverify で確かめる(Web フォームにスパムが来たら足す。06 §7) | https://developers.cloudflare.com/turnstile/ |
