@@ -10,7 +10,9 @@ from app.meta.tables import metadata
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # すでにある app のロガーを止めない(既定の disable_existing_loggers=True だと、同じプロセスで
+    # マイグレーションを流したあと、app の警告が出なくなる。pytest はテストの前に同じプロセスで流す)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_url)
 target_metadata = metadata

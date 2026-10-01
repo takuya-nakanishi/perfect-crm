@@ -1,6 +1,7 @@
 import { ApiError } from '@/api/client'
-import type { Account, AccountSession, TotpSetup } from '@/api/types'
+import type { Account, AccountSession, LoginProvider, TotpSetup } from '@/api/types'
 import { cleanCode } from '@/lib/code'
+import { providerLabel } from '@/lib/login'
 
 /**
  * アカウントの擬似データ(05 §15、04 §16)。利用者ごとに localStorage に持つ。
@@ -60,8 +61,14 @@ export function getAccount(userId: string): Account {
     password_changed_at: entry.password_changed_at,
     totp_enabled_at: entry.totp_enabled_at,
     google_email: null,
+    microsoft_email: null,
     recent_login: Date.now() - Date.parse(entry.logged_in_at) <= 10 * 60 * 1000,
   }
+}
+
+/** モックは Google・Microsoft に繋がない。結ぶ・外すの口はサーバの「設定が無い」と同じ形で断る */
+export function providerNotConfigured(provider: LoginProvider): ApiError {
+  return new ApiError(409, 'not_configured', `${providerLabel(provider)} でのログインは、まだ設定されていません`)
 }
 
 /** サーバ(app/auth/passwords.py の problem)と同じ決まりと文。漏えいした一覧はモックでは見ない */

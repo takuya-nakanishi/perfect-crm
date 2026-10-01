@@ -1,18 +1,21 @@
-"""アカウント(04 §16)。ログイン中の本人が、自分のパスワード・2 段階認証・ログイン中の端末を扱う(05 §15)。
+"""アカウント(04 §16)。ログイン中の本人が、自分のパスワード・2 段階認証・Google と Microsoft・
+ログイン中の端末を扱う(05 §15)。
 
-パスワードと 2 段階認証を変えるには、**10 分以内にログインしたこと**か、いまのパスワードが要る(03 §5)。
+パスワードと 2 段階認証を変える・Google と Microsoft を結ぶには、**10 分以内にログインしたこと**が要る
+(パスワードを変えるときは、いまのパスワードでもよい。03 §5)。
 """
 
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select, update
 
 from app.api.deps import Conn, CurrentUser
 from app.api.session import CodeBody, error, too_many
-from app.auth import challenges, passwords, sessions, throttle, totp
+from app.auth import challenges, oidc, passwords, sessions, throttle, totp
 from app.errors import ApiError, not_found
 from app.meta import store
 from app.meta.tables import user_sessions, users
@@ -42,6 +45,7 @@ def read_account(request: Request, user: CurrentUser) -> dict[str, Any]:
         "password_changed_at": _iso(me.password_changed_at),
         "totp_enabled_at": _iso(me.totp_enabled_at),
         "google_email": me.google_email,
+        "microsoft_email": me.microsoft_email,
         "recent_login": sessions.is_recent(me.session_created_at),
     }
 
@@ -164,3 +168,42 @@ def revoke_other_sessions(request: Request, user: CurrentUser, conn: Conn) -> No
     """いま使っている端末以外を、すべて切る。"""
     me = _me(request)
     sessions.revoke_all(conn, me.id, keep=me.session_id)
+
+
+@router.post("/account/identities/{provider}")
+def start_link(provider: oidc.Provider, request: Request, user: CurrentUser) -> Response:
+    """Google・Microsoft を結び始める。許可の画面の URL を返す(画面はそこへページごと移る)。
+
+    戻りは `/session/{provider}/callback`(ログインと同じ口。Cookie の状態で、結ぶのか入るのかを見分ける)。
+
+    入る手段を足すことなので、10 分以内のログインが要る(盗まれたセッションから、他人のアカウントを結ばせない)。
+    """
+    me = _me(request)
+    label = oidc.LABELS[provider]
+    if not oidc.enabled(provider):
+        raise ApiError(409, "not_configured", f"{label} でのログインは、まだ設定されていません")
+    if not sessions.is_recent(me.session_created_at):
+        raise ApiError(
+            400, "reauth_required", f"{label} を結ぶには、ログインし直してください(10 分以内のログインが要ります)"
+        )
+    try:
+        url, flow = oidc.start(provider, next_path="/account", user_id=str(me.id))
+    except oidc.OidcError as exc:
+        raise ApiError(
+            502, "provider_unavailable", f"{label} に繋がりませんでした。少し待ってからもう一度お試しください"
+        ) from exc
+    response = JSONResponse({"url": url})
+    sessions.set_cookie(response, oidc.cookie(), flow, oidc.FLOW_TTL)
+    return response
+
+
+@router.delete("/account/identities/{provider}", status_code=204)
+def unlink(provider: oidc.Provider, request: Request, user: CurrentUser, conn: Conn) -> None:
+    """外す。ほかに入る手段(パスワードか、もう一方)が残るときだけ。"""
+    me = _me(request)
+    others = [me.password_hash, *(getattr(me, f"{p}_sub") for p in oidc.PROVIDERS if p != provider)]
+    if all(v is None for v in others):
+        raise ApiError(
+            409, "last_login_method", "ほかに入る方法が無くなるので外せません。先にパスワードを決めてください"
+        )
+    conn.execute(update(users).where(users.c.id == me.id).values({f"{provider}_sub": None, f"{provider}_email": None}))

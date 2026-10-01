@@ -8,11 +8,12 @@ Cloudflare の API も .env も使わない。確かめること(docs/design/06 
 
 - 画面の HTML・SPA のパス・/healthz が、Access のログインへ送られずに返る。配る側のヘッダ(CSP・HSTS など)が付く
 - 未ログインの API は 401 unauthenticated(アプリが答えている)。ログインの画面が読むものは 200
+- Google・Microsoft でログインを開けていれば、その口が提供元の許可の画面へ送り、戻り先が公開 URL を名乗る
 - よそのサイトからのログインは 403 bad_origin
 - MCP はトークンが無ければ 401 で、メタデータの場所を教える。OAuth のメタデータが公開 URL を名乗る
 - 20 MB を超える本文は 413(api に届く前に Caddy が断る)
 """
-import argparse, json, sys, urllib.error, urllib.request
+import argparse, json, sys, urllib.error, urllib.parse, urllib.request
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 p.add_argument('host')
@@ -63,7 +64,21 @@ check(status == 200 and body.strip() == 'ok', '/healthz が返る', f'HTTP {stat
 status, body, _ = fetch('/api/v1/session')
 check(status == 401 and code_of(body) == 'unauthenticated', '未ログインの API は 401 unauthenticated', f'HTTP {status} {code_of(body)}')
 status, body, _ = fetch('/api/v1/session/options')
-check(status == 200 and 'google' in body, 'ログインの画面が読むもの(/session/options)は 200', f'HTTP {status}')
+check(status == 200 and 'google' in body and 'microsoft' in body, 'ログインの画面が読むもの(/session/options)は 200', f'HTTP {status}')
+options = json.loads(body) if status == 200 else {}
+# 開けた提供元だけ: ボタンの口が許可の画面へ送る(状態は Cookie に置くだけで、DB には何も書かない)
+for provider, host in (('google', 'accounts.google.com'), ('microsoft', 'login.microsoftonline.com')):
+    if not options.get(provider):
+        print(f'SKIP {provider} でログイン(設定が無い)')
+        continue
+    status, _, headers = fetch(f'/api/v1/session/{provider}?next=/')
+    target = urllib.parse.urlparse(headers.get('location', ''))
+    query = urllib.parse.parse_qs(target.query)
+    check(
+        status == 303 and target.netloc == host and query.get('redirect_uri') == [f'{base}/api/v1/session/{provider}/callback'],
+        f'{provider} でログインの口が、許可の画面へ公開 URL の戻り先で送る',
+        f'HTTP {status} {target.netloc}',
+    )
 status, body, _ = fetch('/api/v1/session', 'POST', json.dumps({'email': 'nobody@example.com', 'password': 'x'}).encode(),
                         {'Content-Type': 'application/json', 'Origin': 'https://evil.example'})
 check(status == 403 and code_of(body) == 'bad_origin', 'よそのサイトからのログインは 403 bad_origin', f'HTTP {status} {code_of(body)}')

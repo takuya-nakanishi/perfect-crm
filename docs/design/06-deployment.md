@@ -50,7 +50,8 @@
 
 - 戻すとき(門をまた置く): `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --anthropic /mcp,/token,/register,/revoke,/.well-known/oauth-authorization-server,/.well-known/oauth-protected-resource`。アプリのログインはそのまま(Access の JWT は見ない)なので、門の内側でも Works のログインが要る。スマホのアプリとエージェントは、また門で止まる
 - One-time PIN の IdP は消さない(アカウントで共有するもの)
-- Google でログイン(J-054)を使うなら、Workspace の管理コンソールで 2 段階認証を必須にしておく(Google で入るときは Works の 6 桁を求めないため)
+- Google でログインを使うなら、Workspace の管理コンソールで 2 段階認証を必須にしておく(Google で入るときは Works の 6 桁を求めないため)。Microsoft で入るときは Works の 6 桁を求めるので、こちらは要らない
+- Google・Microsoft でログインを本番で開ける手順は runbook §6(Google のクライアントに戻り先を足す)と §6c(Entra のアプリ登録と証明書)。`.env` に入れて api を建て直すと、ログインの画面にボタンが出る(J-069)
 
 ## 4. 配る側のヘッダ(`frontend/Caddyfile`)
 
@@ -84,7 +85,7 @@ Tunnel をやめて ALB などで直接受けるなら、TLS を自前で持つ�
 
 | 経路 | 誰が叩くか | 認証 |
 |---|---|---|
-| 画面と `/api/v1/*` | ブラウザ | セッションの Cookie(パスワード + TOTP か Google。03 §5) |
+| 画面と `/api/v1/*` | ブラウザ | セッションの Cookie(パスワード + TOTP、Google、Microsoft + TOTP。03 §5) |
 | `/api/v1/*` | Android アプリ(J-056) | OAuth の access token(スコープ `api`。03 §5) |
 | `/mcp` と OAuth の口 | Claude のカスタムコネクタ(Anthropic のクラウドから)・Claude Code | OAuth(本人が Works にログインして許可する。03 §6) |
 | `/mcp` | Codex など、ヘッダを自分で付けるアプリ | 環境設定で発行したトークン(`wks_`。04 §10) |
@@ -94,6 +95,7 @@ Tunnel をやめて ALB などで直接受けるなら、TLS を自前で持つ�
 - **Web フォーム**: 訪問者のブラウザから直に送れる(環境設定が出す埋め込みの HTML)。鍵(URL)を訪問者に見せたくなければ、サイトのサーバから転送する。スパムが来たら Turnstile を足す(03 §13)
 - 管理 API(`/settings/*`)は、管理者のセッションだけが通る
 - Google と Slack の戻り(`/api/v1/google/callback`・`/api/v1/slack/callback`)は、署名付きの `state` で、だれの許可かを決める
+- Google・Microsoft でログインの戻り(`/api/v1/session/{google,microsoft}/callback`)は、state を署名した Cookie と照らし、ID トークンを確かめる。コードの引き換えは送り元ごとに 1 分 10 回まで(03 §5「門を置かずに守る」)
 - 記録: Access のログは無くなる。ログインは `login_attempts`(02 §8)、MCP は `oauth_grants.last_used_at`、ほかは api のログ
 
 ### 2026-09-22〜10-01 の形(記録)

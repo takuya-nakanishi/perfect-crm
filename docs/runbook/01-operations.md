@@ -68,7 +68,7 @@ python3 scripts/public-check.py works.sanei-clover.com
 ```
 
 - `cloudflare-tunnel-setup.py` は何度打っても同じ結果になる。Tunnel を作り直したときは `.env` の `CLOUDFLARE_TUNNEL_TOKEN` を置き換えるので、そのあと `docker compose --profile public up -d` で cloudflared を作り直す。`--remove-access` は、このホストとその下のパスの Access アプリをすべて消す(無ければ何もしない)
-- `public-check.py` は、公開 URL に門を挟まずに届き、アプリの守りが効いていることを外から確かめる: 画面の HTML と配る側のヘッダ、未ログインの API が 401、よそのサイトからのログインが 403、MCP がトークン無しで 401、OAuth のメタデータ、20 MB を超える本文が 413。**読むだけで、本番の DB を書き換えない**(Cloudflare の API も `.env` も使わない)。門がまだあれば「Access のログインへ送られた」で落ちる
+- `public-check.py` は、公開 URL に門を挟まずに届き、アプリの守りが効いていることを外から確かめる: 画面の HTML と配る側のヘッダ、未ログインの API が 401、よそのサイトからのログインが 403、Google・Microsoft でログインを開けていれば許可の画面へ公開 URL の戻り先で送ること、MCP がトークン無しで 401、OAuth のメタデータ、20 MB を超える本文が 413。**読むだけで、本番の DB を書き換えない**(Cloudflare の API も `.env` も使わない)。門がまだあれば「Access のログインへ送られた」で落ちる
 - **公開 URL に E2E(smoke.mjs)を流さない**(本番の DB を書き換える。2026-09-24 まではモックだったので流していた)
 - トークンの値は、どのスクリプトも表示しない。`.env` の中身を画面やログに出さないこと
 
@@ -129,9 +129,10 @@ docker compose logs -f api
 | Claude が「MCP サーバに届かない」 | api のログに `/mcp` が来ていなければ、手前(Tunnel・Cloudflare)で止まっている。門(Access)が戻っていないかも見る(06 §3) |
 | `/mcp` が 421 や 400 `Invalid Host` | `WORKS_PUBLIC_URL` が公開 URL と違う(api は Host を公開 URL のホストと突き合わせる) |
 
-## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
+## 6. Google ドライブを繋ぐ・Google でログイン(GCP 側の手順・2026-09-23。ログインは 2026-10-02)
 
-画面の「Google に接続」が動くまでに、**人が 1 回だけ**やること。設計は `docs/design/04` §8。
+画面の「Google に接続」と、ログインの画面の「Google でログイン」が動くまでに、**人が 1 回だけ**やること。
+同じ OAuth クライアントを使う。設計は `docs/design/04` §8(ドライブ)・`03` §5(ログイン)。
 **ここで作る値(クライアント ID とシークレット、署名鍵)は `.env` に入れるだけで、コミットしない。**
 
 | | |
@@ -163,7 +164,10 @@ openssl rand -hex 24     # → WORKS_DB_PASSWORD(まだ入れていなければ�
 
    ```
    https://works.sanei-clover.com/api/v1/google/callback
+   https://works.sanei-clover.com/api/v1/session/google/callback
    ```
+
+   1 つ目はドライブの繋ぎ、2 つ目は「Google でログイン」の戻り先。クライアントを作ってあれば、クライアントの詳細画面で 2 つ目を足すだけ
 
 5. 作成直後のダイアログに **クライアント ID** と **クライアント シークレット** が出る。
    閉じてしまっても、クライアントの詳細画面からいつでも見られる(JSON でも落とせる)
@@ -187,6 +191,10 @@ docker compose --profile backend up -d --build api
 タスクか商談のパネルの「資料」に「Google に接続」が出る。押して自分の Workspace アカウントで許可すると、
 同じ画面へ戻ってきて「新規」「参照」が使えるようになる。
 
+ログインの画面に「Google でログイン」が出る。初めて押したとき、Works に登録してあるアドレスと同じ Workspace の
+アカウントなら、そのまま結ばれて入れる(6 桁は求めない。**Workspace の管理コンソールで 2 段階認証を必須にしておく**)。
+アドレスが違う人は、Works に入ってから アカウント › Google › 「Google を結ぶ」。
+
 つまずいたとき:
 
 | 症状 | 見るところ |
@@ -195,6 +203,8 @@ docker compose --profile backend up -d --build api
 | `redirect_uri_mismatch` | GCP のリダイレクト URI と `WORKS_GOOGLE_REDIRECT_URI` の不一致(末尾の `/`・http と https・ホスト名) |
 | 繋いだのに次の日また「Google に接続」が出る | `WORKS_SECRET_KEY` が空だと、再起動のたびに鍵が変わって保存した token を読めない(`.env` に固定する) |
 | 403 `access_denied` で戻る | 同意画面が「内部」で、押した人が Workspace の利用者か。外部アカウント(個人の Gmail)では通らない |
+| 「Google でログイン」で「この Google アカウントは Works に登録されていません」 | Works の利用者のアドレス(`users.email`)と、Google のアドレスが同じか。違えば、Works に入ってからアカウントの画面で結ぶ。個人の Gmail は、同意画面が「内部」なので Google が断る |
+| 「Google でログイン」で `redirect_uri_mismatch` | GCP の承認済みのリダイレクト URI に `…/api/v1/session/google/callback` を足したか(ドライブの戻り先とは別) |
 | Google の戻りで Works のログインの画面が出る | 誰の許可かは署名付きの `state` が持つが、戻ったあとの画面はログインが要る。**同じブラウザで Works にログインしたまま**繋ぐ |
 
 出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)。
@@ -264,6 +274,72 @@ WORKS_SLACK_CLIENT_SECRET=<...>
 
 出典(2026-09-30 確認。いずれも非推奨の表示なし): Slack「Sending messages using incoming webhooks」(`https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks`。`oauth.v2.access` の `incoming_webhook`、エラーコード、投稿先を本文で変えられないこと)、「Installing with OAuth」(`https://docs.slack.dev/authentication/installing-with-oauth`。`redirect_uri` は HTTPS で、登録した URL と一致かその下)、「Distributing your app」(`https://docs.slack.dev/app-management/distribution`。作ったワークスペースに入れるだけなら配布は要らない)。
 leadcast-sales の同じ仕組み(専用のアプリを作って配布する形)は、そのリポジトリの `docs/notifications/SLACK.md`。
+
+## 6c. Microsoft でログイン(Entra ID のアプリ登録・2026-10-02)
+
+ログインの画面に「Microsoft でログイン」が出るまでに、**人が 1 回だけ**やること。設計は `docs/design/03` §5「Microsoft でログイン」。
+個人の Microsoft アカウント(Outlook.com など)と、職場・学校のアカウント(Microsoft 365)の両方で入れる。
+**Microsoft で入るときも Works の 6 桁(2 段階認証)を使う。**ここで作る値は `.env` に入れるだけで、コミットしない。
+
+| | |
+|---|---|
+| 登録する場所 | Microsoft Entra 管理センター `https://entra.microsoft.com` › Entra ID › アプリの登録 |
+| 前提 | Azure のアカウント(無料で作れる。既定のディレクトリにアプリを登録できる)。個人の Microsoft アカウントでサインインして作ってよい |
+| 戻り先 | `https://works.sanei-clover.com/api/v1/session/microsoft/callback` |
+
+**A. アプリを登録する**
+
+1. アプリの登録 › **新規登録**。名前は `Works`(Microsoft の同意の画面に出る)
+2. **サポートされているアカウントの種類**は、**すべての組織(Entra ID のテナント)と個人の Microsoft アカウントの両方**を受けるもの
+   (英語の画面では **Any Entra ID Tenant + Personal Microsoft accounts**。2026-10-02 に Microsoft Learn で確かめた表記。日本語の画面では文言が違うことがある)
+3. **リダイレクト URI**: 種類は **Web**、値は上の「戻り先」を**1 文字も違わず**。「暗黙的な許可とハイブリッド フロー」のチェックは入れない(Works は認可コードだけを使う)
+4. 登録したら、概要の **アプリケーション (クライアント) ID** を控える(`WORKS_MICROSOFT_CLIENT_ID`)
+5. **トークン構成** › 省略可能な要求を追加 › トークンの種類は **ID** › `email` と `xms_edov` にチェック(Microsoft Graph の email のアクセス許可を足すかを聞かれたら、足す)。
+   `xms_edov` は「アドレスのドメインの持ち主が確かめたか」。これがあるときだけ、初めての Microsoft のログインで、同じアドレスの Works の利用者に結ぶ。
+   無くても、Works に入ってからアカウントの画面で結べば使える
+6. API のアクセス許可は既定のまま(`User.Read`。Works は Microsoft Graph を呼ばない)
+
+**B. 証明書を作って上げる**(client secret は使わない。Microsoft が本番では使わないよう求めている。03 §13)
+
+```
+scripts/microsoft-login-cert.sh
+```
+
+- 証明書(2 年)を作り、秘密鍵と証明書を `.env` の `WORKS_MICROSOFT_CERTIFICATE` に書き足す(値は画面に出さない。もう入っていれば止まる)
+- Entra に上げる証明書(公開してよい側)を `~/works-microsoft-login.crt` に置き、Windows から開くときの道と、SHA-1 の指紋(Entra の「拇印」)を出す
+- アプリの登録 › **証明書とシークレット** › 証明書 › **証明書のアップロード** で、その `.crt` を上げる。一覧の拇印が、スクリプトの出した指紋と同じことを確かめる
+
+**C. `.env` に入れて建て直す**
+
+```
+WORKS_MICROSOFT_CLIENT_ID=<A-4 の ID>
+# WORKS_MICROSOFT_CERTIFICATE は B のスクリプトが書いた
+# 既定は common(個人 + 職場・学校)。絞るときだけ organizations・consumers・テナントの ID
+WORKS_MICROSOFT_TENANT=
+```
+
+```
+docker compose --profile backend up -d api
+```
+
+ログインの画面に「Microsoft でログイン」が出る。押して Microsoft でサインインすると、Works の 6 桁の段に戻ってくる
+(2 段階認証がまだなら、QR で設定してから入る)。初回に「この Microsoft アカウントは Works に結ばれていません」と出たら、
+パスワードか Google で Works に入り、アカウント › Microsoft › 「Microsoft を結ぶ」(10 分以内のログインが要る)。
+
+つまずいたとき:
+
+| 症状 | 見るところ |
+|---|---|
+| api が起動しない(`docker compose logs api` に WORKS_MICROSOFT_…) | ID と証明書の片方だけ・証明書が読めない・秘密鍵と証明書が対になっていない。B をやり直す(`.env` の行を消してから) |
+| Microsoft の画面で `AADSTS50011`(リダイレクト URI の不一致) | アプリ登録の Web のリダイレクト URI と、上の戻り先が 1 文字でも違う(末尾の `/`・http と https) |
+| `AADSTS700027`・`invalid_client`(Works のログに microsoft_failed) | Entra に上げた証明書と、`.env` の証明書が違う(拇印を比べる)。期限切れ |
+| 個人の Microsoft アカウントで入れない(`unauthorized_client` など) | A-2 のアカウントの種類が「個人用 Microsoft アカウント」を含んでいるか |
+| 毎回「結ばれていません」 | A-5 の `xms_edov` が無い・アドレスのドメインが確かめられていない。アカウントの画面から結べば以後は入れる |
+
+期限: 証明書は 2 年。切れる 30 日前から、api の起動のログに知らせが出る。作り直すときは `.env` の行を消して B を流し、
+Entra に新しい証明書を上げてから古いものを消し、api を建て直す。
+
+出典: Microsoft Learn「アプリの登録」「アプリの資格情報の追加」「証明書の資格情報」「省略可能な要求」(2026-10-02 参照。03 §13)。
 
 ## 7. 版を上げる
 

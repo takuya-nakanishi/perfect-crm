@@ -20,8 +20,9 @@
 | `POST /session` | ログインの 1 段目(`email`・`password`)。通れば 2 段目(TOTP)へ。§16 | `LoginResult`。違う → 401 `invalid_credentials`。続けて失敗 → 429 `too_many_attempts` |
 | `POST /session/totp` | ログインの 2 段目(6 桁)。通ればセッションの Cookie を置く。§16 | `Session` |
 | `DELETE /session` | ログアウト(このセッションを消し、Cookie を消す) | 204 |
-| `GET /session/google?next=` / `GET /session/google/callback` | Google でログイン(ブラウザで開く。fetch しない)と、その戻り。§16 | 303 |
-| `GET /account` ほか | パスワードの変更、Google の結び・外し、ログイン中の端末とアプリ。§16 | |
+| `GET /session/{google,microsoft}?next=` / `GET /session/{google,microsoft}/callback` | Google・Microsoft でログイン(ブラウザで開く。fetch しない)と、その戻り。§16 | 303 |
+| `GET /session/challenge` | 待っている 2 段目を読み直す(Microsoft から戻ったとき)。§16 | `LoginResult` |
+| `GET /account` ほか | パスワードの変更、Google・Microsoft の結び・外し、ログイン中の端末とアプリ。§16 | |
 | `GET /meta` | テーブル・項目・ビュー・サイドバーのフォルダ・利用者の定義。起動時に 1 回 | `MetaResponse` |
 | `POST /meta/objects` | テーブルを作る(本文に `ObjectInput`)。§6 | `MetaResponse` |
 | `PUT /meta/objects/{key}` | テーブル設定を保存する(本文に `ObjectInput`。項目は全量) | `MetaResponse` |
@@ -280,46 +281,47 @@
 
 ## 16. ログインとアカウント(2026-10-01。03 §5)
 
-ログインはアプリ自身が持つ(01 D-14)。型は `Session`(いまと同じ)・`SessionOptions`・`LoginResult`・`TotpSetup`・`Account`・`AccountSession`。
+ログインはアプリ自身が持つ(01 D-14)。型は `Session`(いまと同じ)・`SessionOptions`・`LoginProvider`(`'google' | 'microsoft'`)・`LoginResult`・`TotpSetup`・`Account`・`AccountSession`。
 
 **画面のログイン**(Cookie `__Host-works_session`)
 
 | メソッドとパス | 役割 | 応答 |
 |---|---|---|
-| `GET /session/options` | ログインの画面が出すもの(未ログインで読める) | `SessionOptions`: `{ google: boolean }`(Google でログインが使えるか。J-054 までは false) |
+| `GET /session/options` | ログインの画面が出すもの(未ログインで読める) | `SessionOptions`: `{ google: boolean, microsoft: boolean }`(提供元ごとに、設定があってボタンを出すか) |
 | `POST /session` | 本文 `{ email, password }`。通っても**まだセッションを作らず**、2 段目を待つ札の Cookie `__Host-works_login`(5 分)を置く | `LoginResult`: `{ status: 'totp' }`(6 桁を待つ)か、`{ status: 'totp_setup', setup: TotpSetup }`(2 段階認証がまだの人。設定してから入る)。モックは `{ status: 'ok', session }`(2 段目を出さない)。違う → 401 `invalid_credentials`「メールアドレスかパスワードが違います」(メールアドレスが無いときも同じ文・同じくらいの時間)。続けて失敗 → 429 `too_many_attempts`(`Retry-After` と、待つ時間の文)。空 → 400 |
-| `POST /session/totp` | 本文 `{ code }`(6 桁)。札の 2 段目を済ませ、セッションを作って Cookie を置く(前のセッションは引き継がない)。`totp_setup` の札なら、この 6 桁で設定も済ませる | `Session`。違う → 400 `invalid_code`「確認コードが違います」(端末の時刻のずれにも触れる)。札が無い・切れた・5 回違えた → 401 `login_expired`(パスワードからやり直す)。続けて失敗 → 429 |
+| `POST /session/totp` | 本文 `{ code }`(6 桁)。札の 2 段目を済ませ、セッションを作って Cookie を置く(前のセッションは引き継がない。`method` は札の 1 段目)。`totp_setup` の札なら、この 6 桁で設定も済ませる | `Session`。違う → 400 `invalid_code`「確認コードが違います」(端末の時刻のずれにも触れる)。札が無い・切れた・5 回違えた → 401 `login_expired`(1 段目からやり直す)。続けて失敗 → 429 |
+| `GET /session/challenge` | 待っている 2 段目を読み直す。Microsoft から戻ってページごと開き直したログインの画面が読む | `LoginResult`(`totp` か `totp_setup`。設定の中身は設定中の秘密から作り直す)。札が無い・切れた → 401 `login_expired` |
 | `DELETE /session` | ログアウト。このセッションの行を消し、Cookie を消す | 204 |
-| `GET /session/google?next=/o/tasks` | Google でログイン。短命の Cookie(state・nonce・PKCE の verifier・戻り先)を置き、Google の許可の画面へ送る | 303 |
-| `GET /session/google?link=1` | ログイン中の本人に Google を結ぶ(アカウントの画面から) | 303 |
-| `GET /session/google/callback?code&state` | Google からの戻り。state を Cookie と照らし、ID トークンを確かめ、利用者を決めてセッションを作る | 303 で `next` へ。入れない → `/login?error=<code>`(`google_not_registered`・`google_failed`・`google_denied`)。結ぶとき → `/account?google=linked`、だめなら `?google=<code>`(`google_in_use`: 別の利用者に結ばれている) |
+| `GET /session/{google,microsoft}?next=/o/tasks` | Google・Microsoft でログイン。署名した短命の Cookie `__Host-works_oidc`(state・戻り先。10 分)を置き、提供元の許可の画面へ送る(PKCE の verifier と nonce は state から鍵で導く) | 303 |
+| `GET /session/{google,microsoft}/callback?code&state` | 提供元からの戻り。state を Cookie と照らし、コードを替えて ID トークンを確かめ、利用者を決める。Google はセッションを作り、Microsoft は 2 段目(6 桁)の札を置く。Cookie に結ぶ相手がいれば、ログインではなく結ぶ | Google: 303 で `next` へ。Microsoft: 303 で `/login?continue=microsoft&next=…`(画面が `GET /session/challenge` を読んで 6 桁の段を出す)。入れない → `/login?error=<提供元>_<理由>&next=…`。結ぶとき → `/account?linked=<提供元>`、だめなら `/account?link_error=<提供元>_<理由>` |
 
-- `next` は同じオリジンの中の道(`/` で始まり `//` で始まらない)だけ。外の URL は `/` に置き換える
-- Google の設定が無いのに `GET /session/google` を開いた → 303 で `/login?error=google_not_configured`(Google の口は J-054)
+- 理由の符号: `not_registered`(結ばれた利用者がいない。初めてのときは、確かめられたアドレスの利用者を探して結ぶ。03 §5)、`denied`(許可の画面で断った)、`failed`(state が合わない・Cookie が無い・提供元に繋がらない・ID トークンが確かめられない)、`not_configured`(`.env` に設定が無い)、`busy`(同じ送り元からコードの引き換えが続いた)、`in_use`(結ぶとき。ほかの利用者に結ばれている)
+- `next` は同じオリジンの中の道(`/` で始まり、`//` で始まらず、`\` と制御文字を含まない)だけ。外の URL は `/` に置き換える
 
 **アカウント**(ログイン中の本人。画面は 05 §15)
 
 | メソッドとパス | 役割 | 応答 |
 |---|---|---|
-| `GET /account` | 自分のログインの状態 | `Account`: `has_password`、`password_changed_at`、`totp_enabled_at`(2 段階認証を設定した日時。まだなら null)、`google_email`(結んでいなければ null)、`recent_login`(このセッションが 10 分以内のログインか) |
-| `PUT /account/password` | 本文 `{ current_password?, new_password }`。`current_password` は、10 分以内にログインしたセッションなら要らない(忘れたら Google で入り直して決める)。**通ったら、このセッション以外のセッションと、アプリの許可をすべて切る** | 204。短い・よく使われている・メールアドレスと同じ → 400 `weak_password`(理由の文)。いまのパスワードが要る → 400 `reauth_required`。違う → 400 `invalid_credentials`(ログインの間引きと同じ数えに入る) |
+| `GET /account` | 自分のログインの状態 | `Account`: `has_password`、`password_changed_at`、`totp_enabled_at`(2 段階認証を設定した日時。まだなら null)、`google_email`・`microsoft_email`(結んでいなければ null)、`recent_login`(このセッションが 10 分以内のログインか) |
+| `PUT /account/password` | 本文 `{ current_password?, new_password }`。`current_password` は、10 分以内にログインしたセッションなら要らない(忘れたら Google か Microsoft で入り直して決める)。**通ったら、このセッション以外のセッションと、アプリの許可をすべて切る** | 204。短い・よく使われている・メールアドレスと同じ → 400 `weak_password`(理由の文)。いまのパスワードが要る → 400 `reauth_required`。違う → 400 `invalid_credentials`(ログインの間引きと同じ数えに入る) |
 | `POST /account/totp` | 2 段階認証を(やり直して)設定し始める。新しい秘密を作り、設定中として持つ | `TotpSetup`。10 分以内のログインでない → 400 `reauth_required` |
 | `PUT /account/totp` | 本文 `{ code }`。設定中の秘密で 6 桁が通ったら入れ替える(古い端末のコードは効かなくなる) | 204。違う → 400 `invalid_code`。外す口は無い(パスワードで入る限り必須) |
-| `DELETE /account/google` | Google を外す(J-054) | 204。パスワードを持っていない → 409 `last_login_method`(入る手段が無くなる) |
+| `POST /account/identities/{google,microsoft}` | 結び始める。許可の画面の URL を返し、Cookie `__Host-works_oidc` に結ぶ相手(自分)を署名して置く。画面はその URL へページごと移る。戻りは `GET /session/{provider}/callback` | `{ url }`。10 分以内のログインでない → 400 `reauth_required`。設定が無い → 409 `not_configured`。提供元に繋がらない → 502 `provider_unavailable` |
+| `DELETE /account/identities/{google,microsoft}` | 外す | 204。ほかに入る手段(パスワードか、もう一方)が無い → 409 `last_login_method` |
 | `GET /account/sessions` | 自分のログイン中の端末(ブラウザのセッション)とアプリ(Android の許可。J-056 で足す) | `AccountSession[]`: `id`、`kind`(`browser` / `app`)、`label`(「Chrome · Windows」「Works · Android」。`User-Agent` とクライアントから作る)、`created_at`、`last_seen_at`、`current`(いま使っている端末か) |
 | `DELETE /account/sessions/{id}` | 1 つ切る。自分のもの以外は 404 | 204 |
 | `DELETE /account/sessions` | いま使っている端末以外を、すべて切る | 204 |
 
 - `TotpSetup`: `secret`(base32。画面は 4 文字ずつ区切って見せる)、`otpauth_uri`(`otpauth://totp/…`。スマホで設定するとき、対応する認証アプリならこれを開いて登録できる)、`qr_svg`(`data:image/svg+xml,…`。画面は `<img>` で描く)
 - Claude のコネクタ(`works` の許可)は、ここには出さない。これまでどおり環境設定の MCP で見る(§13)
-- モックはこれまでどおりパスワードを確かめない(何を入れてもデモの利用者で入る)。`SessionOptions.google` は false。ログインの失敗・間引き・Google は、本物の API で確かめる(pytest と、E2E の http)
+- モックはこれまでどおりパスワードを確かめない(何を入れてもデモの利用者で入る)。`SessionOptions` は両方 false、結ぶ・外すは 409 `not_configured`、`GET /session/challenge` は 401 `login_expired`。ログインの失敗・間引き・Google・Microsoft は、本物の API で確かめる(pytest は提供元を偽物に差し替える。E2E の http)
 
 **管理者のコマンド**(画面は J-038)
 
 ```
-python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す。パスワードは持たない(Google で入るか、次で決める)
+python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す。パスワードは持たない(Google・Microsoft で入るか、次で決める)
 python -m app.cli set-password <メール>               パスワードを決める(標準入力から読む。画面に出さない)。その人のセッションと許可はすべて切れる
 python -m app.cli reset-totp <メール>                 2 段階認証を消す(端末を無くした人のため)。次にパスワードで入るときに設定し直す
 ```
 
-**エラーの符号**(ログインまわり): `unauthenticated`(401)、`invalid_credentials`(401。アカウントの画面では 400)、`too_many_attempts`(429)、`bad_origin`(403)、`invalid_code`・`weak_password`・`reauth_required`・`totp_not_started`(400)、`login_expired`(401)、`last_login_method`(409)。Access の JWT を信頼していた頃の `access_required`・`not_registered`・`access_login` は、2026-10-01 に無くなった。
+**エラーの符号**(ログインまわり): `unauthenticated`(401)、`invalid_credentials`(401。アカウントの画面では 400)、`too_many_attempts`(429)、`bad_origin`(403)、`invalid_code`・`weak_password`・`reauth_required`・`totp_not_started`(400)、`login_expired`(401)、`last_login_method`・`not_configured`(409)、`provider_unavailable`(502)。提供元からの戻りの符号は上の「理由の符号」(画面へは 303 の問い合わせで渡す)。Access の JWT を信頼していた頃の `access_required`・`not_registered`・`access_login` は、2026-10-01 に無くなった。

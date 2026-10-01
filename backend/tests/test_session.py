@@ -10,6 +10,7 @@ from httpx2 import Response
 from sqlalchemy import Connection, func, insert, select, update
 
 from app.auth import passwords, sessions, throttle, totp
+from app.config import get_settings
 from app.meta.tables import login_attempts, login_challenges, user_sessions, users
 from tests.conftest import ADMIN_EMAIL, ADMIN_ID, MEMBER_EMAIL, MEMBER_ID, login_as
 
@@ -331,5 +332,13 @@ def test_管理者でない利用者には_admin_が付かない(member: TestCli
     assert "admin" not in member.get("/api/v1/session").json()["user"]
 
 
-def test_ログインの画面が出すもの(client: TestClient) -> None:
-    assert client.get("/api/v1/session/options").json() == {"google": False}
+def test_ログインの画面が出すもの(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Google・Microsoft の設定が無ければ、どちらのボタンも出さない(設定があるときは test_oidc.py)。"""
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_ID", "MICROSOFT_CERTIFICATE"):
+        monkeypatch.setenv(f"WORKS_{name}", "")
+    get_settings.cache_clear()
+    try:
+        assert client.get("/api/v1/session/options").json() == {"google": False, "microsoft": False}
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()

@@ -29,6 +29,7 @@ def test_アカウントの状態を返す(admin: TestClient, conn: Connection) 
         "password_changed_at": None,
         "totp_enabled_at": None,
         "google_email": None,
+        "microsoft_email": None,
         "recent_login": True,
     }
     conn.execute(update(user_sessions).values(created_at=LONG_AGO))

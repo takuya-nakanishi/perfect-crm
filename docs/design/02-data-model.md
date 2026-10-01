@@ -167,12 +167,13 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 
 | 表 | 1 行 | 列(主なもの) |
 |---|---|---|
-| `users`(列を足す) | 利用者 | `password_hash`(0001 からある列。Argon2id の文字列。**NULL ならパスワードでは入れない** = Google だけで入る人)、`password_changed_at`、`google_sub`(Google アカウント固有の ID。一意。初めて Google で入ったときに結ぶ)、`google_email`(結んだアドレス。表示だけに使う)、`last_login_at`。2 段階認証: `totp_secret`(認証アプリと分け合う秘密。**暗号化して**置く)、`totp_enabled_at`、`totp_last_step`(最後に受けた 30 秒の刻み。同じコードを 2 度受けない)、`totp_pending_secret`(設定中の秘密。6 桁が通ったら `totp_secret` へ移す) |
-| `user_sessions` | ブラウザのログイン 1 つ | `user_id`(→ `users`。消すと消える)、`token_hash`(Cookie の値の sha256。一意。**Cookie の値そのものは持たない**)、`method`(`password` / `google`)、`created_at`(= ログインした時刻)、`last_seen_at`、`expires_at`、`user_agent`・`ip`(一覧で「どの端末か」を見せるため) |
-| `login_challenges` | パスワードが通り、2 段目(TOTP)を待っているログイン 1 つ | `token_hash`(Cookie `__Host-works_login` の値の sha256)、`user_id`、`purpose`(`totp` / `totp_setup`)、`attempts`(5 回まで)、`expires_at`(5 分)、`created_at`。通ったら・切れたら消す |
-| `login_attempts` | ログインの試み 1 回 | `email`(打たれた値を小文字にしたもの。利用者にいなくても残す)、`user_id`(当たれば)、`method`、`ip`、`succeeded`、`reason`(`no_user`・`bad_password`・`bad_code`(6 桁の違い)・`throttled`(待たせて断った。数えない。同じ送り元から 1 分に 1 件だけ残す)など)、`created_at`。**間引きの数えと、あとから見る記録を兼ねる**。90 日を過ぎたら消す |
+| `users`(列を足す) | 利用者 | `password_hash`(0001 からある列。Argon2id の文字列。**NULL ならパスワードでは入れない** = Google・Microsoft だけで入る人)、`password_changed_at`、`google_sub`(Google アカウント固有の ID。一意。初めて Google で入ったときか、アカウントの画面から結ぶ)、`google_email`(結んだアドレス。表示だけに使う)、`microsoft_sub`(Microsoft の `sub`。Works のアプリ登録に固有の、変わらない ID。一意。0010)、`microsoft_email`(結んだアドレス。アドレスの無い職場のアカウントはサインインの名前。表示だけに使う。0010)、`last_login_at`。2 段階認証: `totp_secret`(認証アプリと分け合う秘密。**暗号化して**置く)、`totp_enabled_at`、`totp_last_step`(最後に受けた 30 秒の刻み。同じコードを 2 度受けない)、`totp_pending_secret`(設定中の秘密。6 桁が通ったら `totp_secret` へ移す) |
+| `user_sessions` | ブラウザのログイン 1 つ | `user_id`(→ `users`。消すと消える)、`token_hash`(Cookie の値の sha256。一意。**Cookie の値そのものは持たない**)、`method`(`password` / `google` / `microsoft`。Microsoft は Microsoft + 6 桁)、`created_at`(= ログインした時刻)、`last_seen_at`、`expires_at`、`user_agent`・`ip`(一覧で「どの端末か」を見せるため) |
+| `login_challenges` | 1 段目(パスワードか Microsoft)が通り、2 段目(TOTP)を待っているログイン 1 つ | `token_hash`(Cookie `__Host-works_login` の値の sha256)、`user_id`、`purpose`(`totp` / `totp_setup`)、`method`(1 段目に使ったもの。`password` / `microsoft`。2 段目が通ったらセッションの `method` になる。0010)、`attempts`(5 回まで)、`expires_at`(5 分)、`created_at`。通ったら・切れたら消す |
+| `login_attempts` | ログインの試み 1 回 | `email`(打たれた値を小文字にしたもの。利用者にいなくても残す)、`user_id`(当たれば)、`method`(`password` / `totp` / `google` / `microsoft`)、`ip`、`succeeded`、`reason`(`no_user`・`bad_password`・`bad_code`(6 桁の違い)・`throttled`(待たせて断った。数えない。同じ送り元から 1 分に 1 件だけ残す)・`not_registered`(Google・Microsoft で、結ばれた利用者がいない。数えない))、`created_at`。**間引きの数えと、あとから見る記録を兼ねる**。90 日を過ぎたら消す |
 
 - Android アプリのログインは OAuth の表(0004 の `oauth_clients`・`oauth_grants`・`oauth_tokens`)をそのまま使う。**Android アプリのクライアント(`works-android`)は `oauth_clients` に初めから入れる**(マイグレーションで。動的登録ではない。03 §5)。許可の無い登録を古いものから消す片付け(03 §5「門を置かずに守る」)の対象から外すこと。許可(`oauth_grants`)の 1 行が、アカウントの画面の「ログイン中のアプリ」の 1 行になる
+- Google・Microsoft でログインの途中の状態(state・戻り先・結ぶ相手)は DB に置かない。署名した短命の Cookie `__Host-works_oidc` に置く(だれでも叩ける口なので、叩かれても行を作らない。03 §5)
 - パスワード、セッションの Cookie の値、2 段目の札、OAuth のトークンは、どれも DB に置かない(ハッシュだけ)。DB の写し(`pg_dump`)が漏れても、それだけでは入れない
 - TOTP の秘密だけは、コードを照らすのに元の値が要るので、ハッシュではなく暗号化して置く(Google の鍵と同じく `WORKS_SECRET_KEY` から導いた鍵)。**`WORKS_SECRET_KEY` を変えると、2 段階認証はやり直しになる**
 - 利用者を消す(`deleted_at`)と、セッション・許可・トークンは行が残っていても効かない(引くたびに `users.deleted_at` を見る。いまの OAuth と同じ)

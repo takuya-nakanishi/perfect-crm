@@ -8,6 +8,7 @@ from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
 from app.api import account, google, meta, oauth, records, session, settings, slack, workflows
+from app.auth import oidc
 from app.config import get_settings
 from app.errors import install_error_handlers
 from app.mcpserver import server as mcp_server
@@ -26,10 +27,17 @@ def check_settings() -> None:
     """公開する場所(https)では、WORKS_SECRET_KEY は必須(03 §5)。
 
     空だと起動ごとに鍵が変わり、2 段階認証の秘密・Google と Slack の鍵を読めなくなる。黙って動かさずに止める。
+    Microsoft でログインの設定は、片方だけ・読めない証明書なら止める(ボタンが出ているのに入れない、を作らない)。
     """
     s = get_settings()
     if s.secure_cookie and not s.secret_key:
         raise RuntimeError("WORKS_SECRET_KEY が空です。.env に入れてから起動してください(docs/runbook/01 §6 の A)")
+    if s.microsoft_client_id or s.microsoft_certificate:
+        if not s.microsoft_enabled:
+            raise RuntimeError(
+                "WORKS_MICROSOFT_CLIENT_ID と WORKS_MICROSOFT_CERTIFICATE は両方要ります(docs/runbook/01 §6c)"
+            )
+        oidc.check_credential()
 
 
 @asynccontextmanager

@@ -37,6 +37,7 @@ export function createHttpClient(): ApiClient {
     getSessionOptions: () => request('GET', '/session/options'),
     login: (email, password) => request('POST', '/session', { email, password }),
     verifyTotp: (code) => request('POST', '/session/totp', { code }),
+    resumeLogin: () => request('GET', '/session/challenge'),
     logout: () => request('DELETE', '/session'),
 
     getAccount: () => request('GET', '/account'),
@@ -46,6 +47,8 @@ export function createHttpClient(): ApiClient {
     listAccountSessions: () => request('GET', '/account/sessions'),
     revokeAccountSession: (id) => request('DELETE', `/account/sessions/${enc(id)}`),
     revokeOtherAccountSessions: () => request('DELETE', '/account/sessions'),
+    linkLogin: (provider) => request('POST', `/account/identities/${enc(provider)}`),
+    unlinkLogin: (provider) => request('DELETE', `/account/identities/${enc(provider)}`),
 
     getMeta: () => request('GET', '/meta'),
     createObject: (input) => request('POST', '/meta/objects', input),

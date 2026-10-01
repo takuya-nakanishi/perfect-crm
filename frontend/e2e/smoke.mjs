@@ -81,6 +81,22 @@ ok(page.url().includes('next='), '未ログインで /login へ送られ、戻�
 // 本物の API に繋がっているか(VITE_API_MODE=http)。画面が <html data-api-mode> に出している(src/main.tsx)
 const HTTP_API = (await page.evaluate(() => document.documentElement.dataset.apiMode)) === 'http'
 console.log(`INFO  データ: ${HTTP_API ? '本物の API(http)' : 'モック'}`)
+// Google・Microsoft のボタンは、設定のある提供元だけ(モックは出さない。本物の API は .env の設定しだい。04 §16)
+const PROVIDERS = [['google', 'Google'], ['microsoft', 'Microsoft']]
+const loginOptions = HTTP_API ? await page.evaluate(async () => (await fetch('/api/v1/session/options')).json()) : { google: false, microsoft: false }
+await page.locator('#email').waitFor()
+for (const [key, label] of PROVIDERS) if (loginOptions[key]) await page.getByRole('link', { name: `${label} でログイン` }).waitFor()
+await wait(400)
+const providerLinks = {}
+for (const [key, label] of PROVIDERS) {
+  const link = page.getByRole('link', { name: `${label} でログイン` })
+  providerLinks[key] = (await link.count()) === 1 && (await link.getAttribute('href')).startsWith(`/api/v1/session/${key}?next=%2Fo%2Faccounts`)
+}
+ok(
+  PROVIDERS.every(([key]) => providerLinks[key] === Boolean(loginOptions[key])),
+  'ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す',
+  JSON.stringify({ loginOptions, providerLinks }),
+)
 /** ログインする。本物の API ならパスワードの次に 6 桁(まだの人は設定の段で QR の文字列から計算し、覚えておく)。モックは 2 段目が無い */
 const totpSecrets = new Map([['takuya@example.jp', E2E_TOTP_SECRET]])
 async function logIn(email) {
@@ -680,6 +696,13 @@ await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.get
 await page.waitForURL(/\/account/)
 await page.getByText('この端末', { exact: true }).waitFor(); await page.getByRole('heading', { name: 'パスワード', exact: true }).waitFor()
 ok((await page.getByText('この端末', { exact: true }).count()) === 1 && (await page.getByRole('heading', { name: 'パスワード', exact: true }).count()) === 1, 'アカウントの画面に、この端末とパスワードの節が出る')
+const providerSections = {}
+for (const [key, label] of PROVIDERS) providerSections[key] = (await page.getByRole('heading', { name: label, exact: true }).count()) === 1
+ok(
+  PROVIDERS.every(([key]) => providerSections[key] === Boolean(loginOptions[key])),
+  'アカウントの画面は、設定のある提供元(Google・Microsoft)の節だけを出す',
+  JSON.stringify(providerSections),
+)
 
 await page.getByRole('button', { name: /Sanei Clover/ }).click(); await page.getByRole('button', { name: 'ログアウト' }).click(); await page.waitForURL(/\/login/)
 await logIn('misaki@example.jp')

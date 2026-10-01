@@ -689,11 +689,11 @@ export interface Session {
   workspace: Workspace
 }
 
-/** ログインの画面が出すもの(未ログインで読める。04 §16) */
-export interface SessionOptions {
-  /** Google でログインが使えるか(J-054) */
-  google: boolean
-}
+/** Google・Microsoft でログイン(03 §5)。アカウントの画面から結ぶこともできる */
+export type LoginProvider = 'google' | 'microsoft'
+
+/** ログインの画面が出すもの(未ログインで読める。04 §16)。提供元ごとに、ボタンを出すか */
+export type SessionOptions = Record<LoginProvider, boolean>
 
 /**
  * 2 段階認証(TOTP)の設定の中身(04 §16)。QR はサーバが作り、画面は <img> で描く
@@ -709,7 +709,7 @@ export interface TotpSetup {
 }
 
 /**
- * ログインの 1 段目(メールアドレスとパスワード)の結果(04 §16)。
+ * ログインの 1 段目(メールアドレスとパスワード)の結果(04 §16)。Microsoft から戻ったあとに読み直す 2 段目も同じ形。
  * 2 段目(6 桁)が通るまで、セッションは作られない。モックは 2 段目を出さずに ok を返す
  */
 export type LoginResult =
@@ -723,8 +723,10 @@ export interface Account {
   password_changed_at: string | null
   /** 2 段階認証を設定した日時。まだなら null */
   totp_enabled_at: string | null
-  /** 結んだ Google のアドレス(J-054)。結んでいなければ null */
+  /** 結んだ Google のアドレス。結んでいなければ null */
   google_email: string | null
+  /** 結んだ Microsoft のアドレス(アドレスの無い職場のアカウントは、サインインの名前)。結んでいなければ null */
+  microsoft_email: string | null
   /** このセッションが 10 分以内のログインか。true なら、いまのパスワードを求めずに変えられる */
   recent_login: boolean
 }

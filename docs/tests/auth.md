@@ -2,7 +2,7 @@
 
 読み方・資産の書き方・`—` の扱いは [`README.md`](README.md)。仕様は `docs/design/03` §5、`04` §16、`02` §8、`05` §15、`01` D-14。
 
-**段階**: `1 段目`(メールアドレスとパスワード)、`2 段目`(TOTP の 6 桁)、`設定`(2 段階認証を初めて設定する・やり直す)、`間引き`(続けて失敗したときの待ち)、`セッション`(Cookie・ログアウト・期限・CSRF)、`アカウント`(パスワードを変える・端末を切る)、`本番`(公開 URL)。
+**段階**: `1 段目`(メールアドレスとパスワード、または Google・Microsoft)、`2 段目`(TOTP の 6 桁)、`設定`(2 段階認証を初めて設定する・やり直す)、`間引き`(続けて失敗したときの待ち)、`セッション`(Cookie・ログアウト・期限・CSRF)、`アカウント`(パスワードを変える・Google と Microsoft を結ぶ・端末を切る)、`本番`(公開 URL)。
 この領域は**優先順位の先頭**(入れなくなる・他人に入られる。表の ⓪)。
 
 判定はサーバ(`backend/app/auth/`)にある。モックはパスワードも 6 桁も確かめないので、L2 は画面が受け取る形と、決まりの文がサーバと同じことだけを見る。
@@ -63,4 +63,27 @@
 | AUTH-052 | 利用者 | 2 段目 | 整合 | L3 | パスワードの次に 6 桁を入れると入れて、元の画面へ戻る | `smoke.mjs「パスワードの次に 6 桁を入れると入れて、元の画面へ戻る」` | — |
 | AUTH-053 | 利用者 | 設定 | 整合 | L3 | 初めての人は QR の段(秘密の文字列から 6 桁)で 2 段階認証を設定してから入る | `smoke.mjs「初めての人は QR の段で 2 段階認証を設定してから入る」` | — |
 | AUTH-054 | 利用者 | アカウント | 整合 | L3 | メニューの「アカウント」で開き、この端末とパスワードの節が出る | `smoke.mjs「アカウントの画面に、この端末とパスワードの節が出る」` | — |
-| AUTH-060 | 外部 | 本番 | 安全弁 | L5 | 本番で Access を外したあと(J-055): 公開 URL の画面が Access を挟まずに返り、未ログインの `GET /api/v1/session` が 401 `unauthenticated`、よそのサイトからのログインが 403 `bad_origin`、20 MB を超える本文が 413。パソコンとスマホ(WARP なし)からパスワード + 6 桁で入れる | `public-check.py`(スマホで入るのは人) | — |
+| AUTH-060 | 外部 | 本番 | 安全弁 | L5 | 本番で Access を外したあと(J-055): 公開 URL の画面が Access を挟まずに返り、未ログインの `GET /api/v1/session` が 401 `unauthenticated`、よそのサイトからのログインが 403 `bad_origin`、20 MB を超える本文が 413。パソコンとスマホ(WARP なし)からパスワード + 6 桁で入れる。Google・Microsoft を開けていれば、その口が許可の画面へ公開 URL の戻り先で送る(J-069) | `public-check.py`(スマホで入るのは人) | — |
+
+## 6. Google・Microsoft でログイン
+
+提供元(Google・Microsoft)には繋がない。pytest は `app.auth.oidc.call` を偽物に差し替え、偽物が本物と同じ形の discovery document・公開鍵・ID トークンを返す(手元の RSA の鍵で署名)。偽物のトークンの口は、PKCE・戻り先・クライアントの証明(Google は client secret、Microsoft は証明書で署名した JWT)を確かめる。
+
+| ID | 視点 | 段階 | 性質 | 層 | ケース | 対応する資産 | API の資産 |
+|---|---|---|---|---|---|---|---|
+| AUTH-070 | 外部 | 1 段目 | 安全弁 | L4 | 許可の画面へは state・nonce・PKCE(S256)を付けて送り、途中の状態は署名した 10 分の Cookie に置く(DB に行を作らない)。書き換えた・期限切れの Cookie は読まない | `test_oidc.py`(pytest) | — |
+| AUTH-071 | 利用者 | 1 段目 | 整合 | L4 | Google で初めて入ると、Google が持ち主と言えるアドレス(Gmail か、hd のある Workspace)の利用者に結ばれ、元の場所へ戻る。以後は sub で引く(アドレスが変わっても入れる) | `test_oidc.py`(pytest) | — |
+| AUTH-072 | 外部 | 1 段目 | 安全弁 | L4 | 登録の無いアドレス・確かめていないアドレス・Gmail でも Workspace でもないアドレス・消した利用者に結ばれた sub では入れない(`google_not_registered`。記録が残る) | `test_oidc.py`(pytest) | — |
+| AUTH-073 | 外部 | 1 段目 | 安全弁 | L4 | 戻りの state が Cookie と違う・Cookie が無い → 提供元へ問い合わせずに断る(`failed`)。許可の画面で断った → `denied`。設定の無い提供元 → `not_configured` | `test_oidc.py`(pytest) | — |
+| AUTH-074 | 外部 | 1 段目 | 安全弁 | L4 | ID トークンの署名・発行元・宛先・期限・nonce・公開鍵の kid のどれかが違えば入れない。公開鍵が入れ替わったら読み直し、discovery document は持っておく | `test_oidc.py`(pytest) | — |
+| AUTH-075 | 外部 | 1 段目 | 安全弁 | L4 | 戻り先は同じオリジンの中の道だけ(外の URL・`//`・`\` は `/`)。コードの引き換えは送り元(IP)ごとに 1 分 10 回まで(`busy`) | `test_oidc.py`(pytest) | — |
+| AUTH-076 | 利用者 | 2 段目 | 安全弁 | L4 | Microsoft で入ると 6 桁の段へ進み、通るとセッションができる(記録とセッションの method は microsoft)。2 段階認証がまだの人は、設定してから入る。札の無い読み直しは 401 `login_expired` | `test_oidc.py`(pytest) | — |
+| AUTH-077 | 外部 | 1 段目 | 安全弁 | L4 | Microsoft のアドレスは、ドメインの持ち主が確かめたもの(`xms_edov`)だけ信じる。発行元は、入った人のテナント(tid)を当てはめたもの。クライアントの証明は証明書で署名した 5 分の JWT(client secret は送らない) | `test_oidc.py`(pytest) | — |
+| AUTH-078 | システム | 本番 | 安全弁 | L4 | Microsoft の設定は、ID と証明書の両方がそろい、証明書が読めて秘密鍵と対になっていなければ起動しない。期限が 30 日を切ったら知らせる | `test_oidc.py`(pytest) | — |
+| AUTH-079 | 利用者 | アカウント | 整合 | L4 | アカウントの画面から結ぶ(10 分以内のログインが要る・どのアカウントかを選ばせる)と、次からその提供元で入れる。ほかの人に結ばれたアカウント・戻る前にログアウトした・別の人で入り直した → 結ばない | `test_oidc.py`(pytest) | — |
+| AUTH-080 | 利用者 | アカウント | 安全弁 | L4 | 外せるのは、ほかに入る手段(パスワードか、もう一方)が残るときだけ(`last_login_method`)。設定の無い提供元は `not_configured`、未ログインは 401 | `test_oidc.py`(pytest) | — |
+| AUTH-081 | 利用者 | 1 段目 | 表記 | L1 | 戻りの理由の符号(`google_not_registered`・`microsoft_busy` など)を帯の文にする。知らない符号は出さない | `login.test.ts` | — |
+| AUTH-082 | 利用者 | 1 段目 | 安全弁 | L1 | 戻り先はアプリ内のパスだけ。ボタンは設定のある提供元だけで、行き先は `/api/v1/session/<提供元>?next=…` | `login.test.ts` | — |
+| AUTH-083 | 利用者 | 1 段目 | 整合 | L2 | モックは Google・Microsoft に繋がない: 結ぶ・外すは `not_configured`、2 段目の読み直しは `login_expired` | `account.test.ts` | — |
+| AUTH-084 | 利用者 | 1 段目 | 整合 | L3 | ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す(モックは出さない) | `smoke.mjs「ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す」` | — |
+| AUTH-085 | 利用者 | アカウント | 整合 | L3 | アカウントの画面は、設定のある提供元(Google・Microsoft)の節だけを出す | `smoke.mjs「アカウントの画面は、設定のある提供元(Google・Microsoft)の節だけを出す」` | — |

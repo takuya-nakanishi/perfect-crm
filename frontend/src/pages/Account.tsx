@@ -1,23 +1,40 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, Menu, PanelLeft } from 'lucide-react'
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { api, ApiError } from '@/api/client'
-import type { Account, AccountSession, TotpSetup } from '@/api/types'
+import type { Account, AccountSession, LoginProvider, TotpSetup } from '@/api/types'
+import { ProviderMark } from '@/components/auth/ProviderMark'
 import { CodeInput, inputCls, TotpSecretView } from '@/components/auth/TotpParts'
 import { Avatar, Button, IconButton } from '@/components/ui/basics'
-import { keys, useSession } from '@/data/queries'
+import { keys, useSession, useSessionOptions } from '@/data/queries'
 import { cleanCode } from '@/lib/code'
 import { formatDateTime } from '@/lib/dates'
+import { LOGIN_PROVIDERS, linkedProvider, providerError, providerLabel } from '@/lib/login'
 import { useUI } from '@/state/ui'
 
-function Section({ title, hint, action, children }: { title: string; hint: ReactNode; action?: ReactNode; children?: ReactNode }) {
+function Section({
+  title,
+  hint,
+  action,
+  mark,
+  children,
+}: {
+  title: string
+  hint: ReactNode
+  action?: ReactNode
+  mark?: ReactNode
+  children?: ReactNode
+}) {
   return (
     <section className="border-t border-line py-5">
       {/* 狭い画面では、ボタンを見出しの下へ回す(見出しと説明を細い列に押し込めない) */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1 basis-72">
-          <h2 className="text-lg font-bold">{title}</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            {mark}
+            {title}
+          </h2>
           <p className="mt-0.5 text-ink-2">{hint}</p>
         </div>
         {action}
@@ -86,7 +103,7 @@ function PasswordSection({ account }: { account: Account }) {
     ? account.password_changed_at
       ? `最終変更 ${formatDateTime(account.password_changed_at)}`
       : '設定済み'
-    : 'まだ決めていません(Google だけで入っています)'
+    : 'まだ決めていません(Google か Microsoft で入っています)'
   return (
     <Section
       title="パスワード"
@@ -213,8 +230,8 @@ function TotpSection({ account }: { account: Account }) {
       title="2 段階認証"
       hint={
         account.totp_enabled_at
-          ? `認証アプリ(${formatDateTime(account.totp_enabled_at)} に設定)。パスワードで入るときに 6 桁を使います`
-          : 'まだ設定していません。次にパスワードで入るときにも設定できます'
+          ? `認証アプリ(${formatDateTime(account.totp_enabled_at)} に設定)。パスワードか Microsoft で入るときに 6 桁を使います`
+          : 'まだ設定していません。次にパスワードか Microsoft で入るときにも設定できます'
       }
       action={
         !setup && (
@@ -273,6 +290,103 @@ function TotpSection({ account }: { account: Account }) {
       )}
     </Section>
   )
+}
+
+/**
+ * Google・Microsoft(05 §15)。結んであれば「〜で入れます」と「外す」、結んでいなければ「〜を結ぶ」。
+ * 結ぶとページごと提供元へ移り、戻ると /account?linked=… が開く(10 分以内のログインが要る)。
+ * 外せるのは、ほかに入る手段(パスワードか、もう一方)が残るときだけ
+ */
+function ProviderSection({ provider, account }: { provider: LoginProvider; account: Account }) {
+  const qc = useQueryClient()
+  const toast = useUI((s) => s.toast)
+  const relogin = useRelogin()
+  const [error, setError] = useState<{ text: string; relogin: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const label = providerLabel(provider)
+  const email = provider === 'google' ? account.google_email : account.microsoft_email
+  const other = provider === 'google' ? account.microsoft_email : account.google_email
+  const canUnlink = account.has_password || other !== null
+  // Microsoft 側の 2 段階認証は Works から確かめられないので、Microsoft で入るときは 6 桁も使う(03 §5)
+  const totpNote = provider === 'microsoft' ? '(入るときに 6 桁も使います)' : ''
+
+  const link = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { url } = await api.linkLogin(provider)
+      window.location.assign(url)
+    } catch (err) {
+      setError({ text: message(err, '始められませんでした'), relogin: err instanceof ApiError && err.code === 'reauth_required' })
+      setBusy(false)
+    }
+  }
+
+  const unlink = async () => {
+    setBusy(true)
+    try {
+      await api.unlinkLogin(provider)
+      toast({ message: `${label} を外しました` })
+      await qc.invalidateQueries({ queryKey: keys.account })
+    } catch (err) {
+      toast({ message: message(err, '外せませんでした'), tone: 'danger' })
+    }
+    setBusy(false)
+  }
+
+  return (
+    <Section
+      title={label}
+      mark={<ProviderMark provider={provider} size={16} />}
+      hint={email ? `${email} で入れます${totpNote}` : `結ぶと、${label} のアカウントでも入れます${totpNote}`}
+      action={
+        email ? (
+          <Button variant="outline" onClick={() => void unlink()} disabled={busy || !canUnlink}>
+            外す
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => void link()} disabled={busy}>
+            {label} を結ぶ
+          </Button>
+        )
+      }
+    >
+      {email && !canUnlink && <p className="mt-2 text-sm text-ink-3">ほかに入る方法が無いので外せません。先にパスワードを決めてください</p>}
+      {error && (
+        <Alert>
+          {error.text}
+          {error.relogin && (
+            <button type="button" onClick={() => void relogin()} className="ml-2 font-bold underline">
+              ログインし直す
+            </button>
+          )}
+        </Alert>
+      )}
+    </Section>
+  )
+}
+
+/** 提供元から戻ったとき(?linked=google・?link_error=google_in_use)の知らせ。出したら URL から外す */
+function useLinkResult() {
+  const [params, setParams] = useSearchParams()
+  const toast = useUI((s) => s.toast)
+  const shown = useRef(false)
+  const linked = linkedProvider(params.get('linked'))
+  const linkError = params.get('link_error')
+  useEffect(() => {
+    if ((!linked && !linkError) || shown.current) return
+    shown.current = true
+    if (linked) toast({ message: `${providerLabel(linked)} を結びました。次から ${providerLabel(linked)} でも入れます` })
+    if (linkError) toast({ message: providerError(linkError) ?? '結べませんでした', tone: 'danger' })
+    setParams(
+      (p) => {
+        p.delete('linked')
+        p.delete('link_error')
+        return p
+      },
+      { replace: true },
+    )
+  }, [linked, linkError, setParams, toast])
 }
 
 function SessionRow({ s, onRevoke }: { s: AccountSession; onRevoke: () => void }) {
@@ -337,12 +451,14 @@ function SessionsSection() {
 }
 
 /**
- * アカウント(05 §15)。だれでも開ける(自分のことだけ)。パスワード・2 段階認証・ログイン中の端末。
+ * アカウント(05 §15)。だれでも開ける(自分のことだけ)。パスワード・2 段階認証・Google と Microsoft・ログイン中の端末。
  * パスワードと 2 段階認証を変えるには、10 分以内のログインか、いまのパスワードが要る(03 §5)
  */
 export function AccountPage() {
   const session = useSession()
   const account = useQuery({ queryKey: keys.account, queryFn: () => api.getAccount() })
+  const options = useSessionOptions()
+  useLinkResult()
   const sidebarCollapsed = useUI((s) => s.sidebarCollapsed)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
   const setMobileNav = useUI((s) => s.setMobileNav)
@@ -376,7 +492,13 @@ export function AccountPage() {
           {account.data && (
             <>
               <PasswordSection account={account.data} />
-              {account.data.has_password && <TotpSection account={account.data} />}
+              {/* 6 桁を使うのは、パスワードか Microsoft で入るとき(Google だけの人には出さない) */}
+              {(account.data.has_password || account.data.microsoft_email !== null) && <TotpSection account={account.data} />}
+              {LOGIN_PROVIDERS.filter(
+                (p) => options.data?.[p] || (p === 'google' ? account.data.google_email : account.data.microsoft_email) !== null,
+              ).map((p) => (
+                <ProviderSection key={p} provider={p} account={account.data} />
+              ))}
             </>
           )}
           <SessionsSection />

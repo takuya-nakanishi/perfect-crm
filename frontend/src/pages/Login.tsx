@@ -1,13 +1,15 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff } from 'lucide-react'
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { api, ApiError, API_MODE } from '@/api/client'
-import type { Session, TotpSetup } from '@/api/types'
+import type { LoginResult, Session, TotpSetup } from '@/api/types'
+import { ProviderMark } from '@/components/auth/ProviderMark'
 import { CodeInput, inputCls, TotpSecretView } from '@/components/auth/TotpParts'
 import { CloverMark } from '@/components/shell/CloverMark'
-import { keys, useSession } from '@/data/queries'
+import { keys, useSession, useSessionOptions } from '@/data/queries'
 import { cleanCode } from '@/lib/code'
+import { enabledProviders, linkedProvider, providerError, providerLabel, providerLoginUrl, safeNext } from '@/lib/login'
 import { useUI } from '@/state/ui'
 
 const primaryCls =
@@ -19,15 +21,10 @@ const KEYS: { key: string; label: string }[] = [
   { key: 'E', label: '終わったタスクは一打で完了' },
 ]
 
-/** Google からの戻り(04 §16。J-054)で入れなかったときの文 */
-const GOOGLE_ERRORS: Record<string, string> = {
-  google_not_registered: 'この Google アカウントは Works に登録されていません',
-  google_denied: 'Google でのログインを取りやめました',
-  google_failed: 'Google でのログインに失敗しました。もう一度お試しください',
-  google_not_configured: 'Google でのログインは、まだ設定されていません',
-}
+type Step = { kind: 'credentials' } | { kind: 'resuming' } | { kind: 'totp' } | { kind: 'totp_setup'; setup: TotpSetup }
 
-type Step = { kind: 'credentials' } | { kind: 'totp' } | { kind: 'totp_setup'; setup: TotpSetup }
+const stepOf = (result: Exclude<LoginResult, { status: 'ok' }>): Step =>
+  result.status === 'totp' ? { kind: 'totp' } : { kind: 'totp_setup', setup: result.setup }
 
 function Brand() {
   return (
@@ -66,19 +63,21 @@ function Unreachable({ error, next }: { error: Error; next: string }) {
 
 export function Login() {
   const session = useSession()
-  const options = useQuery({ queryKey: ['session-options'], queryFn: () => api.getSessionOptions(), staleTime: Infinity, retry: false })
+  const options = useSessionOptions()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const toast = useUI((s) => s.toast)
-  const [params] = useSearchParams()
-  const [step, setStep] = useState<Step>({ kind: 'credentials' })
+  const [params, setParams] = useSearchParams()
+  // Microsoft で確かめて戻ってきた(?continue=microsoft)。2 段目(6 桁)を読み直して続ける(03 §5)
+  const via = linkedProvider(params.get('continue'))
+  const [step, setStep] = useState<Step>(via ? { kind: 'resuming' } : { kind: 'credentials' })
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(
     () =>
-      GOOGLE_ERRORS[params.get('error') ?? ''] ??
+      providerError(params.get('error')) ??
       (params.get('expired') ? 'ログインが切れました(期限か、ほかの端末で切られた)。もう一度ログインしてください' : null),
   )
   const [busy, setBusy] = useState(false)
@@ -88,8 +87,26 @@ export function Login() {
   const codeRef = useRef<HTMLInputElement>(null)
 
   // 戻り先はアプリ内のパスに限る(外部 URL へ飛ばされないように)
-  const nextParam = params.get('next')
-  const next = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/'
+  const next = safeNext(params.get('next'))
+
+  useEffect(() => {
+    if (!via) return
+    let alive = true
+    api.resumeLogin().then(
+      (result) => {
+        if (alive && result.status !== 'ok') setStep(stepOf(result))
+      },
+      (err: unknown) => {
+        if (!alive) return
+        setError(err instanceof ApiError ? err.message : '確かめられませんでした。もう一度ログインしてください')
+        setStep({ kind: 'credentials' })
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [via])
+
   if (session.data) return <Navigate to={next} replace />
   if (session.isPending) return <div className="min-h-dvh bg-paper" />
 
@@ -115,7 +132,7 @@ export function Login() {
       const result = await api.login(email, password)
       if (result.status === 'ok') return done(result.session, false)
       setCode('')
-      setStep(result.status === 'totp' ? { kind: 'totp' } : { kind: 'totp_setup', setup: result.setup })
+      setStep(stepOf(result))
     } catch (err) {
       fail(err, 'ログインできませんでした。もう一度お試しください')
     }
@@ -134,6 +151,7 @@ export function Login() {
       if (err instanceof ApiError && err.code === 'login_expired') {
         setPassword('')
         setStep({ kind: 'credentials' })
+        dropContinue()
       } else {
         setCode('')
         // 1 フレーム遅らせない(続けて打った数字が前の値に混ざらないように。runbook §4)
@@ -145,13 +163,28 @@ export function Login() {
     }
   }
 
+  /** Microsoft から戻った印を URL から外す(読み込み直しても 2 段目を探しに行かない) */
+  const dropContinue = () => {
+    if (via) {
+      setParams(
+        (p) => {
+          p.delete('continue')
+          return p
+        },
+        { replace: true },
+      )
+    }
+  }
+
   const backToCredentials = () => {
     setStep({ kind: 'credentials' })
     setPassword('')
     setError(null)
+    dropContinue()
   }
 
-  const google = Boolean(options.data?.google)
+  const providers = enabledProviders(options.data)
+  const viaLabel = via ? providerLabel(via) : null
   const codeForm = (title: string, lead: ReactNode, button: string, extra?: ReactNode) => (
     <form
       onSubmit={(e) => {
@@ -181,7 +214,7 @@ export function Login() {
         {busy ? '確かめています…' : button}
       </button>
       <button type="button" onClick={backToCredentials} className="mt-4 text-ink-2 hover:text-ink hover:underline">
-        ← メールアドレスからやり直す
+        {viaLabel ? '← ログインの方法を選び直す' : '← メールアドレスからやり直す'}
       </button>
     </form>
   )
@@ -189,14 +222,25 @@ export function Login() {
   let body: ReactNode
   if (session.error) {
     body = <Unreachable error={session.error} next={next} />
+  } else if (step.kind === 'resuming') {
+    body = (
+      <div className="w-full max-w-[340px]" aria-busy>
+        <Brand />
+      </div>
+    )
   } else if (step.kind === 'totp') {
-    body = codeForm('確認コード', '認証アプリに出ている 6 桁を入れてください。', '確かめる')
+    body = codeForm(
+      '確認コード',
+      viaLabel ? `${viaLabel} で確かめました。続けて、認証アプリに出ている 6 桁を入れてください。` : '認証アプリに出ている 6 桁を入れてください。',
+      '確かめる',
+    )
   } else if (step.kind === 'totp_setup') {
     const { setup } = step
     body = codeForm(
       '2 段階認証を設定する',
       <>
-        パスワードで入るときは、認証アプリ(Google Authenticator など)の 6 桁も使います。アプリで QR を読み取ってください。
+        {viaLabel ? `${viaLabel} で入るとき` : 'パスワードで入るとき'}
+        は、認証アプリ(Google Authenticator など)の 6 桁も使います。アプリで QR を読み取ってください。
       </>,
       '設定してログイン',
       <div className="mt-5">
@@ -258,25 +302,32 @@ export function Login() {
           {busy ? 'ログインしています…' : 'ログイン'}
         </button>
 
-        {google && (
+        {providers.length > 0 && (
           <>
             <div className="my-5 flex items-center gap-3 text-sm text-ink-3" aria-hidden>
               <span className="h-px flex-1 bg-line" />
               または
               <span className="h-px flex-1 bg-line" />
             </div>
-            <a
-              href={`/api/v1/session/google?next=${encodeURIComponent(next)}`}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-lg font-bold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] transition-colors duration-100 hover:bg-sunken"
-            >
-              Google でログイン
-            </a>
+            <div className="flex flex-col gap-2.5">
+              {providers.map((p) => (
+                // ページごと提供元へ移るのでリンク(fetch しない。04 §16)
+                <a
+                  key={p}
+                  href={providerLoginUrl(p, next)}
+                  className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg text-lg font-bold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] transition-colors duration-100 hover:bg-sunken"
+                >
+                  <ProviderMark provider={p} />
+                  {providerLabel(p)} でログイン
+                </a>
+              ))}
+            </div>
           </>
         )}
 
         <p className="mt-6 text-sm text-ink-3">
-          {google
-            ? 'パスワードを忘れたときは、Google でログインしてアカウントの画面で決め直せます。Google を結んでいなければ、管理者に頼んでください。'
+          {providers.length > 0
+            ? `パスワードを忘れたときは、${providers.map(providerLabel).join(' か ')} でログインしてアカウントの画面で決め直せます。結んでいなければ、管理者に頼んでください。`
             : 'パスワードを忘れたときは、管理者に頼んでください。'}
         </p>
 

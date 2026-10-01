@@ -35,7 +35,22 @@ describe('ログインとアカウント(mocks/account.ts・mockClient.ts)', () 
     expect(result.status === 'ok' && result.session.user.email).toBe(admin.email)
     expect((await api.getSession())?.user.id).toBe(admin.id)
     expect((await errorOf(() => api.verifyTotp('123456')))?.code).toBe('login_expired')
-    expect(await api.getSessionOptions()).toEqual({ google: false })
+    expect(await api.getSessionOptions()).toEqual({ google: false, microsoft: false })
+  })
+
+  it('AUTH-083 モックは Google・Microsoft に繋がない: 結ぶ・外すは not_configured、2 段目の読み直しは login_expired', async () => {
+    const api = createMockClient()
+    expect((await errorOf(() => api.resumeLogin()))?.code).toBe('login_expired')
+    await api.login(admin.email, 'なんでも')
+    expect(await api.getAccount()).toMatchObject({ google_email: null, microsoft_email: null })
+    for (const provider of ['google', 'microsoft'] as const) {
+      const linking = await errorOf(() => api.linkLogin(provider))
+      expect([linking?.status, linking?.code]).toEqual([409, 'not_configured'])
+      expect((await errorOf(() => api.unlinkLogin(provider)))?.code).toBe('not_configured')
+    }
+    // 未ログインなら 401(サーバと同じ)
+    await api.logout()
+    expect((await errorOf(() => api.linkLogin('google')))?.status).toBe(401)
   })
 
   it('AUTH-023 パスワードの決まり(15 文字以上・256 文字まで・メールアドレスと同じは不可)はサーバと同じ文で断る', async () => {

@@ -87,14 +87,14 @@ Claude・Codex ─┘                                                           
 
 ## 5. 認証(2026-10-01 に作り直す。01 D-14)
 
-**アプリ自身がログインを持つ。**メールアドレスとパスワード(+ 2 段階認証の TOTP)、または Google でログインする。
+**アプリ自身がログインを持つ。**メールアドレスとパスワード(+ 2 段階認証の TOTP)、Google でログイン、Microsoft でログイン(+ TOTP)の 3 つ。
 **手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。01 D-14、06 §3)。ブラウザ・Android アプリ・AI のエージェント(MCP)は公開 URL に直に届き、ここのログインと OAuth・トークンだけで守る(下の「門を置かずに守る」)。
 
 ### だれが、何で入るか
 
 | 入口 | 証明するもの | 通る口 | 持ち時間 |
 |---|---|---|---|
-| 画面(ブラウザ) | セッションの Cookie `__Host-works_session`(パスワード + TOTP か、Google で入ったときに置く) | `/api/v1/*` | ログインから 30 日(Access のころと同じ間隔) |
+| 画面(ブラウザ) | セッションの Cookie `__Host-works_session`(パスワード + TOTP、Google、Microsoft + TOTP のどれかで入ったときに置く) | `/api/v1/*` | ログインから 30 日(Access のころと同じ間隔) |
 | Android アプリ | OAuth の access token(スコープ `api`。`Authorization: Bearer`) | `/api/v1/*` | access 1 時間、refresh 90 日(使うたびに替わる。90 日使わなければ入り直す) |
 | Claude のカスタムコネクタ | OAuth の access token(スコープ `works`) | `/mcp` だけ | 同上 |
 | Codex など | 環境設定で発行したトークン(`wks_`。04 §10) | `/mcp` だけ | 失効するまで |
@@ -103,11 +103,11 @@ Claude・Codex ─┘                                                           
 - `current_user`(`app/api/deps.py`)は、Cookie → `Authorization: Bearer` の順に見る。どちらも無い・効かない → 401 `unauthenticated`。**Bearer はスコープ `api` のものだけを通す**(`wks_` と `works` は MCP のためのもので、画面の API へ広げない)
 - 利用者を消す(`deleted_at`)と、その人のセッション・許可・トークンはどれも効かなくなる。管理者(`admin`)の扱いは変わらない
 - **手元・テスト・E2E・本番が同じログインを通る。**ログインの形を切り替える設定(`WORKS_AUTH`)は無い。メールアドレスだけで入れた `dev` は J-053 で、Access の JWT を信頼した `access` は Access を外すと決めた日に消した(2026-10-01)。公開する場所で「ログインを経ずに入れる」形を誤って有効にする事故を、形ごと無くすため。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
-- `WORKS_SECRET_KEY` は、公開する場所では必須にする(空なら起動しない)。Google の戻りの Cookie の署名と、Google・Slack の鍵の暗号化に使う
+- `WORKS_SECRET_KEY` は、公開する場所では必須にする(空なら起動しない)。Google・Microsoft の戻りを待つ Cookie の署名と、Google・Slack の鍵と TOTP の秘密の暗号化に使う
 
 ### パスワード
 
-- ログイン ID はメールアドレス(小文字にそろえる)。パスワードは任意で、Google だけで入る人は持たない(`password_hash` が NULL)
+- ログイン ID はメールアドレス(小文字にそろえる)。パスワードは任意で、Google・Microsoft だけで入る人は持たない(`password_hash` が NULL)
 - 決まりは NIST SP 800-63B-4 に従う(§13):
   - **15 文字以上**。TOTP と組むので NIST の下限は 8 文字だが、パスワード管理に任せれば長さは負担にならないので、パスワードだけで入る場合の下限(15)を取る。数えるのは NFKC で正規化したあとの文字(コードポイント)
   - 256 文字まで受ける(64 文字以上を受けること、とされる。上限は、長すぎる入力で重くしないため)
@@ -119,23 +119,23 @@ Claude・Codex ─┘                                                           
 
 ### 2 段階認証(TOTP。2026-10-01 本人の決定。Q-048)
 
-- **パスワードで入るときは必須。**Google で入るときは求めない(Google 側の 2 段階認証に任せる。Workspace の管理コンソールで必須にしておく)
+- **パスワードか Microsoft で入るときは必須。**Google で入るときは求めない(Google 側の 2 段階認証に任せる。対象を Workspace に限っているので、管理コンソールで必須にしておける)。Microsoft の 2 段階認証は、Works からは確かめられず、個人のアカウント・よその組織のアカウントもあるので必須にもできない。だから Works の 6 桁を重ねる(2026-10-02。01 D-14)
 - 方式は RFC 6238 の TOTP。**SHA-1・6 桁・30 秒**(RFC の既定。Google Authenticator・Microsoft Authenticator・1Password など、認証アプリがそろって受ける組)。秘密は 160 ビットの乱数(`pyotp.random_base32()`。NIST の下限は 112 ビット)
 - 受ける幅は前後 1 刻み(±30 秒)。端末の時計のずれと、通信と打つ時間のため(RFC 6238 §5.2、NIST SP 800-63B-4 §3.1.5.2)
 - **同じコードは 1 回しか受けない**(RFC 6238 §5.2 と NIST の SHALL)。最後に受けた刻み(`users.totp_last_step`)より後のものだけを受ける
 - 秘密は `users.totp_secret` に**暗号化して**置く(Google の鍵と同じく、`WORKS_SECRET_KEY` から導いた鍵の Fernet)。コードを照らすのに元の値が要るので、ハッシュにはできない。`WORKS_SECRET_KEY` を変えると、2 段階認証はやり直しになる
-- ログインの流れ: `POST /session`(メールアドレスとパスワード)が通っても、**まだセッションを作らない**。2 段目を待つ札(`login_challenges` の行。Cookie `__Host-works_login`、5 分)を置いて「6 桁を入れて」と返す → `POST /session/totp`(6 桁)が通ったらセッションを作り、札を消す。1 枚の札で試せるのは 5 回まで。切れたら・5 回違えたら、パスワードからやり直す
-- **初めての設定**: パスワードは持っているが TOTP がまだの人(管理者が `set-password` で足した直後など)は、パスワードが通ったところで設定の段へ進む。QR と秘密の文字列を出し、認証アプリで読み、表示された 6 桁が通ったら、設定とログインを一度に済ませる。**設定が済むまでセッションは作らない**(パスワードだけで入れる時間を作らない)
+- ログインの流れ: `POST /session`(メールアドレスとパスワード)が通っても、**まだセッションを作らない**。2 段目を待つ札(`login_challenges` の行。Cookie `__Host-works_login`、5 分)を置いて「6 桁を入れて」と返す → `POST /session/totp`(6 桁)が通ったらセッションを作り、札を消す。1 枚の札で試せるのは 5 回まで。切れたら・5 回違えたら、1 段目からやり直す。Microsoft から戻ったときも同じ札を置き(札は 1 段目が何だったかを持つ)、ログインの画面が `GET /session/challenge` で札を読み直して 6 桁の段を出す
+- **初めての設定**: TOTP がまだの人(管理者が `set-password` で足した直後・Microsoft で初めて入った人など)は、1 段目(パスワードか Microsoft)が通ったところで設定の段へ進む。QR と秘密の文字列を出し、認証アプリで読み、表示された 6 桁が通ったら、設定とログインを一度に済ませる。**設定が済むまでセッションは作らない**(パスワードだけで入れる時間を作らない)
 - QR はサーバが作る(`segno`。`data:image/svg+xml` の URI で返し、画面は `<img>` で描く。画面にライブラリを足さず、CSP も `img-src 'self' data:` の中に収まる)。中身は `otpauth://totp/<ワークスペース名>:<メールアドレス>?secret=…&issuer=<ワークスペース名>`(自社の名前をコードに書かない)
 - やり直す(端末を替えた): アカウントの画面から。10 分以内にログインしていること(パスワード + TOTP か Google)が要る。新しい秘密で読み直し、6 桁が通ったら入れ替える(古い端末のコードは効かなくなる)
-- 端末を無くした: Google で入り、アカウントの画面でやり直す。Google を結んでいなければ、管理者の `python -m app.cli reset-totp <メール>`(次にパスワードで入るときに設定し直す。パスワードも漏れた恐れがあれば `set-password` も)
+- 端末を無くした: Google で入り、アカウントの画面でやり直す(Microsoft で入るにも 6 桁が要るので、ここでは使えない)。Google を結んでいなければ、管理者の `python -m app.cli reset-totp <メール>`(次にパスワードか Microsoft で入るときに設定し直す。パスワードも漏れた恐れがあれば `set-password` も)
 - 回復用のコードは持たない(Google で入る・管理者のコマンドで戻せる。利用者 1〜3 名の規模)。外す口も作らない(パスワードで入る限り必須)
 - E2E: `reset-demo` がデモの利用者に決まった秘密を入れ、E2E はそこから 6 桁を計算して入れる。モックは 2 段目を出さない(パスワードも見ないため)
 
 ### 続けて失敗したとき
 
 - **同じアカウントで 5 回続けて失敗したら(パスワードでも 6 桁でも)、次を受けるまで待たせる。**待ちは 1 分から失敗のたびに倍にし、上限は 1 時間。アカウントを閉じてはしまわない(閉じると、他人が本人を締め出せる)。どの方法でもログインが通れば数え直す
-- **100 回続けて失敗したら、そのアカウントのパスワードでのログインを止める**(NIST の上限。§13)。戻すのは、本人が Google で入ってパスワードを決め直すか、管理者の `set-password`
+- **100 回続けて失敗したら、そのアカウントのパスワードでのログインを止める**(NIST の上限。§13)。戻すのは、本人が Google で入ってパスワードを決め直すか、管理者の `set-password`。待ち(5 回から)と止める(100 回)は 6 桁の段にも掛かるので、Microsoft で入っても 6 桁の段で同じように待たされる(Google は 6 桁を通らないので掛からない)
 - **同じ IP から 10 分に 30 回失敗したら、その IP からのパスワードのログインを 10 分止める**(429 `too_many_attempts`、`Retry-After`)。待たせている間はパスワードを照らさない(ハッシュを掛けない)
 - IP は Cloudflare が付ける `CF-Connecting-IP` を使う(api には Tunnel の向こうからしか届かないので信じてよい。手元は接続元)
 - **門は無いので、ログインの口にはインターネットのだれからでも届く。ここの間引きが守りの本体**(下の「門を置かずに守る」)
@@ -149,6 +149,9 @@ Claude・Codex ─┘                                                           
 |---|---|---|
 | `POST /api/v1/session`・`/session/totp` | ログインする人 | 上の間引き(アカウントごと・IP ごと)、TOTP、Argon2id(同時に 2 本まで)、`Origin` |
 | `GET /api/v1/session`・`/session/options` | 画面 | 読むだけ(未ログインなら 401 と、ログインの画面が出すもの) |
+| `GET /api/v1/session/{google,microsoft}` | 本人のブラウザ | 提供元の許可の画面へ送るだけ。途中の状態は署名した 10 分の Cookie に置き、**DB に行を作らない**。提供元の discovery document は 1 時間持つ(叩かれても提供元へ問い合わせを積まない) |
+| `GET /api/v1/session/{google,microsoft}/callback` | 本人のブラウザ | state を Cookie と照らす(合わなければ提供元へ問い合わせずに断る)。**コードの引き換えは送り元(IP)ごとに 1 分 10 回まで**。ID トークンの署名・発行元・宛先・期限・nonce。公開鍵は、知らない kid でも読み直すのは 1 分に 1 回まで |
+| `GET /api/v1/session/challenge` | ログインの画面 | 2 段目の札の Cookie が無い・切れていれば 401(読むだけ) |
 | `/register`(MCP の動的登録) | Claude | 戻り先は Claude だけ(§6)。**許可の無い登録は新しいものから 50 件だけ残し、古いものから消す**(断らないので、正しい登録を締め出さない。許可の付いた登録は消さない) |
 | `/authorize` | 本人のブラウザ | 登録済みのクライアントだけ。**許可を待つ依頼は新しいものから 50 件だけ残す**(10 分で切れる)。鍵を出すのは、ログインした本人が許可したときだけ |
 | `/token`・`/revoke` | Claude | 認可コード・refresh token は 256 ビットの乱数で、PKCE も要る。全文は保存しない(sha256) |
@@ -179,24 +182,44 @@ Claude・Codex ─┘                                                           
 
 ### Google でログイン
 
-- OpenID Connect の認可コード + PKCE。スコープは `openid email`。OAuth クライアントはドライブと同じもの(GCP `citric-earth-449901-e7`、種類はウェブ、**対象は「内部」**。runbook §6)。「内部」なので、**Google で入れるのは Workspace のアカウントだけ**(ほかは Google が `org_internal` で断り、Works には戻ってこない)
-- 流れ: `GET /api/v1/session/google?next=…` → 短命の Cookie `__Host-works_oidc`(state・nonce・PKCE の verifier・戻り先を署名して入れる。10 分)を置いて Google へ → 戻り `GET /api/v1/session/google/callback` で、state を Cookie と照らし、コードをトークンに替え、ID トークンを確かめる(署名 = Google の公開鍵、`iss` が `https://accounts.google.com` か `accounts.google.com`、`aud` = クライアント ID、期限、nonce)→ 利用者を決めてセッションを作り、`next` へ。Google の口(許可・トークン・公開鍵)は discovery document(`https://accounts.google.com/.well-known/openid-configuration`)から読む
-- **利用者との結び付けは Google の `sub`**(アカウント固有で変わらない ID)。Google は「メールアドレスを利用者の ID に使うな」としている(§13)。初めて Google で入るときだけ、`email_verified` が真のメールアドレスで `users.email` を探し、見つかれば `google_sub` を結ぶ。以後は `sub` で引く(Google 側でアドレスが変わっても入れる)。見つからなければ入れない(`google_not_registered`)
+- OpenID Connect の認可コード + PKCE(S256)。スコープは `openid email`。OAuth クライアントはドライブと同じもの(GCP `citric-earth-449901-e7`、種類はウェブ、**対象は「内部」**。runbook §6)。「内部」なので、**Google で入れるのは Workspace のアカウントだけ**(ほかは Google が `org_internal` で断り、Works には戻ってこない)
+- 流れ: ログインの画面のボタン(リンク)`GET /api/v1/session/google?next=…` → 短命の Cookie `__Host-works_oidc`(10 分)を置いて Google の許可の画面へ → 戻り `GET /api/v1/session/google/callback` で、state を Cookie と照らし、コードをトークンに替え(client secret と PKCE の verifier を添える)、ID トークンを確かめる → 利用者を決めてセッションを作り、`next` へ。中身は `app/auth/oidc.py`
+- Cookie に入れるのは、state(256 ビットの乱数)・戻り先・結ぶ相手(アカウントの画面から結ぶときだけ)・時刻で、`WORKS_SECRET_KEY` で署名する。**PKCE の verifier と nonce は、state から同じ鍵で導く**(Cookie に秘密を置かず、DB にも行を作らない)
+- ID トークンは、署名(Google の公開鍵。`kid` で選ぶ)・`iss`(`https://accounts.google.com` か `accounts.google.com`)・`aud`(クライアント ID)・期限(時計のずれは 2 分まで見逃す)・nonce を確かめる。Google の口(許可・トークン・公開鍵)は discovery document(`https://accounts.google.com/.well-known/openid-configuration`)から読み、1 時間持つ。公開鍵は、知らない `kid` が来たら読み直す(鍵の入れ替え)
+- **利用者との結び付けは Google の `sub`**(アカウント固有で変わらない ID)。Google は「メールアドレスを利用者の ID に使うな」としている(§13)。初めて Google で入るときだけ、**Google が持ち主だと言えるアドレス**(`email_verified` が真で、Gmail のアドレスか、`hd` がある Workspace の利用者。§13)で `users.email` を探し、見つかれば `google_sub` を結ぶ。以後は `sub` で引く(Google 側でアドレスが変わっても入れる)。見つからなければ入れない(`google_not_registered`)。消した利用者に結ばれた `sub` でも入れない
 - state を Cookie に結ぶのは、他人が用意した戻りの URL を踏まされて、その人のアカウントでログインさせられるのを防ぐため(ドライブの繋ぎは利用者の ID を state に署名しているが、ログインの前には利用者がいない)
-- 戻り先(`<公開 URL>/api/v1/session/google/callback`)を、GCP のクライアントの「承認済みのリダイレクト URI」に足す(J-040 と同じ画面)
-- 結ぶ・外すはアカウントの画面から。外せるのはパスワードを持っているときだけ(入る手段が無くならないように)
-- Google で入る人には、Workspace 側の 2 段階認証が効く
+- 戻り先(`<公開 URL>/api/v1/session/google/callback`)を、GCP のクライアントの「承認済みのリダイレクト URI」に足す(ドライブの戻り先とは別の URL。runbook §6)
+- 結ぶ・外すはアカウントの画面から(下の「結ぶ・外す」)
+- Google で入る人には、Workspace 側の 2 段階認証が効く(管理コンソールで必須にしておく。06 §3)
+
+### Microsoft でログイン(2026-10-02。01 D-14)
+
+- Microsoft の ID プラットフォーム(Entra ID)の OpenID Connect。仕組みは Google と同じ(`app/auth/oidc.py`。認可コード + PKCE、state・nonce、署名した Cookie、ID トークンの確かめ)。違うところだけを書く
+- **入れるのは、個人の Microsoft アカウントと、職場・学校のアカウント**(テナント `common`。`WORKS_MICROSOFT_TENANT` で `organizations`・`consumers`・テナントの ID に絞れる)。アプリ登録の「サポートされているアカウントの種類」は「Any Entra ID Tenant + Personal Microsoft accounts」(runbook §6c)
+- スコープは `openid email profile`(`profile` は、アドレスの無い職場のアカウントでもサインインの名前を表示に出すため)。戻りは `response_mode=query`(GET で戻すので、SameSite=Lax の Cookie が届く)
+- **ID トークンの発行元**: `common` の discovery document は、発行元を `https://login.microsoftonline.com/{tenantid}/v2.0` の型で載せる。ID トークンの `tid`(入った人のテナント)を当てはめたものと `iss` が同じであること。`aud` はアプリ(クライアント)の ID
+- **利用者との結び付けは Microsoft の `sub`**(Works のアプリ登録に固有の、変わらない ID。§13)。`email` は「確かめられていない・変わる」と Microsoft が書いているので、**初めてのときにアドレスから利用者を探すのは、ドメインの持ち主が確かめたアドレス(省略できる claim の `xms_edov` が真)のときだけ**。アプリ登録の「トークン構成」で、ID トークンに `email` と `xms_edov` を足しておく(runbook §6c)。確かめられないアドレスの人は、ほかの方法で Works に入り、アカウントの画面で結ぶ(結ぶときはログイン中の本人なので、アドレスを確かめなくてよい)
+- **6 桁(TOTP)を重ねる。**Microsoft で確かめたら、セッションは作らず、パスワードのときと同じ 2 段目の札を置いてログインの画面(`/login?continue=microsoft&next=…`)へ戻す。画面は `GET /session/challenge` で札を読み直して 6 桁の段(まだの人は設定の段)を出し、`POST /session/totp` が通ったらセッションを作る(`method` は `microsoft`)
+- **クライアントの証明は証明書**(OpenID Connect の `private_key_jwt`)。Microsoft は、client secret を本番で使わないよう求めている(§13)。Works は証明書の秘密鍵で、PS256・`x5t#S256`(証明書の SHA-256 の指紋)・`aud` = トークンの口・5 分の JWT を作って添える。証明書は手元で作り(`openssl req -x509 … -noenc`)、公開する側(証明書)だけを Entra に上げる。秘密鍵と証明書は、PEM を続けて base64 で 1 行にして `.env` の `WORKS_MICROSOFT_CERTIFICATE` に置く(runbook §6c)
+- 起動のときに確かめる: ID と証明書が片方だけ・証明書が読めない・秘密鍵と証明書が対になっていない → api は起動しない(ボタンが出ているのに入れない、を作らない)。期限が 30 日を切ったらログインのたびではなく起動のときに知らせる(証明書の期限は作り直して Entra に上げ直す)
+- 戻り先(`<公開 URL>/api/v1/session/microsoft/callback`)を、アプリ登録の「Web」のリダイレクト URI に入れる
+
+### 結ぶ・外す(アカウントの画面から)
+
+- 結ぶ: `POST /api/v1/account/identities/{google,microsoft}` が許可の画面の URL を返し、画面はページごとそこへ移る(書き込みなので POST にし、`Origin` を確かめる。GET のリンクだと、よそのサイトから結ぶ流れを始めさせられる)。**10 分以内のログインが要る**(入る手段を足すことなので、盗まれたセッションから他人のアカウントを結ばせない)。どのアカウントを結ぶかを選ばせる(`prompt=select_account`)
+- 戻りはログインと同じ口(`/session/{provider}/callback`。Cookie に結ぶ相手がいれば結ぶ)。**戻ったときに、始めた人と同じ人がまだログインしていること**(ログアウトした・別の人で入り直した → 結ばない)。ほかの人に結ばれたアカウントは結べない(`{provider}_in_use`)。結べたら `/account?linked=…`、だめなら `/account?link_error=…`
+- 外す: `DELETE /api/v1/account/identities/{provider}`。ほかに入る手段(パスワードか、もう一方)が残るときだけ(`last_login_method`)
 
 ### パスワード・2 段階認証を変える・忘れたとき、利用者を足す
 
-- 変えるには、いまのパスワードか、**10 分以内にログインしたこと**(パスワード + TOTP か Google)が要る。忘れたら Google で入り直し、10 分のうちにアカウントの画面で決め直す。2 段階認証のやり直しと、端末を無くしたときは上の「2 段階認証」
+- 変えるには、いまのパスワードか、**10 分以内にログインしたこと**(パスワード + TOTP、Google、Microsoft + TOTP のどれか)が要る。忘れたら Google か Microsoft で入り直し、10 分のうちにアカウントの画面で決め直す。2 段階認証のやり直しと、端末を無くしたときは上の「2 段階認証」
 - 管理者は `python -m app.cli set-password <メール>` で決められる(標準入力から読む。画面にもログにも出さない)。その人のセッションと許可はすべて切れる
 - **メールでの再設定は持たない**(Works にはメールを送る仕組みが無い。人が増えたら考える)
-- 利用者を足すのは管理者だけ(`python -m app.cli add-user`。画面は J-038)。**名乗り出て登録する口は作らない**。足した人は、Google で入るか、`set-password` で決めた最初のパスワードで入って変える
+- 利用者を足すのは管理者だけ(`python -m app.cli add-user`。画面は J-038)。**名乗り出て登録する口は作らない**。足した人は、Google か Microsoft(確かめられたアドレスのとき)で入るか、`set-password` で決めた最初のパスワードで入って変える
 
 ### Android アプリのログイン(サーバ側。アプリ側は 09)
 
-- RFC 8252(ネイティブアプリの OAuth)に従う。**ログインの画面はアプリの中に作らず、ブラウザで Works の `/login` を開く**(パスワードも Google も、Web と同じ 1 枚で済む)。埋め込みの WebView は使わない(RFC 8252 が禁じ、Google も WebView の中のログインを断る)
+- RFC 8252(ネイティブアプリの OAuth)に従う。**ログインの画面はアプリの中に作らず、ブラウザで Works の `/login` を開く**(パスワードも Google も Microsoft も、Web と同じ 1 枚で済む)。埋め込みの WebView は使わない(RFC 8252 が禁じ、Google も WebView の中のログインを断る)
 - 開き方は **Auth Tab**(Chrome 137 以降。androidx.browser 1.9.0 で安定版)。Auth Tab の無いブラウザでは、自動で Custom Tabs に落ちる
 - クライアントは初めから入れてある公開クライアント `works-android`(動的登録ではない)。PKCE(S256)は必須。スコープは `api`
 - **戻り先は https**(`<公開 URL>/app/oauth/callback`)。Works が `/.well-known/assetlinks.json`(Digital Asset Links)で「この URL を受けてよいのは Works のアプリ(パッケージ名と署名の指紋)」と示し、Chrome と Android がそれを確かめる。値は `.env`(`WORKS_ANDROID_PACKAGE`・`WORKS_ANDROID_CERT_SHA256`)から api が返す(Caddy が api へ流す道に足す)
@@ -212,6 +235,7 @@ Claude・Codex ─┘                                                           
 - 2026-10-01(同日): 2 段階認証は TOTP で、パスワードで入るときは必須と決めた(Q-048)。Google で入れるのが Workspace のアカウントだけなこと、既定値(セッション 30 日・メールでの再設定を持たない・Android アプリに許可のカードを出さない)も本人が了承
 - 2026-10-01(同日): Access は外さず、門として残すと見直した(本人。「Surface で稼働させている以上 Access は必要。ログインとセッションはシステム側に」)。Android アプリは Cloudflare WARP で門を通る(本人の意向)。J-055 は「Access の撤去」から「本番をアプリのログインに切り替える」に変えた
 - 2026-10-01(同日、2 度目の見直し): **Access を外す(素通しにする)と決めた**(本人。「Access を素通りにし、ログインやセッション管理は全面的にシステム側に。スマホアプリや AI エージェントなどからのリクエストも届くように」)。`WORKS_AUTH` と `app/access.py` を消し、ログインの前に届く口の守りを足した(上の「門を置かずに守る」)。WARP(J-057)は要らなくなった。本番で Access を外すのは J-055
+- 2026-10-02: **Google アカウントと Microsoft アカウントでもログインできるようにした**(本人。J-054)。Google は決めてあった形のまま作った。Microsoft は個人と職場・学校の両方を受け、6 桁を重ね、アドレスは `xms_edov` のときだけ信じ、クライアントの証明は証明書にした(上の「Microsoft でログイン」。01 D-14)
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
@@ -360,7 +384,7 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 - ログイン: §5「Android アプリのログイン」(公開クライアント `works-android`、PKCE、スコープ `api`、許可のカードを出さない)。手前に門は無いので、公開 URL に直に届く(06 §7)
 - サーバに足すもの(J-056): `/api/v1` でスコープ `api` の Bearer を受ける(Bearer の要求は `Origin` を見ない)、`works-android` の登録、`/.well-known/assetlinks.json`
 
-## 13. 一次資料での確認結果(ログインと Android・2026-10-01)
+## 13. 一次資料での確認結果(ログインと Android・2026-10-01。Google・Microsoft でログインは 2026-10-02)
 
 共通ルールに従い、採るもの・採らないものを一次資料で確かめた(2026-10-01。公式の頁を直に取得)。
 Zero Trust の料金・Cloudflare One Agent・Split Tunnels・Android の VPN・Managed OAuth の行は、スマホを WARP で門に通す案のために確かめたもの。同じ日に Access を外すと決めたので使わないが、記録として残す。
@@ -393,3 +417,12 @@ Zero Trust の料金・Cloudflare One Agent・Split Tunnels・Android の VPN・
 | Split Tunnels の Include | 指定した宛先だけを通す(全プラン)。Include にするなら IdP と `<チーム>.cloudflareaccess.com` と、守るアプリも入れる。スマホはトンネルを張ったときにだけ反映し、ドメインより IP の指定を勧める。Cloudflare の配下のドメインは IP を共有するので、ほかのホスト名も一緒に通ることがある | https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/route-traffic/split-tunnels/ |
 | Android の VPN | 常時接続の VPN は Android 7.0 から。VPN は利用者ごとに同時に 1 本だけ(新しく始めると前のものは止まる) | https://developer.android.com/develop/connectivity/vpn |
 | Access の Managed OAuth(WARP の代わりの候補) | 2026-03 に追加。ブラウザ以外の口(CLI・SDK など)が OAuth 2.0 の認可コードで Access を通る。RFC 8707 に対応した OAuth クライアントが要る | https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/ |
+| Google の「持ち主と言えるアドレス」(2026-10-02 確認) | Google が持ち主だと言えるのは、`@gmail.com` のアドレスと、`email_verified` が真で `hd` がある(Workspace の)アドレスだけ。ほかのアドレスは、アカウントを作ったときに確かめただけで、今の持ち主かは分からない。Workspace の利用者かは、アドレスのドメインではなく `hd` で見る | https://developers.google.com/identity/gsi/web/guides/verify-google-id-token 、https://developers.google.com/identity/openid-connect/openid-connect |
+| Microsoft の ID トークン(2026-10-02 確認) | `sub` は変わらず、使い回されず、**アプリ(クライアント ID)ごとに違う値**(pairwise)。利用者の鍵には `sub` か `oid` を使う。`email` は「正しいとは限らず、変わる。認可にもデータの鍵にも使うな」、`preferred_username` も変わるので認可に使わない。個人のアカウントの `tid` は `9188040d-6c67-4c5b-b112-36a304b66dad`。署名・`iat`/`nbf`/`exp`・`aud`・`nonce` を確かめる | https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference 、https://learn.microsoft.com/en-us/entra/identity-platform/id-tokens |
+| Microsoft の `xms_edov`(省略できる claim) | 「メールアドレスのドメインの持ち主が確かめたか」の真偽。`email` があるときだけ入る。アプリ登録の「トークン構成」で足す | https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference |
+| Microsoft の OpenID Connect と認可コード | テナントは `common`(個人 + 職場・学校)・`organizations`・`consumers`・テナントの ID。discovery document は `https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`。PKCE は「公開・機密のどちらのクライアントにも勧める」。コードだけを受けるなら `response_mode=query` が使える。`prompt=select_account` でアカウントを選ばせる | https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc 、https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow |
+| Microsoft のクライアントの証明 | **client secret は「安全性が低いので本番では使うべきでない」**(期限は最長 24 か月)。証明書の資格情報は、ヘッダが `alg` PS256・`typ` JWT・`x5t#S256`(証明書の DER の SHA-256 の指紋を base64url)、本文が `aud`(トークンの口)・`iss` と `sub`(クライアント ID)・`jti`・`nbf`・`iat`・`exp`(5〜10 分) | https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials 、https://learn.microsoft.com/en-us/entra/identity-platform/certificate-credentials |
+| Microsoft のアプリ登録 | Entra 管理センター › Entra ID › アプリの登録 › 新規登録。前提は Azure のアカウント(無料で作れ、既定のディレクトリが使える)。サポートされているアカウントの種類「Any Entra ID Tenant + Personal Microsoft accounts」 | https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app |
+| ボタンのマーク | Google の「G」は大きさと色を変えず、標準の色のまま白い地に置く。Microsoft のロゴは変えない | https://developers.google.com/identity/branding-guidelines 、https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-branding-in-apps |
+| PyJWT(採る) | 2.15.1(2026-09-28)。Production/Stable。ID トークンの署名の確かめ(`PyJWKSet`)と、Microsoft へのクライアントの証明(PS256)。これまでも MCP の SDK の中で入っていたものを、直に使う | https://pypi.org/project/PyJWT/ |
+| OpenSSL の `req -nodes`(使わない) | OpenSSL 3.0 で非推奨。代わりは `-noenc`(手元の 3.0.13 の `openssl req -help` でも deprecated と出る) | `man openssl-req` |

@@ -52,12 +52,15 @@ users = Table(
     Column("avatar_color", Text, nullable=False, server_default=text("'blue'")),
     # 環境設定(テーブル定義・Web フォーム・MCP)を触れる印。ロールは持たない(J-038)
     Column("admin", Boolean, nullable=False, server_default=text("false")),
-    # Argon2id の文字列(app/auth/passwords.py)。NULL ならパスワードでは入れない(Google だけで入る人。03 §5)
+    # Argon2id の文字列(app/auth/passwords.py)。NULL ならパスワードでは入れない(Google・Microsoft だけで入る人。03 §5)
     Column("password_hash", Text, nullable=True),
     Column("password_changed_at", TIMESTAMP(timezone=True), nullable=True),
-    # Google でログイン(J-054)。sub はアカウント固有で変わらない ID。初めて Google で入ったときに結ぶ
+    # Google・Microsoft でログイン(03 §5)。sub は提供元の中で変わらない ID(Microsoft はアプリごとに違う値)。
+    # 初めて入ったとき(確かめられたアドレスで利用者を探す)か、アカウントの画面から結ぶ。email は表示だけに使う
     Column("google_sub", Text, nullable=True, unique=True),
     Column("google_email", Text, nullable=True),
+    Column("microsoft_sub", Text, nullable=True, unique=True),
+    Column("microsoft_email", Text, nullable=True),
     # 2 段階認証(TOTP)。秘密は照らすのに元の値が要るので、ハッシュではなく暗号化して持つ(app/auth/totp.py)
     Column("totp_secret", Text, nullable=True),
     Column("totp_enabled_at", TIMESTAMP(timezone=True), nullable=True),
@@ -78,7 +81,7 @@ user_sessions = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=UUIDV7),
     Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     Column("token_hash", Text, nullable=False, unique=True),
-    # どう入ったか(password = パスワード + TOTP / google)
+    # どう入ったか(password = パスワード + TOTP / google / microsoft = Microsoft + TOTP)
     Column("method", Text, nullable=False),
     Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
     # 最後に使った時刻。1 時間に 1 回だけ書く(アカウントの画面の「最終」)
@@ -88,7 +91,8 @@ user_sessions = Table(
     _ts("created_at"),
 )
 
-# パスワードが通り、2 段目(TOTP)を待っているログイン(03 §5)。札は Cookie で渡し、sha256 だけを持つ。5 分・5 回まで
+# 1 段目(パスワードか Microsoft)が通り、2 段目(TOTP)を待っているログイン(03 §5)。札は Cookie で渡し、sha256 だけを持つ。
+# 5 分・5 回まで
 login_challenges = Table(
     "login_challenges",
     metadata,
@@ -96,6 +100,8 @@ login_challenges = Table(
     Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     # totp = 6 桁を待つ / totp_setup = 2 段階認証を設定してから入る(秘密は users.totp_pending_secret)
     Column("purpose", Text, nullable=False),
+    # 1 段目に何を使ったか(password / microsoft)。2 段目が通ったら、セッションの method になる
+    Column("method", Text, nullable=False, server_default=text("'password'")),
     Column("attempts", Integer, nullable=False, server_default=text("0")),
     Column("expires_at", TIMESTAMP(timezone=True), nullable=False),
     _ts("created_at"),
@@ -109,11 +115,11 @@ login_attempts = Table(
     # 打たれた値を小文字にしたもの(利用者にいなくても残す)
     Column("email", Text, nullable=False),
     Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
-    # password / totp / google
+    # password / totp / google / microsoft
     Column("method", Text, nullable=False),
     Column("ip", Text, nullable=True),
     Column("succeeded", Boolean, nullable=False),
-    # 失敗の理由(no_user・bad_password・bad_code・throttled・locked など)
+    # 失敗の理由(no_user・bad_password・bad_code・throttled・not_registered など)
     Column("reason", Text, nullable=True),
     _ts("created_at"),
     Index("login_attempts_user", "user_id", "created_at"),

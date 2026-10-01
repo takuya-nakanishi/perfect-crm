@@ -45,7 +45,8 @@ export function createMockClient(): ApiClient {
     },
     async getSessionOptions() {
       await sleep(READ_MS)
-      return { google: false }
+      // モックは Google・Microsoft に繋がない(ログインの画面にボタンを出さない。確かめるのは pytest)
+      return { google: false, microsoft: false }
     },
     async login(email, password) {
       await sleep(WRITE_MS * 3)
@@ -59,6 +60,10 @@ export function createMockClient(): ApiClient {
     async verifyTotp() {
       await sleep(WRITE_MS)
       // モックは 2 段目の札を出さないので、ここへ来るのは古い画面だけ
+      throw new ApiError(401, 'login_expired', '時間が経ちすぎました。もう一度ログインしてください')
+    },
+    async resumeLogin() {
+      await sleep(READ_MS)
       throw new ApiError(401, 'login_expired', '時間が経ちすぎました。もう一度ログインしてください')
     },
     async logout() {
@@ -100,6 +105,16 @@ export function createMockClient(): ApiClient {
     async revokeOtherAccountSessions() {
       await sleep(WRITE_MS)
       requireUser()
+    },
+    async linkLogin(provider) {
+      await sleep(WRITE_MS)
+      requireUser()
+      throw account.providerNotConfigured(provider)
+    },
+    async unlinkLogin(provider) {
+      await sleep(WRITE_MS)
+      requireUser()
+      throw account.providerNotConfigured(provider)
     },
 
     async getMeta() {

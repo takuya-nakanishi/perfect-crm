@@ -14,7 +14,7 @@ FastAPI + SQLAlchemy 2(Core)+ Alembic + Pydantic v2 + psycopg 3。パッケー�
 | `app/google/` | Google ドライブ(04 §8)。`oauth`(繋ぐ)・`store`(鍵を暗号化して持つ)・`drive`(Drive API)・`http`(**唯一の外向きの口**。テストはここを差し替える) |
 | `app/db.py` | 接続。1 リクエスト = 1 トランザクション |
 | `app/errors.py` | `ApiError` と、契約どおりの `{code, message}` に揃える例外ハンドラ |
-| `app/auth/` | 自前のログイン(03 §5)。`passwords`(Argon2id と決まり)・`totp`(2 段階認証)・`sessions`(ブラウザのセッション)・`challenges`(2 段目を待つ札)・`throttle`(続けて失敗したときの待ち)。口は `app/api/session.py`・`account.py`。いまの利用者を決めるのは `app/api/deps.py`。手前に門(Cloudflare Access)は無いので、これが守りの本体(03 §5「門を置かずに守る」) |
+| `app/auth/` | 自前のログイン(03 §5)。`passwords`(Argon2id と決まり)・`totp`(2 段階認証)・`oidc`(Google・Microsoft でログイン。`call` が**唯一の外向きの口**で、テストはここを差し替える)・`sessions`(ブラウザのセッション)・`challenges`(2 段目を待つ札)・`throttle`(続けて失敗したときの待ち)。口は `app/api/session.py`・`account.py`。いまの利用者を決めるのは `app/api/deps.py`。手前に門(Cloudflare Access)は無いので、これが守りの本体(03 §5「門を置かずに守る」) |
 | `app/mcpserver/` | MCP サーバ(`server.py`。ツール 6 つ)と、Claude のカスタムコネクタが通る OAuth の認可サーバ(`oauth.py`)。`/mcp` と OAuth の口は `/api/v1` の外(03 §6、04 §13) |
 | `app/slack/` | Slack のチャンネル(04 §14)。`service`(繋ぐ・外す・テスト通知)・`store`(Webhook を暗号化して持つ。1 行 = 1 チャンネル)・`message`(本文の Block Kit とエスケープ)・`http`(**唯一の外向きの口**。テストはここを差し替える) |
 | `app/workflows/` | ワークフロー(04 §15)。`model`(定義の検証)・`store`(定義と実行記録)・`engine`(書き込みのたびに判定して実行記録を入れる)・`runner`(送り係。API のプロセスの中のスレッド。03 §11)・`trial`(テスト送信)・`actions/`(アクションの種類。いまは `slack`) |

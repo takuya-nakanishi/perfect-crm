@@ -6,6 +6,7 @@ import { sidebarObjects } from '@/lib/sidebar'
 /** キャッシュのキー。更新系(mutations.ts)が同じ形で無効化する */
 export const keys = {
   session: ['session'] as const,
+  sessionOptions: ['session-options'] as const,
   account: ['account'] as const,
   accountSessions: ['account', 'sessions'] as const,
   meta: ['meta'] as const,
@@ -25,6 +26,11 @@ export function useSession() {
     staleTime: Infinity,
     retry: (count, error) => !(error instanceof ApiError) && count < 3,
   })
+}
+
+/** ログインの画面とアカウントの画面が出す、Google・Microsoft のボタン(未ログインで読める。変わらないので 1 回だけ) */
+export function useSessionOptions() {
+  return useQuery({ queryKey: keys.sessionOptions, queryFn: () => api.getSessionOptions(), staleTime: Infinity, retry: false })
 }
 
 export function useMeta(enabled = true) {

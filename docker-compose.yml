@@ -64,10 +64,14 @@ services:
       WORKS_PUBLIC_URL: ${WORKS_PUBLIC_URL:-https://works.sanei-clover.com}
       WORKS_ADMIN_EMAIL: ${WORKS_ADMIN_EMAIL:-} # 最初の管理者(初回だけ作る)
       WORKS_ADMIN_NAME: ${WORKS_ADMIN_NAME:-管理者}
-      # Google ドライブ(04 §8)。空ならドライブの API は 503 を返す。作り方は docs/runbook/01 §6
+      # Google ドライブ(04 §8)と Google でログイン(03 §5)。空ならドライブの API は 503 を返し、ログインのボタンも出ない。作り方は docs/runbook/01 §6
       WORKS_GOOGLE_CLIENT_ID: ${WORKS_GOOGLE_CLIENT_ID:-}
       WORKS_GOOGLE_CLIENT_SECRET: ${WORKS_GOOGLE_CLIENT_SECRET:-}
       WORKS_GOOGLE_REDIRECT_URI: ${WORKS_GOOGLE_REDIRECT_URI:-https://works.sanei-clover.com/api/v1/google/callback}
+      # Microsoft でログイン(03 §5)。空ならログインの画面にボタンを出さない。作り方は docs/runbook/01 §6c
+      WORKS_MICROSOFT_CLIENT_ID: ${WORKS_MICROSOFT_CLIENT_ID:-}
+      WORKS_MICROSOFT_CERTIFICATE: ${WORKS_MICROSOFT_CERTIFICATE:-}
+      WORKS_MICROSOFT_TENANT: ${WORKS_MICROSOFT_TENANT:-common}
       # Slack への通知(04 §14)。空なら連携できない。アプリは llm-wiki の稼働通知と共有(docs/runbook/01 §6b)
       WORKS_SLACK_CLIENT_ID: ${WORKS_SLACK_CLIENT_ID:-}
       WORKS_SLACK_CLIENT_SECRET: ${WORKS_SLACK_CLIENT_SECRET:-}

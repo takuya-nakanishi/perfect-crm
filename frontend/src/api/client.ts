@@ -22,6 +22,7 @@ import type {
   SearchResponse,
   Session,
   SessionOptions,
+  LoginProvider,
   LoginResult,
   TotpSetup,
   Account,
@@ -48,6 +49,11 @@ export interface ApiClient {
   login(email: string, password: string): Promise<LoginResult>
   /** ログインの 2 段目(6 桁)。通ればセッションができる。`totp_setup` のときは、この 6 桁で設定も済む */
   verifyTotp(code: string): Promise<Session>
+  /**
+   * 待っている 2 段目を読み直す(Microsoft で確かめたあと、ログインの画面がページごと開き直されたとき)。
+   * 札が無い・切れた → 401 `login_expired`
+   */
+  resumeLogin(): Promise<LoginResult>
   logout(): Promise<void>
 
   /** アカウント(05 §15)。自分のパスワード・2 段階認証・ログイン中の端末 */
@@ -61,6 +67,10 @@ export interface ApiClient {
   revokeAccountSession(id: string): Promise<void>
   /** いま使っている端末以外を、すべて切る */
   revokeOtherAccountSessions(): Promise<void>
+  /** Google・Microsoft を結び始める。返った URL へページごと移り、戻ると /account?linked=… が開く。10 分以内のログインが要る */
+  linkLogin(provider: LoginProvider): Promise<{ url: string }>
+  /** 外す。ほかに入る手段(パスワードか、もう一方)が残るときだけ(無ければ 409 `last_login_method`) */
+  unlinkLogin(provider: LoginProvider): Promise<void>
 
   getMeta(): Promise<MetaResponse>
   /** テーブル設定。どれも変更後のメタデータ全体を返す(画面はそれをそのまま差し替える) */
@@ -194,7 +204,7 @@ export function getApi(): Promise<ApiClient> {
  */
 export const SESSION_EXPIRED = 'works:session-expired'
 /** 合図を出さない口(未ログインが当たり前の、ログインの手順そのもの) */
-const LOGIN_CALLS = new Set<keyof ApiClient>(['getSession', 'getSessionOptions', 'login', 'verifyTotp', 'logout'])
+const LOGIN_CALLS = new Set<keyof ApiClient>(['getSession', 'getSessionOptions', 'login', 'verifyTotp', 'resumeLogin', 'logout'])
 
 /** 呼び出し側を短くするための薄い包み。api.listRecords(...) のように使う */
 export const api: ApiClient = new Proxy({} as ApiClient, {

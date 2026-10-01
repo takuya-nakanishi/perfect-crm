@@ -34,7 +34,7 @@ docker compose --profile public up -d --build    # + Cloudflare Tunnel(公開 UR
 |---|---|
 | `frontend/` | 画面。Vite + React + TypeScript + Tailwind CSS v4。モック(`src/mocks/`)と E2E(`e2e/`)を含む |
 | `docker-compose.yml` | `web`(Caddy で画面を配る)/ `tunnel`(cloudflared)/ `db`(PostgreSQL。まだ使っていない) |
-| `scripts/` | Cloudflare の Tunnel・DNS を API で組むスクリプトと、公開 URL の外からの確認 |
+| `scripts/` | Cloudflare の Tunnel・DNS を API で組むスクリプトと、公開 URL の外からの確認、Microsoft でログインの証明書を作るスクリプト |
 | `docs/design/` | 設計の正本(01 要件と決定 → 07 移行) |
 | `docs/runbook/` | 運用の手順と落とし穴(`02-loop.md` は無人ループ) |
 | `docs/tests/` | テストケース表(4 軸 × 6 領域。`—` の行がまだ無いテスト) |

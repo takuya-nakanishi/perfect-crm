@@ -11,7 +11,7 @@
 ## 現状(2026-09-24)
 
 **`https://works.sanei-clover.com` は 2026-09-24 から本物の API + PostgreSQL で動いている**(WSL2 の Docker → Cloudflare Tunnel。J-041)。データは空から始まり、実データの移行は J-026。
-モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える。Android アプリの実機の試しだけは本番に向ける。本人が承知。`docs/design/09-android.md` A-15)。**ログインとセッションはアプリ自身がすべて持ち(メールアドレスとパスワード + TOTP。Google は J-054)、手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。`docs/design/01` D-14、03 §5)。スマホのアプリも AI のエージェント(MCP)も公開 URL に直に届くので、**ログインの前に届く口はアプリが守る**(03 §5「門を置かずに守る」)。本番で Access を外すのは J-055(手順は 06 §3)。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能)。
+モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える。Android アプリの実機の試しだけは本番に向ける。本人が承知。`docs/design/09-android.md` A-15)。**ログインとセッションはアプリ自身がすべて持ち(メールアドレスとパスワード + TOTP、Google、Microsoft + TOTP。本番で Google・Microsoft を開けるのは J-069)、手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。`docs/design/01` D-14、03 §5)。スマホのアプリも AI のエージェント(MCP)も公開 URL に直に届くので、**ログインの前に届く口はアプリが守る**(03 §5「門を置かずに守る」)。本番で Access を外すのは J-055(手順は 06 §3)。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
 バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 
@@ -48,7 +48,7 @@ scripts/e2e-http.sh                        # 同じ E2E を本物の API + Postg
 ## スタック
 
 確定: 画面は Vite + React + TypeScript + Tailwind CSS v4(+ React Router、TanStack Query、zustand、@dnd-kit/react、lucide)。配信は Caddy、公開は Cloudflare Tunnel(門の Access は置かない)、DB は PostgreSQL 18、全体は Docker Compose。
-バックエンドは FastAPI(Q-034)。ログインはアプリ自身が持つ(パスワードは Argon2id、2 段階認証は TOTP。03 §5)。
+バックエンドは FastAPI(Q-034)。ログインはアプリ自身が持つ(パスワードは Argon2id、2 段階認証は TOTP、Google・Microsoft は OpenID Connect。03 §5)。
 採用したライブラリと非推奨の確認結果は `docs/design/03` §9。**新しく足すときは、非推奨でないことを一次資料で確かめてから。**
 
 ## 作業の仕方

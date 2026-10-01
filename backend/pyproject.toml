@@ -24,6 +24,8 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "pyotp>=2.10.0",
     "segno>=1.6.6",
+    # Google・Microsoft でログイン(03 §5)。ID トークンの署名を確かめ、Microsoft へのクライアントの証明(証明書で署名した JWT)を作る
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]

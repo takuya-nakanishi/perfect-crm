@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     # 戻したあとに画面のどこを開くか(同じオリジンの中だけ)
     google_return_path: str = "/"
 
+    # --- Google・Microsoft でログイン(03 §5。OpenID Connect)---------------------------
+    # Google はドライブと同じ OAuth クライアント(上の 2 つ)を使う。
+    # 戻り先は `<public_url>/api/v1/session/google/callback`(ドライブの戻り先とは別に、クライアントへ足す)。
+    # Microsoft は Entra ID のアプリ登録(docs/runbook/01 §6c)。
+    # 戻り先は `<public_url>/api/v1/session/microsoft/callback`。
+    # クライアントの証明は証明書で行う(秘密鍵と証明書の PEM を続けて base64 で 1 行にしたもの)。
+    # Microsoft は本番で client secret を使わないよう求めている(03 §13)
+    microsoft_client_id: str = ""
+    microsoft_certificate: str = ""
+    # 入れるアカウントの範囲。common = 個人の Microsoft アカウントと職場・学校のアカウントの両方。
+    # organizations(職場・学校だけ)・consumers(個人だけ)・テナントの ID も書ける
+    microsoft_tenant: str = "common"
+
     # --- Slack への通知(04 §14。ワークスペースで 1 つ)------------------------------
     # Slack アプリの資格情報(docs/runbook/01 §6b)。空なら連携できない(画面はその旨を出す)。
     # 認可の戻り先は `<public_url>/api/v1/slack/callback`(Slack アプリに登録するリダイレクト URL と揃える)
@@ -73,6 +86,11 @@ class Settings(BaseSettings):
     def google_enabled(self) -> bool:
         """OAuth クライアントが `.env` にあるか。無ければドライブの API は 503 を返す。"""
         return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def microsoft_enabled(self) -> bool:
+        """Microsoft でログインのアプリ登録が `.env` にあるか。無ければログインの画面にボタンを出さない。"""
+        return bool(self.microsoft_client_id and self.microsoft_certificate)
 
     @property
     def slack_enabled(self) -> bool:

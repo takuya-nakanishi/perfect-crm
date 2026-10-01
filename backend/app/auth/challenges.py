@@ -1,7 +1,7 @@
-"""パスワードが通り、2 段目(TOTP)を待っている札(03 §5)。
+"""1 段目(パスワードか Microsoft)が通り、2 段目(TOTP)を待っている札(03 §5)。
 
 札は Cookie(`__Host-works_login`)で渡し、DB(`login_challenges`)には sha256 だけを置く。
-**札のあいだはセッションを作らない**(パスワードだけで入れる時間を作らない)。5 分で切れ、試せるのは 5 回まで。
+**札のあいだはセッションを作らない**(1 段目だけで入れる時間を作らない)。5 分で切れ、試せるのは 5 回まで。
 """
 
 import secrets
@@ -22,8 +22,11 @@ def cookie() -> str:
     return sessions.cookie_name("works_login")
 
 
-def create(conn: Connection, response: Response, user_id: Any, purpose: str) -> None:
-    """札を作って Cookie に置く。同じ人の古い札は捨てる(開きっぱなしの別のタブの札を残さない)。"""
+def create(conn: Connection, response: Response, user_id: Any, purpose: str, method: str = "password") -> None:
+    """札を作って Cookie に置く。同じ人の古い札は捨てる(開きっぱなしの別のタブの札を残さない)。
+
+    `method` は 1 段目に使ったもの(password / microsoft)。2 段目が通ったら、セッションの method になる。
+    """
     conn.execute(delete(login_challenges).where(login_challenges.c.user_id == user_id))
     conn.execute(delete(login_challenges).where(login_challenges.c.expires_at <= func.clock_timestamp()))
     token = secrets.token_urlsafe(32)
@@ -32,6 +35,7 @@ def create(conn: Connection, response: Response, user_id: Any, purpose: str) -> 
             token_hash=sessions.token_hash(token),
             user_id=user_id,
             purpose=purpose,
+            method=method,
             expires_at=datetime.now(UTC) + TTL,
         )
     )
