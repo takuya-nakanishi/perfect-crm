@@ -4,7 +4,7 @@
 //   ../scripts/e2e-http.sh                       本物の API + PostgreSQL(E2E 用の DB を作り直して)に対して
 //
 // **本番(works.sanei-clover.com・127.0.0.1:8610)には流さない。**この E2E はテーブルを足したり消したりする。
-// 本番は 2026-09-24 から http モード。ログインは Access(J-055 から自前のパスワード + 2 段階認証)なので、流してもログインで止まる。
+// 本番は 2026-09-24 から http モード。ログインは本人のパスワード + 2 段階認証なので、流してもログインで止まる。
 //
 // ブラウザは Playwright が入れた Chromium を使う(CHROMIUM_PATH で指定。無ければ ~/.cache/ms-playwright から探す)。
 // モックのデータはブラウザごとに初期化されるので、何度走らせても同じ結果になる。
@@ -42,16 +42,11 @@ function findChromium() {
 }
 
 const BASE = process.argv[2] || 'http://127.0.0.1:5173'
-// Cloudflare Access の内側を試すときは、サービストークンを全リクエストに付ける
-const accessHeaders = process.env.CF_ACCESS_CLIENT_ID
-  ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET ?? '' }
-  : undefined
 const browser = await chromium.launch({ executablePath: findChromium(), args: ['--no-sandbox'] })
 const ctx = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   locale: 'ja-JP',
   timezoneId: 'Asia/Tokyo',
-  extraHTTPHeaders: accessHeaders,
 })
 const page = await ctx.newPage()
 const errors = []
@@ -584,7 +579,11 @@ await page.keyboard.type('セミナー申し込み'); await page.getByLabel('テ
 await page.getByRole('switch', { name: '取引先名' }).click(); await page.getByRole('switch', { name: '電話' }).click()
 await page.locator('dialog[open]').getByRole('button', { name: 'フォームを作る' }).click(); await wait(700)
 const formCard = page.locator('article').filter({ hasText: 'セミナー申し込み' })
-ok((await formCard.count()) === 1 && (await formCard.locator('pre').innerText()).includes('CF-Access-Client-Id'), 'フォームを作ると、受け口と、Access のサービストークン付きで送る例が出る')
+const formCurl = formCard.locator('pre')
+ok(
+  (await formCard.count()) === 1 && (await formCurl.innerText()).includes('/api/v1/forms/') && !(await formCurl.innerText()).includes('CF-Access'),
+  'フォームを作ると、受け口と、サーバから送る例が出る',
+)
 await formCard.getByRole('tab', { name: 'ブラウザから直接送る HTML' }).click(); await wait(200)
 ok((await formCard.locator('pre').innerText()).includes('name="phone"'), '埋め込み用の HTML も出る')
 await formCard.getByRole('button', { name: 'テスト送信' }).click(); await wait(800)
@@ -692,6 +691,8 @@ if (HTTP_API) {
 await page.waitForSelector('[role=table]')
 await page.goto(BASE + '/settings/mcp'); await wait(600)
 ok(!page.url().includes('/settings') && await page.locator('nav[aria-label=メイン]').getByText('環境設定').count() === 0, '管理者でない人は環境設定に入れない(サイドバーにも出ない)')
+// 戻った先の一覧が読み終わるまで待つ(読んでいる途中で切ると、その読み込みの 401 で先にログインへ戻り、下の「次の操作」と競る)
+await page.locator('[role=table] [role=row]').nth(1).waitFor()
 
 // 使っている途中でセッションが切れたら(期限・ほかの端末で切られた)、次の操作でログインの画面へ戻り、その旨が出る
 if (HTTP_API) await ctx.clearCookies()

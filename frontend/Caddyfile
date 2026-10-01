@@ -1,4 +1,5 @@
-# 画面(ビルド済みの静的ファイル)を配る。TLS と認証は手前の Cloudflare(Tunnel + Access)が持つので、ここは平文の HTTP だけ。
+# 画面(ビルド済みの静的ファイル)を配る。TLS は手前の Cloudflare(Tunnel)が持つので、ここは平文の HTTP だけ。
+# 認証は api(アプリ自身のログイン)が持つ。手前に門(Cloudflare Access)は無い(docs/design/06 §2・§3)。
 # /api/* と MCP・OAuth の口は api(FastAPI)へ流す。画面と API を同じオリジンに置き、Cookie と CSP を単純に保つ。
 {
 	admin off
@@ -14,6 +15,8 @@
 		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
+		# https だけで開かせる(このホストだけ。ブラウザは http で受けたこの値を無視するので、手元の 127.0.0.1 には効かない)
+		Strict-Transport-Security "max-age=31536000"
 		Referrer-Policy strict-origin-when-cross-origin
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		-Server
@@ -24,8 +27,13 @@
 		respond "ok" 200
 	}
 
-	# API(profile backend で起動する。起動していなければ 502。画面が mock モードなら呼ばない)
+	# API(profile backend で起動する。起動していなければ 502。画面が mock モードなら呼ばない)。
+	# 本文は 20 MB まで(超えたら 413)。api は本文を読み終えてから認証を確かめるので、だれからでも届く口に
+	# 大きな本文を送りつけられてもメモリを食わせない。いちばん大きいのは CSV の取り込み(04 §7)
 	handle /api/* {
+		request_body {
+			max_size 20MB
+		}
 		reverse_proxy api:8000
 	}
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import Admin, CommittedConn, Conn
+from app.auth.sessions import client_ip
 from app.errors import ApiError
 from app.mcpserver import oauth
 from app.meta.tables import web_forms
@@ -89,12 +90,13 @@ def _wants_html(request: Request) -> bool:
 
 @router.post("/forms/{key}")
 async def submit_form(key: str, request: Request, conn: CommittedConn) -> Response:
-    """**認証なしの受け口**。ここだけは外(Web サイト)から直に届く。
+    """**認証なしの受け口**。Web サイトの訪問者のブラウザからも、サイトのサーバからも届く(鍵は URL)。
 
     応答する前に確定する(`CommittedConn`)。知らせる(Slack など)のはワークフローで、確定したときに送り係が拾う(04 §15)。
     """
     values = await _values(request)
-    source = request.client.host if request.client else "unknown"
+    # 送り元は Cloudflare が付ける IP(api の手前の Caddy の IP ではなく)。間引きは送り元ごと
+    source = client_ip(request) or "unknown"
     try:
         created = form_service.submit(conn, key, values, source)
     except ApiError as exc:

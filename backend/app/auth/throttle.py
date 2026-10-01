@@ -4,7 +4,8 @@
   アカウントを閉じてはしまわない(閉じると、他人が本人を締め出せる)。どの方法でも、ログインが通れば数え直す
 - 100 回続けて失敗したら、パスワードでのログインを止める(NIST の上限)。Google で入るか、`set-password` で戻る
 - 同じ IP から 10 分に 30 回失敗したら、その IP からは受けない(古い失敗が 10 分より前になるまで)
-- 待たせている間の試みは、照らさず(ハッシュを掛けず)、数にも入れない
+- 待たせている間の試みは、照らさず(ハッシュを掛けず)、数にも入れない。記録は同じ送り元から 1 分に 1 件だけ
+  (門が無く、だれからでも届くので、叩き続けられても表を膨らませない)
 """
 
 import time
@@ -25,6 +26,8 @@ IP_FAILURES = 30
 KEEP = timedelta(days=90)
 # 数える失敗の理由(待たせて断ったもの `throttled` は数えない)
 COUNTED = ("no_user", "bad_password", "bad_code")
+# 待たせて断った試みを残す間隔(同じ送り元から、この間に 1 件だけ)
+THROTTLED_EVERY = timedelta(minutes=1)
 
 _last_sweep = 0.0
 
@@ -60,6 +63,22 @@ def record(
     if time.monotonic() - _last_sweep > 3600:
         _last_sweep = time.monotonic()
         conn.execute(delete(login_attempts).where(login_attempts.c.created_at < func.clock_timestamp() - KEEP))
+
+
+def record_throttled(conn: Connection, *, email: str, user_id: Any | None, method: str, ip: str | None) -> None:
+    """待たせて断った試みを残す。同じ送り元(IP。分からなければメールアドレス)からは 1 分に 1 件だけ。"""
+    same = login_attempts.c.ip == ip if ip else login_attempts.c.email == email
+    recent = conn.execute(
+        select(login_attempts.c.id)
+        .where(
+            login_attempts.c.reason == "throttled",
+            same,
+            login_attempts.c.created_at > func.clock_timestamp() - THROTTLED_EVERY,
+        )
+        .limit(1)
+    ).first()
+    if recent is None:
+        record(conn, email=email, user_id=user_id, method=method, ip=ip, succeeded=False, reason="throttled")
 
 
 def _minutes(seconds: float) -> str:

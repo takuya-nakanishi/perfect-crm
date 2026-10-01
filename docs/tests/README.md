@@ -47,7 +47,7 @@
 | L2 | モックのエンジン(`frontend/src/mocks/*.ts`)。**バックエンドができるまで、サーバの振る舞いの正**。検証・既定値・業務ルール・時系列の合成・テーブル設定の決まり・CSV・受け口 | 対象の隣の `*.test.ts` | 同上 | 無人ループ |
 | L3 | 実ブラウザの画面(Playwright)。ログインから環境設定まで通しで | `frontend/e2e/smoke.mjs` の検査(`ok(…, 'ラベル')`) | `npm run e2e`(開発サーバ)、`scripts/e2e-http.sh`(本物の API + E2E 用の DB)。本番には流さない | 人と、人が起こしたセッション |
 | L4 | PostgreSQL の制約・トリガ・RLS | `backend/tests/` の pytest(実物の DB に対して回る) | `cd backend && uv run pytest` | 人と、人が起こしたセッション |
-| L5 | 公開 URL(Access 越し)、スマホの実機 | `scripts/cloudflare-access-check.py --exec` | 人 | 人 |
+| L5 | 公開 URL、スマホの実機 | `scripts/public-check.py`(読むだけ) | 人 | 人 |
 
 **L2 のテストは、同じケースを HTTP にも向けて流す**(04 の契約が同じなので、期待値はそのまま使える)。
 バックエンドの pytest は表の「API の資産」列で追い、関数の名前を `test_<ID>_…`(例 `test_IO_001_ne_は_NULL_を含む`)にする。

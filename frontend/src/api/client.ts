@@ -190,7 +190,7 @@ export function getApi(): Promise<ApiClient> {
 
 /**
  * 使っている途中でセッションが切れた(30 日の期限・ほかの端末で切られた・パスワードを変えた)ときに投げる合図。
- * AppShell が受けて、ログインの画面へ戻す(Access の頃は Access が戻していた。03 §5)
+ * AppShell が受けて、ログインの画面へ戻す(03 §5)
  */
 export const SESSION_EXPIRED = 'works:session-expired'
 /** 合図を出さない口(未ログインが当たり前の、ログインの手順そのもの) */

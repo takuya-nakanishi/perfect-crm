@@ -47,37 +47,18 @@ function Alert({ children }: { children: ReactNode }) {
 }
 
 /**
- * 本番を切り替える(J-055)までは Cloudflare Access が門で、ここにフォームは出さない。
- * 出るのは門を通れていない(access_required)・利用者でない(not_registered)・設定が無いときだけ。
+ * セッションを確かめられなかったとき(api が止まっている・通信が切れた)。
+ * 未ログイン(401)はここに来ない(getSession が null を返し、フォームを出す)
  */
-function AccessNotice({ error, next }: { error: Error; next: string }) {
-  const code = error instanceof ApiError ? error.code : ''
-  const [busy, setBusy] = useState(false)
-  const unregistered = code === 'not_registered'
+function Unreachable({ error, next }: { error: Error; next: string }) {
   return (
     <div className="w-full max-w-[340px]">
       <Brand />
-      <h1 className="mt-10 text-2xl font-bold tracking-tight">
-        {unregistered ? '登録されていません' : 'ログインし直してください'}
-      </h1>
-      <Alert>{error.message}</Alert>
-      <p className="mt-3 text-ink-2">
-        {unregistered
-          ? '管理者に登録を頼むか、別のアカウントで入り直してください。'
-          : 'Cloudflare Access のログインが切れている可能性があります。読み込み直すと、ログインの画面へ進みます。'}
-      </p>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true)
-          // 別のアカウントへは Access のログアウトを経由する(api.logout がそのページへ移る)
-          if (unregistered) await api.logout()
-          else window.location.assign(next)
-        }}
-        className={`mt-6 ${primaryCls}`}
-      >
-        {unregistered ? '別のアカウントで入る' : '読み込み直す'}
+      <h1 className="mt-10 text-2xl font-bold tracking-tight">Works に繋がりません</h1>
+      <Alert>{error instanceof ApiError ? error.message : '通信できませんでした'}</Alert>
+      <p className="mt-3 text-ink-2">通信か、Works の側が止まっている可能性があります。少し待ってから読み込み直してください。</p>
+      <button type="button" onClick={() => window.location.assign(next)} className={`mt-6 ${primaryCls}`}>
+        読み込み直す
       </button>
     </div>
   )
@@ -207,7 +188,7 @@ export function Login() {
 
   let body: ReactNode
   if (session.error) {
-    body = <AccessNotice error={session.error} next={next} />
+    body = <Unreachable error={session.error} next={next} />
   } else if (step.kind === 'totp') {
     body = codeForm('確認コード', '認証アプリに出ている 6 桁を入れてください。', '確かめる')
   } else if (step.kind === 'totp_setup') {

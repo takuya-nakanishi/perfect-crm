@@ -13,7 +13,7 @@ L2 の対象は `frontend/src/mocks/engine.ts`(`insert` / `update` / `remove` / 
 |---|---|---|---|---|---|---|---|
 | REC-001 | 利用者 | 入口 | 権限 | L3 | 未ログインで `/o/accounts` → `/login` へ送られ、戻り先(`next=`)を持つ。ログイン後に元の画面へ戻る | `smoke.mjs「未ログインで /login へ送られ、戻り先を持っている」` / `smoke.mjs「ログイン後、元の画面へ戻る」` | — |
 | REC-002 | 利用者 | 入口 | 権限 | L3 | 利用者: ログアウト → ログイン画面へ戻る | `smoke.mjs「ログアウトでログイン画面へ戻る」` | — |
-| REC-003 | 利用者 | 入口 | 権限 | L5 | 外部: 未認証で公開 URL → Access へ送られる(302)。認証済みなら画面の HTML が届く | `cloudflare-access-check.py` | — |
+| REC-003 | 利用者 | 入口 | 権限 | L5 | 外部: 公開 URL の画面の HTML が、門(Access)を挟まずに届く(データは API の向こうで、未ログインなら 401)。配る側のヘッダが付く | `public-check.py` | — |
 
 ## 2. 一覧
 

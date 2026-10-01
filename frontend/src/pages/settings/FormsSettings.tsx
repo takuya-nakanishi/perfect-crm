@@ -52,8 +52,8 @@ function curlSnippet(form: WebForm, object: ObjectMeta): string {
     const f = object.fields.find((x) => x.key === key)
     if (f) sample[key] = f.type === 'email' ? 'taro@example.jp' : f.type === 'phone' ? '03-0000-0000' : f.type === 'select' ? (f.options?.[0]?.value ?? '') : `${f.label}の値`
   }
-  // 受け口も Access の内側(06 §7)。Web サイトのサーバ(問い合わせフォームの送信先)が、サービストークンを付けて転送する
-  return `curl -X POST ${endpointOf(form)} \\\n  -H "Content-Type: application/json" \\\n  -H "CF-Access-Client-Id: <Access のサービストークンの ID>" \\\n  -H "CF-Access-Client-Secret: <Access のサービストークンの Secret>" \\\n  -d '${JSON.stringify(sample)}'`
+  // Web サイトのサーバ(問い合わせフォームの送信先)から転送する形。鍵(URL)を訪問者に見せずに済む
+  return `curl -X POST ${endpointOf(form)} \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(sample)}'`
 }
 
 function Snippet({ title, body }: { title: string; body: string }) {
@@ -304,9 +304,9 @@ function FormCard({ meta, form, onEdit }: { meta: MetaResponse; form: WebForm; o
           ))}
         </div>
         {tab === 'html' ? (
-          <Snippet title="そのまま貼れます。見た目はサイト側の CSS で。ブラウザは Access のヘッダを付けられないので、この形は受け口のパスを Access の外に出したときだけ" body={htmlSnippet(form, object)} />
+          <Snippet title="そのまま貼れます。見た目はサイト側の CSS で。受け口の URL(鍵)はページのソースに見えます" body={htmlSnippet(form, object)} />
         ) : (
-          <Snippet title="Web サイトのサーバから、Access のサービストークン付きで転送する。JSON でも form-urlencoded でも" body={curlSnippet(form, object)} />
+          <Snippet title="Web サイトのサーバから転送する。JSON でも form-urlencoded でも。鍵を訪問者に見せずに済みます" body={curlSnippet(form, object)} />
         )}
       </div>
     </article>
@@ -336,9 +336,9 @@ export function FormsSettings() {
         <details className="text-sm text-ink-2">
           <summary className="cursor-pointer text-ink">仕組み</summary>
           <ul className="mt-2 grid gap-1 pl-5">
-            <li>受け口はアプリの認証なしの POST。form-urlencoded でも JSON でも受け、受け付ける項目に無い列は捨てます。経路は画面と同じ(Cloudflare Access の内側)なので、送るのは Web サイトのサーバで、Access のサービストークンをヘッダに付けます(06 §7)</li>
+            <li>受け口はアプリの認証なしの POST(鍵は URL)。form-urlencoded でも JSON でも受け、受け付ける項目に無い列は捨てます。訪問者のブラウザからも、Web サイトのサーバからも届きます(06 §7)</li>
             <li>既定値を足してから、画面からの作成と同じ経路(検証・業務ルール)でレコードを作ります</li>
-            <li>bot 対策: 人には見えない欄(<code>_gotcha</code>)が埋まっていたら捨てます。多すぎる送信は受け口ごとに間引きます(バックエンドで。J-039)</li>
+            <li>bot 対策: 人には見えない欄(<code>_gotcha</code>)が埋まっていたら捨てます。多すぎる送信は、受け口ごと・送り元(IP)ごとに間引きます(1 分に 10 件まで)</li>
             <li>鍵を作り直すと古い URL は効かなくなります。漏れたときに</li>
             <li>受け付けたときに Slack へ知らせるには、ワークフローを作ります(きっかけの「どこから」に Web フォーム)。bot と判断したものはレコードを作らないので、知らせません</li>
           </ul>

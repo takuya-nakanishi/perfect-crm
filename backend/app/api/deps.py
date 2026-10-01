@@ -1,21 +1,19 @@
 """FastAPI の依存。いまログインしている利用者を決める(03 §5)。
 
-`WORKS_AUTH=local`(既定)はアプリ自身のログイン(セッションの Cookie。`app/auth/sessions.py`)で決める。
-`access` は Cloudflare Access の JWT のメールアドレスで決める(本番を切り替える J-055 までの形)。
+ログインはアプリ自身が持つ(セッションの Cookie。`app/auth/sessions.py`)。手前に門(Cloudflare Access)を置かない
+(2026-10-01 の決定。01 D-14)ので、ここが画面の API の唯一の守り。
 """
 
 from typing import Annotated, Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, Request
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection
 
-from app import access
 from app.auth import sessions
 from app.config import get_settings
 from app.db import connection
 from app.errors import ApiError, forbidden
-from app.meta.tables import users
 
 Conn = Annotated[Connection, Depends(connection)]
 # 関数を抜けたところで確定する接続(既定の `Conn` は応答を送ったあとで確定する)。
@@ -58,14 +56,6 @@ def user_dict(row: Any) -> dict[str, Any]:
 
 def current_user(request: Request, conn: Conn) -> dict[str, Any]:
     check_origin(request)
-    if get_settings().auth == "access":
-        email = access.verify(request.headers.get(access.HEADER))
-        row = conn.execute(select(users).where(users.c.email == email, users.c.deleted_at.is_(None))).first()
-        if row is None:
-            # Access は通ったが、Works の利用者ではない。足すのは管理者(`python -m app.cli add-user`)
-            raise ApiError(403, "not_registered", f"{email} は Works の利用者として登録されていません")
-        return user_dict(row)
-
     row = sessions.current(conn, request)
     if row is None:
         raise unauthenticated()

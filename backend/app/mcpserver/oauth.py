@@ -5,14 +5,15 @@
 1. Claude が `/register` で自分を登録する(RFC 7591 の動的登録。公開クライアント)
 2. 本人のブラウザが `/authorize` へ来る。受けた中身を `oauth_requests` に置き、
    画面の許可のページ(`/oauth/consent`)へ送る。許可のページは Works にログインした人だけが開ける
-   (未ログインならログインの画面を経る。切り替えの J-055 までは Access)
+   (未ログインならログインの画面を経る)
 3. 本人が許可すると(`POST /api/v1/oauth/requests/{id}/approve`。利用者はログインで決まる)、
    許可(`oauth_grants`)と認可コードを作り、Claude の戻り先へ送る
 4. Claude のサーバが `/token` でコードをトークンに替える(PKCE S256 は SDK が確かめる)。
    以後は access token で `/mcp` を叩き、切れたら refresh token で取り直す(使うたびに新しいものへ替える)
 
-`/register`・`/token`・`/revoke`・メタデータ・`/mcp` は Anthropic のクラウドから来るので、Access を素通しにする
-(Anthropic の送信元の範囲だけ。06 §7)。守るのはここのトークン。コードとトークンは全文を保存しない(sha256)。
+手前に門(Cloudflare Access)を置かないので、どの口もインターネットのだれからでも届く(06 §7)。
+守るのはここのトークン(コードとトークンは全文を保存しない。sha256)と、鍵を渡すのはログインした本人が
+許可したときだけ、という流れ。だれでも叩ける `/register` と `/authorize` は、たまる行に上限を持つ。
 """
 
 import hashlib
@@ -53,6 +54,13 @@ REFRESH_TTL = timedelta(days=90)
 # ほかの戻り先を持つアプリは登録させない(知らない誰かに、許可の画面を踏ませて鍵を渡すのを防ぐ)
 HOSTED_REDIRECTS = frozenset({"https://claude.ai/api/mcp/auth_callback"})
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+# だれでも叩ける口がためる行の上限。超えたら古いものから消す(断らない。正しい登録を締め出さないため)。
+# - まだ許可の無い登録: Claude は繋ぐたびに登録し、数分のうちに本人が許可する。許可の付いた登録は消さない
+# - 許可を待つ依頼: 10 分で切れるが、切れる前に積まれ続けないように
+# 初めから入れておくクライアント(Android の works-android。J-056)を足すときは、消す対象から外すこと
+UNUSED_CLIENTS_KEPT = 50
+PENDING_REQUESTS_KEPT = 50
 
 
 def mcp_url() -> str:
@@ -200,6 +208,23 @@ def _sweep(conn: Connection) -> None:
     conn.execute(delete(oauth_tokens).where(oauth_tokens.c.expires_at < now))
 
 
+def _keep_unused_clients(conn: Connection, kept: int) -> None:
+    """許可の無い登録を、新しいものから `kept` 件だけ残す(待っている依頼は CASCADE で一緒に消える)。"""
+    unused = (
+        select(oauth_clients.c.client_id)
+        .where(~select(oauth_grants.c.id).where(oauth_grants.c.client_id == oauth_clients.c.client_id).exists())
+        .order_by(oauth_clients.c.created_at.desc())
+        .offset(kept)
+    )
+    conn.execute(delete(oauth_clients).where(oauth_clients.c.client_id.in_(unused)))
+
+
+def _keep_pending_requests(conn: Connection, kept: int) -> None:
+    """許可を待つ依頼を、新しいものから `kept` 件だけ残す。"""
+    old = select(oauth_requests.c.id).order_by(oauth_requests.c.created_at.desc()).offset(kept)
+    conn.execute(delete(oauth_requests).where(oauth_requests.c.id.in_(old)))
+
+
 class WorksOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]):
     """SDK の認可サーバの口と TokenVerifier を兼ねる。ID-JAG(企業の IdP の主張)は使わないので既定のまま断る。"""
 
@@ -225,6 +250,7 @@ class WorksOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Ref
                     client_id=client_info.client_id, info=client_info.model_dump(mode="json", exclude_none=True)
                 )
             )
+            _keep_unused_clients(conn, UNUSED_CLIENTS_KEPT)
 
         await _run(fn)
 
@@ -248,6 +274,7 @@ class WorksOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Ref
                     expires_at=_now() + REQUEST_TTL,
                 )
             )
+            _keep_pending_requests(conn, PENDING_REQUESTS_KEPT)
 
         await _run(fn)
         # 画面の許可のページ(ログインの内側)。本人が許可すると decide() が Claude へ戻す

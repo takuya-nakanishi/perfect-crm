@@ -7,7 +7,7 @@
 
 ## 1. 約束ごと
 
-- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。**認証はアプリ自身が持つ**(2026-10-01。01 D-14、03 §5): 画面はセッションの Cookie、Android アプリは `Authorization: Bearer`(OAuth の access token)。無い・切れた → 401 `unauthenticated`。Cookie で入った書き込み(GET 以外)は `Origin` が公開 URL と同じものだけを受ける(違えば 403 `bad_origin`)。口の一覧は §16。**切り替え(J-055)までは、本番は Cloudflare Access の JWT(`Cf-Access-Jwt-Assertion`)で利用者を決めている**
+- ベースは `/api/v1`。画面と同じオリジン(Caddy が `/api/*` を `api` へ流す)。**認証はアプリ自身が持つ**(2026-10-01。01 D-14、03 §5): 画面はセッションの Cookie、Android アプリは `Authorization: Bearer`(OAuth の access token)。無い・切れた → 401 `unauthenticated`。Cookie で入った書き込み(GET 以外)は `Origin` が公開 URL と同じものだけを受ける(違えば 403 `bad_origin`)。口の一覧は §16。手前に門(Cloudflare Access)は置かないので、どの口にもインターネットのだれからでも届く(ログインの前に届く口と、その守りは 03 §5「門を置かずに守る」)。本文は 20 MB まで(超えたら 413。Caddy が断る)
 - JSON の列名は **DB の列名そのまま**(snake_case)。ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)、金額は円の整数。書式付きの文字(`richtext`)は HTML で、**サーバは保存前に許した要素だけを残し、その結果から `@` の言及を取る**(この順。`frontend/src/lib/richtext.ts` と同じ規則。Python では `nh3` のような現行のライブラリを使い、非推奨の `bleach` は使わない)
 - 参照は ID で返し、表示名は応答の `references` に添える(§2)
 - エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400、いまのデータの状態でできない操作(必須の参照で使われているレコードの削除など)は 409。`message` は人がそのまま読める文で、画面はそれを出す
@@ -174,7 +174,7 @@
 1. `enabled` でなければ 404
 2. `fields` に無い列は捨て、`defaults` を足す
 3. `_gotcha`(人には見えない欄)が埋まっていたら、200 を返して何もしない(bot)。レコードも `submissions` も増やさない。JSON なら `id`・`created_at`・`updated_at` だけの空の `RecordResponse` を返し、弾かれたと bot に気づかせない(2026-09-22 決定。SET-046)
-4. 受け口ごとに送信を間引く(例: 同じ IP から 1 分に 10 件まで。バックエンドで決める。J-039)
+4. 受け口ごと・送り元(Cloudflare が付ける IP)ごとに、1 分に 10 件まで。超えたら 429
 5. 画面からの作成と同じ経路(既定値・検証・業務ルール)でレコードを作る。担当は空(`defaults` で入れられる)
 6. `Accept` が HTML なら `redirect_url` へ 303、無ければ小さな「受け付けました」の画面。JSON なら `RecordResponse`
 
@@ -203,8 +203,8 @@
 | `POST /mcp` | Claude(Anthropic のクラウド)、トークンを付けたアプリ | MCP(Streamable HTTP、stateless、JSON の応答)。`Authorization: Bearer <OAuth の access token か wks_>`。無ければ 401 + `WWW-Authenticate: Bearer resource_metadata=…` |
 | `GET /.well-known/oauth-protected-resource/mcp` | Claude | 資源のメタデータ(RFC 9728)。`resource` は `<公開 URL>/mcp` と 1 文字も違わない |
 | `GET /.well-known/oauth-authorization-server` | Claude | 認可サーバのメタデータ(RFC 8414)。発行元は公開 URL。`code_challenge_methods_supported: ["S256"]`、`registration_endpoint` あり |
-| `POST /register` | Claude | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)でなければ 400 `invalid_redirect_uri` |
-| `GET /authorize` | 本人のブラウザ | 依頼を置き(10 分で切れる)、画面の `/oauth/consent?request=…` へ送る。ログインしていなければ、画面がログインの画面を経てから戻す(05 §15) |
+| `POST /register` | Claude | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)でなければ 400 `invalid_redirect_uri`。許可の無い登録は新しいものから 50 件だけ残す(古いものから消す) |
+| `GET /authorize` | 本人のブラウザ | 依頼を置き(10 分で切れる。新しいものから 50 件だけ残す)、画面の `/oauth/consent?request=…` へ送る。ログインしていなければ、画面がログインの画面を経てから戻す(05 §15) |
 | `POST /token` | Claude | 認可コード(1 回きり、5 分)→ access(1 時間)+ refresh(90 日)。refresh は使うたびに新しい組に替え、古いものは `invalid_grant` |
 | `POST /revoke` | Claude | その許可ごと消す |
 
@@ -234,7 +234,7 @@
 - **人が書いた文字は Slack の書式の `&` `<` `>` をエスケープしてから載せる**(`<!channel>` でチャンネル全員に通知を飛ばす・`<https://…|…>` で偽のリンクを作る、を防ぐ。Web フォームは誰でも送れる)。リンクはボタンにせず mrkdwn のリンクにする(ボタンは Slack がアプリの Interactivity の口へ知らせようとし、Works はその口を持たない)。ブロックの上限(header 150 字・section 3000 字・field 2000 字・fields 10 個)の内側で切る
 - 失敗の分類: 429・5xx・繋がらないは一時的(ワークフローの送り係が間を空けて送り直す。§15。画面のテスト通知は 1 回だけ待って送り直す)。`no_service`・`channel_not_found`・`channel_is_archived`・`action_prohibited` などの「投稿先が失われた」類は `needs_reconnect`(画面は「要再接続」と「繋ぎ直す」)。送れたら前の失敗を消す
 - 資格情報が無い: 管理者が `.env` を入れていなければ、`configured: false`(画面は「資格情報が入っていません」)、`connect` は 503 `slack_not_configured`
-- 戻り先(`<WORKS_PUBLIC_URL>/api/v1/slack/callback`)は Access の内側のまま(戻ってくるのは、Works にログインしている本人のブラウザ)。Slack は HTTPS 以外の戻り先を受け付けないので、手元(`http://127.0.0.1`)では本物の往復は試せない。本物の往復は `test_slack.py` が偽物の Slack で確かめる
+- 戻り先は `<WORKS_PUBLIC_URL>/api/v1/slack/callback`(戻ってくるのは、Works にログインしている本人のブラウザ。誰の許可かは署名付きの `state` が持つ)。Slack は HTTPS 以外の戻り先を受け付けないので、手元(`http://127.0.0.1`)では本物の往復は試せない。本物の往復は `test_slack.py` が偽物の Slack で確かめる
 
 ## 15. ワークフロー(2026-09-30)
 
@@ -280,7 +280,7 @@
 
 ## 16. ログインとアカウント(2026-10-01。03 §5)
 
-ログインはアプリ自身が持つ(01 D-14)。型は `Session`(いまと同じ)・`SessionOptions`・`LoginResult`・`TotpSetup`・`Account`・`AccountSession`。**切り替え(J-055)までは、本番は §1 のとおり Access の JWT で動いている。**
+ログインはアプリ自身が持つ(01 D-14)。型は `Session`(いまと同じ)・`SessionOptions`・`LoginResult`・`TotpSetup`・`Account`・`AccountSession`。
 
 **画面のログイン**(Cookie `__Host-works_session`)
 
@@ -296,7 +296,6 @@
 
 - `next` は同じオリジンの中の道(`/` で始まり `//` で始まらない)だけ。外の URL は `/` に置き換える
 - Google の設定が無いのに `GET /session/google` を開いた → 303 で `/login?error=google_not_configured`(Google の口は J-054)
-- 切り替え(J-055)までの `WORKS_AUTH=access` では、ここのログインとアカウントの口は 400 `access_login`(ログインは Access)
 
 **アカウント**(ログイン中の本人。画面は 05 §15)
 
@@ -323,4 +322,4 @@ python -m app.cli set-password <メール>               パスワードを決�
 python -m app.cli reset-totp <メール>                 2 段階認証を消す(端末を無くした人のため)。次にパスワードで入るときに設定し直す
 ```
 
-**エラーの符号**(ログインまわり): `unauthenticated`(401)、`invalid_credentials`(401。アカウントの画面では 400)、`too_many_attempts`(429)、`bad_origin`(403)、`invalid_code`・`weak_password`・`reauth_required`・`totp_not_started`(400)、`login_expired`(401)、`last_login_method`(409)。Access の頃の `access_required`・`not_registered`・`access_login` は、切り替え(J-055)で無くなる。
+**エラーの符号**(ログインまわり): `unauthenticated`(401)、`invalid_credentials`(401。アカウントの画面では 400)、`too_many_attempts`(429)、`bad_origin`(403)、`invalid_code`・`weak_password`・`reauth_required`・`totp_not_started`(400)、`login_expired`(401)、`last_login_method`(409)。Access の JWT を信頼していた頃の `access_required`・`not_registered`・`access_login` は、2026-10-01 に無くなった。

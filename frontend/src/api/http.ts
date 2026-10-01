@@ -4,7 +4,6 @@ import type { ApiErrorBody } from './types'
 /**
  * Python バックエンド向けの実装。エンドポイントの一覧は docs/design/04-api.md と対で保つ。
  * ログインはアプリ自身が持つ(03 §5)。セッションは HttpOnly の Cookie で、画面は値に触れない。
- * 本番を切り替える(J-055)までは Cloudflare Access が付ける JWT をサーバが確かめるので、そのあいだも画面は何も持たない。
  */
 const BASE = '/api/v1'
 
@@ -29,8 +28,7 @@ const enc = encodeURIComponent
 
 export function createHttpClient(): ApiClient {
   return {
-    // null はログイン画面を出す合図。切り替え(J-055)までの本番(Access)で門を通れていない(access_required)・
-    // 利用者でない(not_registered)はエラーのまま返し、ログイン画面がその旨を出す
+    // null はログイン画面を出す合図。ほかの失敗(api が止まっている・通信が切れた)はエラーのまま返し、ログイン画面がその旨を出す
     getSession: () =>
       request<Awaited<ReturnType<ApiClient['getSession']>>>('GET', '/session').catch((e) => {
         if (e instanceof ApiError && e.status === 401 && e.code === 'unauthenticated') return null
@@ -39,14 +37,7 @@ export function createHttpClient(): ApiClient {
     getSessionOptions: () => request('GET', '/session/options'),
     login: (email, password) => request('POST', '/session', { email, password }),
     verifyTotp: (code) => request('POST', '/session/totp', { code }),
-    logout: async () => {
-      const res = await request<{ logout_url?: string } | undefined>('DELETE', '/session')
-      if (res?.logout_url) {
-        // Access のセッションを切る。ページごと移るので、呼び出し側の続き(ログイン画面へ送る)は走らせない
-        window.location.assign(res.logout_url)
-        await new Promise<never>(() => {})
-      }
-    },
+    logout: () => request('DELETE', '/session'),
 
     getAccount: () => request('GET', '/account'),
     changePassword: (input) => request('PUT', '/account/password', input),

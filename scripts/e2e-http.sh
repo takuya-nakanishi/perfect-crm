@@ -10,7 +10,7 @@
 # DB は `works_e2e`(名前が _e2e で終わる DB にしか種を入れない。本番の works には触れない)。
 # 置き場は Compose の db(127.0.0.1:${WORKS_DB_PORT:-55432})で、利用者とパスワードは .env のもの。
 # 別の場所に向けるなら WORKS_E2E_DATABASE_URL(postgresql+psycopg://…/works_e2e)。
-# ログインは本番と同じ自前のログイン(WORKS_AUTH=local。パスワード → 2 段階認証の 6 桁)。種のデータの利用者は、
+# ログインは本番と同じ自前のログイン(パスワード → 2 段階認証の 6 桁)。種のデータの利用者は、
 # パスワードと 2 段階認証の秘密を backend/app/demo.py の値で持つ(smoke.mjs がそこから 6 桁を計算する)。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,7 +19,7 @@ WEB_PORT="${E2E_WEB_PORT:-5621}"
 KEEP=0; [ "${1:-}" = "--keep" ] && KEEP=1
 LOG="$(mktemp -d)"
 
-export WORKS_AUTH=local WORKS_SECURE_COOKIE=false WORKS_PWNED_CHECK=false
+export WORKS_SECURE_COOKIE=false WORKS_PWNED_CHECK=false
 # 種を入れるプロセスと api が、同じ鍵で 2 段階認証の秘密を読めるように(E2E の DB だけの値。.env の鍵は使わない)
 export WORKS_SECRET_KEY=e2e-only-secret-key-not-for-production
 # 書き込みは公開 URL と同じオリジンからだけ受ける(03 §5)。E2E の画面は vite なので、そのオリジンを公開 URL にする

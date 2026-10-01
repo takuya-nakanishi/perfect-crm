@@ -21,37 +21,35 @@
 ## 2. 外からの経路
 
 ```
-ブラウザ ─https→ works.sanei-clover.com(Cloudflare。CNAME → <Tunnel ID>.cfargotunnel.com、プロキシ ON)
-        → Cloudflare Access(門。許可した人だけを通す)→ Tunnel「sanei-clover-lan」→ cloudflared → http://web:8080
-スマホのアプリ ─ Cloudflare WARP(端末ごと門を通る。09)─▶ 同じ
+ブラウザ・スマホのアプリ・AI のエージェント
+  ─https→ works.sanei-clover.com(Cloudflare。CNAME → <Tunnel ID>.cfargotunnel.com、プロキシ ON)
+        → Tunnel「sanei-clover-lan」→ cloudflared → http://web:8080(Caddy)→ 画面の静的ファイル / api
 ```
 
-**Access は門として残し、ログインとセッションはアプリが持つ**(2026-10-01 に見直し。01 D-14)。Access は「許可した人以外を Surface に届かせない」、アプリのログインは「入ってきた人が誰か」を決める。役割が違うので両方を持つ。
+**手前に門(Cloudflare Access)を置かない。ログインとセッションはアプリがすべて持つ**(2026-10-01、本人の決定。01 D-14 の 2 度目の見直し)。スマホのアプリも AI のエージェント(Claude・Codex など)も、ブラウザと同じ公開 URL に直に届く。ログインの前に届く口と、その守りは 03 §5「門を置かずに守る」。
 
 - Surface から Cloudflare へ外向きに張るだけで、受信ポートを開けない。固定 IP もポート開放も要らない
 - **Tunnel はこの LAN で 1 本(`sanei-clover-lan`)に集約する。**サービスを増やすときは同じ Tunnel にホスト名を足す。`scripts/cloudflare-tunnel-setup.py` は既存の経路を残したまま、指定したホストの行だけを差し替える。別の Compose のサービスを載せるなら、cloudflared から届くネットワークに置くこと
-- 組み立てはすべて API(`scripts/cloudflare-tunnel-setup.py`。再実行しても重複しない): Tunnel → 経路 → CNAME → One-time PIN の IdP → Access アプリ → 許可ポリシー → `.env` のトークン更新
+- 組み立てはすべて API(`scripts/cloudflare-tunnel-setup.py`。再実行しても重複しない): Tunnel → 経路 → CNAME → `.env` のトークン更新。Access を外すのも同じスクリプト(`--remove-access`。§3)
 - API トークンは直下の `.env` の `CLOUDFLARE_API_TOKEN`。権限は必要最小より広い(ゾーン `sanei-clover.com` とアカウントの全権限。2026-09-19 に本人が受け入れたリスク)。前提は、`.env` の外に出さない・漏えいを疑ったら即失効
 
-## 3. Cloudflare Access(門)と、アプリのログインへの切り替え
+## 3. 門(Cloudflare Access)を外す(2026-10-01)
 
-- アプリ名 `Works`、種別 self-hosted、許可は本人のメールアドレス、ほかは拒否。IdP は One-time PIN と Google Workspace(Q-039)
-- **セッションは 720 時間(30 日)。**既定の 24 時間だと毎日ログインし直すことになり、日常の道具として使えない(Twenty のとき、それが理由で Access を外している)
-- **門は残し、ログインとセッションはアプリが持つ**(2026-10-01 に見直し。01 D-14)。Surface(社内 LAN の PC)で動かす限り、アプリや部品に未知の穴が見つかっても、許可した人以外は攻撃を始められないようにしておく。代わりに、ブラウザでは月に 1 回、Access(Google なら 1 クリック)と Works(パスワード + 6 桁)の 2 回ログインする
-- **スマホのアプリは Cloudflare WARP で門を通る**(本人の意向。01 D-15、09 §5)。WARP にログインした端末は、Access のログインの画面を経ずに通る。アプリは Access のことを知らない
-- One-time PIN は、許可されていないアドレスにはコードを送らない(届かないのは故障ではない)。コードは要求した同じタブに入れる
-- **Access の内側にあるものは、外部のサービスやエージェントからは届かない。**外へ見せる口と例外は §7
-- 自動の確認は `scripts/cloudflare-access-check.py`。確認のあいだだけ使うサービストークンと、それを通すポリシーを作り、終わったら(失敗しても)消す
+2026-09-21 から、前段に Cloudflare Access を置いていた(アプリ名 `Works`、種別 self-hosted、許可は本人だけ、IdP は One-time PIN と Google Workspace(Q-039)、セッション 720 時間)。
+2026-10-01 に、Access を外してログインとセッションをすべてアプリに持たせると決めた(本人。「スマホアプリや AI エージェントなどからのリクエストも届くようにしたい」。01 D-14)。
+門があると、ブラウザ以外(Android アプリ・Claude Code・Codex など)は WARP かサービストークンを持たないと届かない(§7 の末尾)。
 
-**アプリのログインへの切り替え**(J-055)。順を崩さない(締め出される時間を作らないため)。
+**手順(J-055)。順を崩さない**(締め出される時間と、パスワードだけで入れる時間を作らないため)。
 
-1. 新しい版を本番へ出す(2026-10-01 に済み。`WORKS_AUTH=access` のまま出したので、ログインは変わっていない。表は 0009 まで)
-2. 本人のパスワードを決める: `docker compose exec api python -m app.cli set-password <メール>`(15 文字以上を 2 回)。先に決めておけば、切り替えた瞬間に締め出されない
-3. `.env` を `WORKS_AUTH=local` にして `docker compose --profile backend --profile public up -d api`。`WORKS_SECRET_KEY` が空だと api は起動しない(2 段階認証の秘密を読めなくなるため)
-4. Works を開く → Access(いつもどおり)→ Works のログイン(パスワード → 初回は QR で 2 段階認証を設定)。Claude のコネクタ(許可の画面が Works のログインになる)も確かめる
-5. 後片付け: `app/access.py` と `WORKS_AUTH` の分岐を消す(compose の既定も)。`.env` から `WORKS_AUTH`・`WORKS_ACCESS_*` を消す。runbook §5 と CLAUDE.md を直す
+1. 新しい版(Access の JWT を信頼する形を消した版)を本番へ出す。**出した時点で、本番のログインはアプリのログインになる**(Access は前にいるまま)。`WORKS_SECRET_KEY` が空だと api は起動しない
+2. 本人のパスワードを決める: `docker compose exec api python -m app.cli set-password <メール>`(15 文字以上を 2 回)
+3. Works を開く → Access(いつもどおり)→ Works のログイン(パスワード → 初回は QR で 2 段階認証を設定)。Claude のコネクタはそのまま使える(許可は DB に残っている)
+4. **2 段階認証の設定が済んでから**、Access を外す: `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --remove-access`(このホストとその下のパスの Access アプリをすべて消す。本番では 7 つ: 画面全体と、Claude のための 6 つのパス)。先に外すと、パスワードを決めてから 2 段階認証を設定するまでのあいだに、パスワードを知る人が自分の認証アプリを登録できてしまう
+5. 外から確かめる: `python3 scripts/public-check.py works.sanei-clover.com`(読むだけ。runbook §3)。スマホの Chrome で開いて、パスワード + 6 桁で入れること
+6. 後片付け: `.env` から `WORKS_AUTH`・`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を消す(api はもう読まない。残っていても害は無い)
 
-- 戻すとき: `.env` を `WORKS_AUTH=access` に戻して api を建て直せば、Access の JWT で入る形に戻る(門はそのまま)
+- 戻すとき(門をまた置く): `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --anthropic /mcp,/token,/register,/revoke,/.well-known/oauth-authorization-server,/.well-known/oauth-protected-resource`。アプリのログインはそのまま(Access の JWT は見ない)なので、門の内側でも Works のログインが要る。スマホのアプリとエージェントは、また門で止まる
+- One-time PIN の IdP は消さない(アカウントで共有するもの)
 - Google でログイン(J-054)を使うなら、Workspace の管理コンソールで 2 段階認証を必須にしておく(Google で入るときは Works の 6 桁を求めないため)
 
 ## 4. 配る側のヘッダ(`frontend/Caddyfile`)
@@ -59,6 +57,8 @@
 - CSP は `default-src 'self'`。外部の資源を一切読まない(書体も同梱)。`style-src` の `'unsafe-inline'` は React の `style` 属性のため。インラインのスクリプトは禁止なので、明暗を描画前に決める処理は `public/theme.js` に出してある
 - `/assets/*`(ファイル名にハッシュ)は 1 年 + `immutable`。無いファイルは 404 を返し、`index.html` で誤魔化さない(古い HTML が新しい資源を探したときに、HTML を JS として読ませないため)
 - それ以外は `index.html` を返し(SPA)、`Cache-Control: no-cache, no-transform`
+- **HSTS は 1 年**(`max-age=31536000`。`includeSubDomains` は付けない。このホストだけ)。門が無いので、http に落とされる余地を残さない。ブラウザは http で受けた HSTS を無視するので、手元の `http://127.0.0.1:8610` には効かない
+- **`/api/*` の本文は 20 MB まで**(`request_body`。超えたら 413)。api は本文を読み終えてから認証を確かめるので、ログインの前の口に大きな本文を送りつけられても、メモリを食わせない。いちばん大きいのは CSV の取り込み(04 §7)
 - **`no-transform` は Cloudflare に HTML を書き換えさせないため。**ゾーンの Web Analytics が自動挿入(auto_install)になっていて、これが無いとビーコンのスクリプトが差し込まれ、CSP に止められてコンソールにエラーが出続ける。ホスト単位で除外するルールは無料プランでは作れなかった(`maxRulesError`)ので、配る側で断っている。ゾーン全体の設定は触っていない
 
 ## 5. 稼働の前提(Surface で動かすあいだ)
@@ -76,41 +76,28 @@ Compose が動く場所ならどこでも同じ構成で動く。状態は Postg
 3. `.env` を移す(Tunnel のトークンを含む)
 4. 旧ホストの `tunnel` を止める。同じトークンで新ホストの cloudflared が繋がるので、DNS を触らない
 
-Tunnel をやめて ALB などで直接受けるなら、TLS を自前で持つ。**ログインはアプリが持つので(01 D-14)、作り直しは要らない**(Access を信頼していた 2026-09-24〜の形では、ここで作り直しになるのを引き受けていた)。Access の門は無くなるので、移った先で門(VPN、IP の制限、WAF など)を考える。
+Tunnel をやめて ALB などで直接受けるなら、TLS を自前で持つ。**ログインはアプリが持ち、門も置いていないので(01 D-14)、作り直しは要らない**(Access を信頼していた 2026-09-24〜10-01 の形では、ここで作り直しになるのを引き受けていた)。`CF-Connecting-IP` は Cloudflare の外では付かないので、間引きの送り元の IP の取り方は移った先に合わせる(03 §5)。
 
-## 7. Access の内側のまま、外から使う(2026-09-22。Q-044 で決定)
+## 7. 外から使う口(2026-10-01、Access を外してから)
 
-**経路は 1 本のまま**(本人の決定: 別のホストや素通しの経路は作らない)。外から叩くものは、**Access のサービストークンをヘッダ(`CF-Access-Client-Id` / `CF-Access-Client-Secret`)で渡して門を通る**。環境設定で作った 2 つの扱い:
+門が無いので、外から叩くものはアプリの認証だけで届く。
 
 | 経路 | 誰が叩くか | 認証 |
 |---|---|---|
-| `POST /api/v1/forms/{key}`(Web フォームの受け口。04 §10) | 外部の Web サイトの訪問者(ブラウザ) | 無し(鍵は URL) |
-| `/mcp`(J-028) | Claude Desktop / Claude Code / Codex | アプリのトークン(`Authorization: Bearer`) |
+| 画面と `/api/v1/*` | ブラウザ | セッションの Cookie(パスワード + TOTP か Google。03 §5) |
+| `/api/v1/*` | Android アプリ(J-056) | OAuth の access token(スコープ `api`。03 §5) |
+| `/mcp` と OAuth の口 | Claude のカスタムコネクタ(Anthropic のクラウドから)・Claude Code | OAuth(本人が Works にログインして許可する。03 §6) |
+| `/mcp` | Codex など、ヘッダを自分で付けるアプリ | 環境設定で発行したトークン(`wks_`。04 §10) |
+| `POST /api/v1/forms/{key}` | Web サイトの訪問者のブラウザ、サイトのサーバ | 無し(鍵は URL。間引きと bot 避け。04 §10) |
 
-- **MCP**: Claude Desktop(`headers`)・Claude Code(`--header`)・Codex(`http_headers`)はどれも任意のヘッダを送れるので、サービストークン + アプリのトークンの 2 つを付ける。環境設定の「繋ぎ方」はその形で出す(05 §11)。サービストークンは Zero Trust で発行し、Access のポリシーに「Service Auth」として足す(`scripts/cloudflare-access-check.py` が一時的にやっていることを、恒久のトークンで行う)
-- **Web フォーム**: 訪問者のブラウザは Access のヘッダを付けられない(付けさせると秘密が漏れる)。だから**送るのは Web サイトのサーバ**(問い合わせフォームの送信先。WordPress のプラグイン、サーバレス関数など)で、サービストークンを付けて受け口へ転送する。環境設定の「サーバから送る」がその形。静的なサイトからブラウザで直接送りたい場合だけ、受け口のパスを Access の外に出す(別の判断。いまは持たない)
-- 管理 API(`/settings/*`)と画面は、これまでどおり Access の内側で人だけが通る
-- **Slack の戻り(`/api/v1/slack/callback`)も Access の内側のまま**(04 §14)。戻ってくるのは、Works にログインして「チャンネルを追加」を押した本人のブラウザなので、素通しは要らない。api からは `slack.com`・`hooks.slack.com` へ出ていく(外向きの HTTPS。Tunnel とは別で、何も開けなくてよい)
+- **MCP**: 環境設定の「繋ぎ方」は、トークンのヘッダ(`Authorization`)だけの形で出す(05 §11)
+- **Web フォーム**: 訪問者のブラウザから直に送れる(環境設定が出す埋め込みの HTML)。鍵(URL)を訪問者に見せたくなければ、サイトのサーバから転送する。スパムが来たら Turnstile を足す(03 §13)
+- 管理 API(`/settings/*`)は、管理者のセッションだけが通る
+- Google と Slack の戻り(`/api/v1/google/callback`・`/api/v1/slack/callback`)は、署名付きの `state` で、だれの許可かを決める
+- 記録: Access のログは無くなる。ログインは `login_attempts`(02 §8)、MCP は `oauth_grants.last_used_at`、ほかは api のログ
 
-### Claude のカスタムコネクタのための例外(2026-09-24 決定。本人の承認。03 §6)
+### 2026-09-22〜10-01 の形(記録)
 
-Claude のカスタムコネクタは、端末ではなく **Anthropic のクラウドから** Works を叩く。サービストークンのヘッダは付けられない(送れるヘッダ名は Anthropic の承認制)。
-だから上の「素通しの経路は作らない」(Q-044)を、次の範囲でだけ破る(本人が承認し、同日に適用)。適用後、Anthropic 以外の送信元からは機械向けの口が 403、人の入口は Access のログインへ 302 になることを確かめた。
-
-| パス | 素通しにする送信元 | 守るもの |
-|---|---|---|
-| `/mcp`、`/token`、`/register`、`/revoke`、`/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource` | **Anthropic の送信元だけ**(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses) | Works の OAuth(トークンが無ければ 401) |
-| `/authorize`、`/oauth/consent`、画面、`/api/*` | 素通しにしない(これまでどおり Access の内側) | Access(人) |
-
-- **鍵を渡すのは、Access を通った本人だけ。**素通しの口で Claude がアプリを登録しても、`/authorize` と許可の画面は Access の内側なので、アカウントのメンバーが「許可する」を押さない限りトークンは出ない
-- ほかの送信元から素通しのパスへ来たものは、そのパスの Access アプリで止まる(PIN の画面にも行かない)。Codex などがトークンで `/mcp` を使うときは、その Access アプリに「Service Auth」のポリシーを足す
-- Anthropic の送信元は「告知なしには変えない」とされている。変わったら `scripts/cloudflare-tunnel-setup.py` の `ANTHROPIC_EGRESS` を直して再実行する
-- 素通しにしたリクエストは Access のログに残らない。記録は api 側(`oauth_grants.last_used_at`、api のログ)
-- 設定は `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --anthropic /mcp,/token,/register,/revoke,/.well-known/oauth-authorization-server,/.well-known/oauth-protected-resource`(再実行しても重複しない)
-
-### スマホのアプリ(2026-10-01。01 D-15)
-
-アプリはサービストークンを持たず、**端末に入れた Cloudflare WARP で門を通る**(本人の意向。仕組みと設定は 09 §5)。
-アプリの通信も、ログインの画面を開く Auth Tab(Chrome)も、WARP を通って Access に届き、WARP にログインした人として通る。
-WARP を切っている・入れていない端末からは、ブラウザと同じく Access のログインの画面になる(アプリは通れない)。
-
+Access の内側のまま外から使う形だった(Q-044)。外から叩くものは、Access のサービストークンをヘッダ(`CF-Access-Client-Id` / `CF-Access-Client-Secret`)で渡して門を通った。
+Claude のカスタムコネクタはそのヘッダを送れない(送れるヘッダ名は Anthropic の承認制)ので、Anthropic の送信元(`160.79.104.0/21`)からだけ、機械向けの口(`/mcp`・`/token`・`/register`・`/revoke`・OAuth のメタデータ)を素通しにした(2026-09-24、本人の承認。人が開く `/authorize` と画面は門の内側のまま)。
+スマホのアプリは、端末に入れた Cloudflare One Agent(旧 WARP)で門を通る案だった(2026-10-01 の前半。09 の記録)。どれも Access を外して要らなくなった。

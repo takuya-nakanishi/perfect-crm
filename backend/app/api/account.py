@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, select, update
 
 from app.api.deps import Conn, CurrentUser
-from app.api.session import CodeBody, error, require_local, too_many
+from app.api.session import CodeBody, error, too_many
 from app.auth import challenges, passwords, sessions, throttle, totp
 from app.errors import ApiError, not_found
 from app.meta import store
@@ -31,7 +31,6 @@ def _iso(value: Any) -> str | None:
 
 def _me(request: Request) -> Any:
     """`current_user` が置いた、セッションと利用者の 1 行。"""
-    require_local()
     return request.state.auth
 
 
@@ -61,9 +60,7 @@ def change_password(body: PasswordBody, request: Request, user: CurrentUser, con
         ip = sessions.client_ip(request)
         wait = throttle.check(conn, user_id=me.id, ip=ip)
         if wait:
-            throttle.record(
-                conn, email=me.email, user_id=me.id, method="password", ip=ip, succeeded=False, reason="throttled"
-            )
+            throttle.record_throttled(conn, email=me.email, user_id=me.id, method="password", ip=ip)
             return too_many(wait)
         if not passwords.verify(me.password_hash, body.current_password):
             # ログインの間引きと同じ数えに入れる(ここを総当たりの抜け道にしない)

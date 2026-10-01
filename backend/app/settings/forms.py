@@ -15,9 +15,11 @@ from app.meta.tables import web_forms
 from app.records import origin, service
 from app.records.csv_io import RowError, coerce
 
-# 受け口ごと・送り元ごとの間引き(1 分に 10 件まで)。1 プロセスで持つ(利用者 1〜3 名の規模)
+# 受け口ごと・送り元(IP)ごとの間引き(1 分に 10 件まで)。1 プロセスで持つ(利用者 1〜3 名の規模)。
+# 送り元が増え続けても膨らまないよう、数が多くなったら、直近 1 分に送っていない送り元を捨てる
 RATE_WINDOW = 60.0
 RATE_LIMIT = 10
+PRUNE_OVER = 1000
 _recent: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 
 # 人には見えない欄。埋まっていたら bot(04 §10 の 3)
@@ -26,6 +28,9 @@ HONEYPOT = "_gotcha"
 
 def allow(key: str, source: str) -> bool:
     now = time.monotonic()
+    if len(_recent) > PRUNE_OVER:
+        for stale in [k for k, q in _recent.items() if not q or now - q[-1] > RATE_WINDOW]:
+            del _recent[stale]
     seen = _recent[(key, source)]
     while seen and now - seen[0] > RATE_WINDOW:
         seen.popleft()

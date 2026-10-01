@@ -13,6 +13,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 from mcp_types import LATEST_PROTOCOL_VERSION
+from sqlalchemy import select
+
+from app.mcpserver import oauth
+from app.meta.tables import oauth_clients, oauth_requests
 
 BASE = "http://127.0.0.1:8610"
 MCP = f"{BASE}/mcp"
@@ -138,6 +142,26 @@ def test_Claude_以外の戻り先では登録できない(client: TestClient, r
 
 def test_Claude_Code_の_loopback_は登録できる(client: TestClient) -> None:
     assert _register(client, "http://127.0.0.1:43127/callback").status_code == 201
+
+
+def test_許可の無い登録は上限までしか残さず_許可の付いた登録は消さない(
+    admin: TestClient, conn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """だれでも叩ける /register で、表を膨らませない(古い登録から消す。断らない)。"""
+    monkeypatch.setattr(oauth, "UNUSED_CLIENTS_KEPT", 3)
+    connected = _connect(admin)["client_id"]
+    ids = [_register(admin).json()["client_id"] for _ in range(5)]
+    left = set(conn.execute(select(oauth_clients.c.client_id)).scalars())
+    assert left == {connected, *ids[-3:]}
+
+
+def test_許可を待つ依頼は上限までしか残さない(admin: TestClient, conn: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(oauth, "PENDING_REQUESTS_KEPT", 2)
+    client_id = _register(admin).json()["client_id"]
+    requests = [_authorize(admin, client_id)[0] for _ in range(4)]
+    left = set(conn.execute(select(oauth_requests.c.id)).scalars())
+    assert left == set(requests[-2:])
+    assert admin.get(f"/api/v1/oauth/requests/{requests[0]}").status_code == 404
 
 
 def test_許可の画面には_アプリ名と戻り先のホストが出る(admin: TestClient) -> None:

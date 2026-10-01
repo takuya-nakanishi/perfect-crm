@@ -1,24 +1,15 @@
-"""ログインと、ログインしていないときの 401(03 §5、04 §16)。
-
-前半はアプリ自身のログイン(`WORKS_AUTH=local`。パスワード → TOTP の 6 桁)、
-後半は本番を切り替える(J-055)までの Cloudflare Access の JWT。
-"""
+"""ログインと、ログインしていないときの 401(03 §5、04 §16)。アプリ自身のログイン(パスワード → TOTP の 6 桁)。"""
 
 import time
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
-import jwt
 import pyotp
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from httpx2 import Response
 from sqlalchemy import Connection, func, insert, select, update
 
-from app import access
 from app.auth import passwords, sessions, throttle, totp
-from app.config import get_settings
 from app.meta.tables import login_attempts, login_challenges, user_sessions, users
 from tests.conftest import ADMIN_EMAIL, ADMIN_ID, MEMBER_EMAIL, MEMBER_ID, login_as
 
@@ -272,6 +263,33 @@ def test_同じ_IP_から_10_分に_30_回失敗すると_ほかの人も受け�
     assert other.status_code == 200
 
 
+def test_待たせて断った試みは_同じ送り元から_1_分に_1_件だけ残す(
+    client: TestClient, conn: Connection, with_password: None
+) -> None:
+    ip = "198.51.100.7"
+    failures(conn, None, throttle.IP_FAILURES, reason="no_user", ip=ip)
+    for _ in range(5):
+        response = client.post(
+            "/api/v1/session", json={"email": MEMBER_EMAIL, "password": PASSWORD}, headers={"cf-connecting-ip": ip}
+        )
+        assert response.status_code == 429
+
+    def throttled(where_ip: str) -> int:
+        return conn.execute(
+            select(func.count()).where(login_attempts.c.reason == "throttled", login_attempts.c.ip == where_ip)
+        ).scalar_one()
+
+    assert throttled(ip) == 1
+    # 1 分経てば、また 1 件残す
+    conn.execute(
+        update(login_attempts)
+        .where(login_attempts.c.reason == "throttled")
+        .values(created_at=datetime.now(UTC) - timedelta(minutes=2))
+    )
+    client.post("/api/v1/session", json={"email": MEMBER_EMAIL, "password": PASSWORD}, headers={"cf-connecting-ip": ip})
+    assert throttled(ip) == 2
+
+
 @pytest.mark.parametrize("origin", [None, "https://evil.example"], ids=["Origin が無い", "よそのサイト"])
 def test_よそのサイトからのログインと書き込みは_403(
     client: TestClient, with_password: None, origin: str | None
@@ -315,118 +333,3 @@ def test_管理者でない利用者には_admin_が付かない(member: TestCli
 
 def test_ログインの画面が出すもの(client: TestClient) -> None:
     assert client.get("/api/v1/session/options").json() == {"google": False}
-
-
-# --- 本番を切り替える(J-055)までのログイン: Cloudflare Access の JWT --------------------------
-
-TEAM = "https://works-test.cloudflareaccess.com"
-AUD = "aud-tag-for-works"
-_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
-def _token(key: rsa.RSAPrivateKey = _KEY, **overrides: object) -> str:
-    now = int(time.time())
-    claims: dict[str, object] = {
-        "aud": [AUD],
-        "email": ADMIN_EMAIL,
-        "iss": TEAM,
-        "iat": now,
-        "exp": now + 3600,
-        "sub": "00000000-0000-0000-0000-000000000000",
-    }
-    claims.update(overrides)
-    return jwt.encode({k: v for k, v in claims.items() if v is not None}, key, algorithm="RS256")
-
-
-@pytest.fixture
-def via_access(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    """WORKS_AUTH=access のクライアント。公開鍵は外へ取りに行かず、テストの鍵を返す。"""
-    monkeypatch.setenv("WORKS_AUTH", "access")
-    monkeypatch.setenv("WORKS_ACCESS_TEAM_DOMAIN", TEAM + "/")
-    monkeypatch.setenv("WORKS_ACCESS_AUD", AUD)
-    monkeypatch.setattr(access, "signing_key", lambda _token: _KEY.public_key())
-    get_settings.cache_clear()
-    yield client
-    monkeypatch.undo()
-    get_settings.cache_clear()
-
-
-def _get(client: TestClient, token: str | None) -> Response:
-    headers = {} if token is None else {"Cf-Access-Jwt-Assertion": token}
-    return client.get("/api/v1/session", headers=headers)
-
-
-def test_Access_の_JWT_のメールアドレスで利用者が決まる(via_access: TestClient) -> None:
-    response = _get(via_access, _token(email=ADMIN_EMAIL.upper()))
-    assert response.status_code == 200
-    assert response.json()["user"]["email"] == ADMIN_EMAIL
-    assert response.json()["user"]["admin"] is True
-    assert _get(via_access, _token(email=MEMBER_EMAIL)).json()["user"]["email"] == MEMBER_EMAIL
-
-
-def test_Access_を通っていなければ_401(via_access: TestClient) -> None:
-    response = _get(via_access, None)
-    assert response.status_code == 401
-    assert response.json()["code"] == "access_required"
-
-
-@pytest.mark.parametrize(
-    "token",
-    [
-        pytest.param(_token(_OTHER_KEY), id="別の鍵で署名"),
-        pytest.param(_token(aud=["another-app"]), id="別のアプリ宛て"),
-        pytest.param(_token(iss="https://evil.cloudflareaccess.com"), id="別のチームが発行"),
-        pytest.param(_token(exp=int(time.time()) - 3600), id="期限切れ"),
-        pytest.param(_token(exp=None), id="期限が無い"),
-        pytest.param(_token(email=None, common_name="service-token.access"), id="サービストークン"),
-        pytest.param("not-a-jwt", id="壊れた値"),
-    ],
-)
-def test_確かめられない_JWT_では_401(via_access: TestClient, token: str) -> None:
-    response = _get(via_access, token)
-    assert response.status_code == 401
-    assert response.json()["code"] == "access_required"
-
-
-def test_署名の無い_JWT_は受けない(via_access: TestClient) -> None:
-    unsigned = jwt.encode({"aud": [AUD], "email": ADMIN_EMAIL, "iss": TEAM}, "", algorithm="none")
-    assert _get(via_access, unsigned).status_code == 401
-
-
-def test_登録されていないメールアドレスは_403(via_access: TestClient) -> None:
-    response = _get(via_access, _token(email="stranger@example.jp"))
-    assert response.status_code == 403
-    assert response.json()["code"] == "not_registered"
-
-
-def test_Cookie_だけでは通らない(via_access: TestClient) -> None:
-    """自前のログインのセッションを持っていても、access では JWT しか見ない。"""
-    login_as(via_access, ADMIN_ID)
-    assert _get(via_access, None).status_code == 401
-
-
-def test_access_では_POST_session_で入れない(via_access: TestClient) -> None:
-    response = via_access.post("/api/v1/session", json={"email": ADMIN_EMAIL, "password": "x"})
-    assert response.status_code == 400
-    assert response.json()["code"] == "access_login"
-
-
-def test_access_のログアウトは_Access_のログアウトへ送る(via_access: TestClient) -> None:
-    response = via_access.delete("/api/v1/session")
-    assert response.status_code == 200
-    assert response.json() == {"logout_url": "/cdn-cgi/access/logout"}
-
-
-def test_Access_の設定が無ければ_503(via_access: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("WORKS_ACCESS_AUD", "")
-    get_settings.cache_clear()
-    response = _get(via_access, _token())
-    assert response.status_code == 503
-    assert response.json()["code"] == "auth_not_configured"
-
-
-def test_読み書きの_API_も_JWT_で通る(via_access: TestClient) -> None:
-    headers = {"Cf-Access-Jwt-Assertion": _token()}
-    assert via_access.get("/api/v1/meta", headers=headers).status_code == 200
-    assert via_access.get("/api/v1/meta").status_code == 401

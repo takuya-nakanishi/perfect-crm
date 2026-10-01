@@ -23,12 +23,12 @@ async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
 
 
 def check_settings() -> None:
-    """公開する場所(https)で自前のログインを使うなら、WORKS_SECRET_KEY は必須(03 §5)。
+    """公開する場所(https)では、WORKS_SECRET_KEY は必須(03 §5)。
 
     空だと起動ごとに鍵が変わり、2 段階認証の秘密・Google と Slack の鍵を読めなくなる。黙って動かさずに止める。
     """
     s = get_settings()
-    if s.auth == "local" and s.secure_cookie and not s.secret_key:
+    if s.secure_cookie and not s.secret_key:
         raise RuntimeError("WORKS_SECRET_KEY が空です。.env に入れてから起動してください(docs/runbook/01 §6 の A)")
 
 

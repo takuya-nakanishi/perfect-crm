@@ -24,15 +24,11 @@ const TOKEN_CLIENTS = [...CLIENTS.filter((c) => c.value === 'codex' || c.value =
 
 /**
  * 繋ぎ方。アプリごとに、貼るだけの形で出す。トークンは発行直後だけ本物が入る。
- * 経路は画面と同じ 1 本(Cloudflare Access の内側)。アプリは Access のサービストークン(CF-Access-Client-Id / Secret)を
- * ヘッダで渡して門を通り、アプリのトークン(Authorization)で利用者になる(06 §7)
+ * 手前に門(Cloudflare Access)は無いので、アプリのトークン(Authorization)だけで届き、その利用者になる(06 §7)
  */
-const ACCESS_ID = '<Access のサービストークンの ID>'
-const ACCESS_SECRET = '<Access のサービストークンの Secret>'
-
 function snippets(endpoint: string, secret: string | null) {
   const token = secret ?? '<発行したトークン>'
-  const headers = { Authorization: `Bearer ${token}`, 'CF-Access-Client-Id': ACCESS_ID, 'CF-Access-Client-Secret': ACCESS_SECRET }
+  const headers = { Authorization: `Bearer ${token}` }
   return {
     'claude-desktop': {
       title: 'Claude Desktop — claude_desktop_config.json に足す',
@@ -40,15 +36,15 @@ function snippets(endpoint: string, secret: string | null) {
     },
     'claude-code': {
       title: 'Claude Code — ターミナルで 1 回',
-      body: `claude mcp add --transport http works ${endpoint} \\\n  --header "Authorization: Bearer ${token}" \\\n  --header "CF-Access-Client-Id: ${ACCESS_ID}" \\\n  --header "CF-Access-Client-Secret: ${ACCESS_SECRET}"`,
+      body: `claude mcp add --transport http works ${endpoint} \\\n  --header "Authorization: Bearer ${token}"`,
     },
     codex: {
       title: 'Codex — ~/.codex/config.toml に足す',
-      body: `[mcp_servers.works]\nurl = "${endpoint}"\nhttp_headers = { Authorization = "Bearer ${token}", "CF-Access-Client-Id" = "${ACCESS_ID}", "CF-Access-Client-Secret" = "${ACCESS_SECRET}" }`,
+      body: `[mcp_servers.works]\nurl = "${endpoint}"\nhttp_headers = { Authorization = "Bearer ${token}" }`,
     },
     other: {
       title: 'ほかの MCP クライアント',
-      body: `URL: ${endpoint}\nヘッダ: Authorization: Bearer ${token}\n      CF-Access-Client-Id: ${ACCESS_ID}\n      CF-Access-Client-Secret: ${ACCESS_SECRET}\nトランスポート: Streamable HTTP`,
+      body: `URL: ${endpoint}\nヘッダ: Authorization: Bearer ${token}\nトランスポート: Streamable HTTP`,
     },
   } as const
 }
@@ -185,7 +181,7 @@ function Connections() {
 
 /**
  * MCP の設定。Claude(Web・デスクトップ・スマホ・Claude Code)や Codex から、このワークスペースのレコードを読み書きするための入口。
- * - Claude はカスタムコネクタ(OAuth)。1 回足せば全端末に広がる。許可は Access の内側の画面で本人が行う
+ * - Claude はカスタムコネクタ(OAuth)。1 回足せば全端末に広がる。許可は Works にログインした本人が画面で行う
  * - ヘッダを自分で付けるアプリ(Codex など)はトークン。どのアプリから繋がっているかは、最終利用で見える
  */
 export function McpSettings() {
@@ -241,7 +237,7 @@ export function McpSettings() {
               <li key={step}>{step}</li>
             ))}
           </ol>
-          <p className="mt-2 text-sm text-ink-3">Claude のサーバから直接繋ぐので、ほかの設定(トークンや Access のサービストークン)は要りません。許可するのは、いま Access でログインしている人です</p>
+          <p className="mt-2 text-sm text-ink-3">Claude のサーバから直接繋ぐので、ほかの設定(トークン)は要りません。許可するのは、いま Works にログインしている人です</p>
         </div>
 
         <div className="min-w-0">
@@ -261,7 +257,7 @@ export function McpSettings() {
               トークンを発行
             </Button>
           </div>
-          <p className="mb-3 text-sm text-ink-3">Codex など、ヘッダを自分で付けるアプリ向け。経路は画面と同じ(Cloudflare Access の内側)なので、Access のサービストークンもヘッダで渡します。サービストークンは Cloudflare の Zero Trust で発行します</p>
+          <p className="mb-3 text-sm text-ink-3">Codex など、ヘッダを自分で付けるアプリ向け。トークンを Authorization のヘッダで渡すだけで繋がります。漏れたら、ここで失効してください</p>
           {all.length === 0 ? (
             <p className="text-sm text-ink-3">まだありません</p>
           ) : (

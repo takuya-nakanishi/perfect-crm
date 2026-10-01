@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""compose 内のサービスを Cloudflare Tunnel + Access で公開する準備を API で行う(再実行しても重複しない)。
+"""compose 内のサービスを Cloudflare Tunnel で公開する準備を API で行う(再実行しても重複しない)。
 
-  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール>[,<メール>] --app-name Works
+  python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --remove-access
 
-やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ Access の One-time PIN →
-Access アプリ(セッション長は --session)→ 許可ポリシー(メール)→ 直下の .env の CLOUDFLARE_TUNNEL_TOKEN と
-WORKS_ACCESS_TEAM_DOMAIN / WORKS_ACCESS_AUD(api がログインの JWT を確かめるのに使う)を更新。
+やること: Tunnel 作成 → 経路(hostname → 宛先)→ CNAME(プロキシ ON)→ 直下の .env の CLOUDFLARE_TUNNEL_TOKEN を更新。
 そのあと `docker compose --profile public up -d` で cloudflared が起動する。手順の全体は docs/runbook/01-operations.md。
 
---allow を省くと Access を置かない(素通し。アプリ自身の認証だけで守ることになるので、画面がモックの間は使わない)。
+Works は手前に門(Cloudflare Access)を置かず、ログインはアプリ自身が持つ(2026-10-01。docs/design/06 §3)。
+--remove-access は、このホストとその下のパスの Access アプリをすべて消す(素通しにする)。
+
+門を置くとき(Works を Access の内側へ戻す・ほかのサービス)は --allow <メール>[,<メール>]: One-time PIN の IdP →
+Access アプリ(セッション長は --session)→ 許可ポリシー(メール)。--bypass / --anthropic は、門を置いたうえで一部のパスだけ開ける。
+--allow も --remove-access も無ければ、Access には触れない。
 """
-import argparse, importlib.util, pathlib
+import argparse, importlib.util, pathlib, sys
 
 spec = importlib.util.spec_from_file_location('cf', pathlib.Path(__file__).with_name('cloudflare-api.py'))
 cf = importlib.util.module_from_spec(spec); spec.loader.exec_module(cf)
@@ -19,6 +22,7 @@ p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDes
 p.add_argument('host', help='公開するホスト名(例 works.sanei-clover.com)')
 p.add_argument('--origin', required=True, help='compose のネットワーク内での宛先(例 http://web:8080)')
 p.add_argument('--allow', default='', help='Access で通すメールアドレス(カンマ区切り)。省くと Access を作らない')
+p.add_argument('--remove-access', action='store_true', help='このホスト(とその下のパス)の Access アプリをすべて消す。アプリ自身のログインだけで守る')
 p.add_argument('--app-name', default=None, help='Access アプリの表示名(既定はホスト名の先頭)')
 p.add_argument('--session', default='720h', help='Access のセッション長(既定 720h = 30 日。短いと PIN の往復が日常の負担になる)')
 p.add_argument('--bypass', default='', help='Access を素通しにするパス(カンマ区切り。例 /mcp)。アプリ自身の認証で守られているパスだけ')
@@ -62,10 +66,18 @@ if recs:
 else:
     cf.api(f'/zones/{zid}/dns_records', {'type': 'CNAME', 'name': host, 'content': target, 'ttl': 1, 'proxied': True}); print('CNAME 作成')
 
-# 4〜5b は Access を前段に置くときだけ
+# 4〜5c は Access を前段に置くときだけ。--remove-access はその逆(このホストの Access アプリをすべて消す)
 emails = [e.strip() for e in args.allow.split(',') if e.strip()]
-if not emails:
-    print('Access: 作らない(素通し)')
+if emails and args.remove_access:
+    sys.exit('--allow と --remove-access は一緒に使えない')
+if args.remove_access:
+    mine = [a for a in cf.api(f'/accounts/{aid}/access/apps') if (a.get('domain') or '') == host or (a.get('domain') or '').startswith(host + '/')]
+    for a in mine:
+        cf.api(f'/accounts/{aid}/access/apps/{a["id"]}', method='DELETE')
+        print('Access アプリを削除:', a['domain'])
+    print('Access: 無し(素通し。守りはアプリ自身のログイン)' if mine else 'Access: もともと無い')
+elif not emails:
+    print('Access: 触れない(作らない。消すなら --remove-access)')
 else:
     # 4. Access: One-time PIN の IdP
     idps = cf.api(f'/accounts/{aid}/access/identity_providers')
@@ -92,12 +104,6 @@ else:
         print('ポリシー: allow', len(emails), '件のメールアドレス')
     else:
         print('ポリシー既存:', [(p['name'], p['decision']) for p in pols])
-
-    # 5a. アプリ(api)が Access の JWT を確かめるための 2 つを .env へ(03 §5 の B 案。backend/app/access.py)。
-    #     チームのドメインは発行元(iss)と公開鍵の置き場、AUD タグは宛先(aud)。どちらも値は表示しない
-    org = cf.api(f'/accounts/{aid}/access/organizations')
-    for key, value in (('WORKS_ACCESS_TEAM_DOMAIN', f'https://{org["auth_domain"]}'), ('WORKS_ACCESS_AUD', app['aud'])):
-        print(f'.env の {key}:', {'added': '追記', 'updated': '置き換え', 'unchanged': 'そのまま'}[cf.set_env(key, value)])
 
     # 5b. Access を素通しにするパス。エージェントは PIN の画面を通れないので、
     #     アプリ自身の認証(API キー等)で守られているパスだけを指定する

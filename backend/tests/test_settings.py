@@ -152,6 +152,18 @@ def test_間引き(admin: TestClient) -> None:
     assert codes.count(429) == 2
 
 
+def test_間引きは送り元の_IP_ごと(admin: TestClient) -> None:
+    """送り元は Cloudflare が付ける IP。api の手前(Caddy)の IP で数えると、訪問者全員が 1 人に見える。"""
+    form = make_form(admin)
+
+    def send(ip: str) -> int:
+        url = f"/api/v1/forms/{form['key']}"
+        return admin.post(url, data={"name": "太郎"}, headers={"cf-connecting-ip": ip}).status_code
+
+    assert [send("198.51.100.7") for _ in range(11)].count(429) == 1
+    assert send("203.0.113.9") == 200
+
+
 def test_止めたフォームと知らない鍵は_404(admin: TestClient) -> None:
     form = make_form(admin, enabled=False)
     assert admin.post(f"/api/v1/forms/{form['key']}", data={"name": "太郎"}).status_code == 404

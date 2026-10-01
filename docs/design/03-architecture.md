@@ -4,19 +4,19 @@
 
 ```
 ブラウザ ──────┐
-Android アプリ ─┼─https─▶ Cloudflare(TLS・Access)──Tunnel──▶ cloudflared ──▶ web(Caddy)
-Claude ────────┘                                                                   │ 静的ファイル(画面)
-                                                                                   │ /api/*・/mcp・OAuth の口
-                                                                                   ▼
-                                                                             api(Python)── ログイン・OAuth・MCP
-                                                                                   │
-                                                                                   ▼
-                                                                             db(PostgreSQL 18)
+Android アプリ ─┼─https─▶ Cloudflare(TLS)──Tunnel──▶ cloudflared ──▶ web(Caddy)
+Claude・Codex ─┘                                                           │ 静的ファイル(画面)
+                                                                           │ /api/*・/mcp・OAuth の口
+                                                                           ▼
+                                                                     api(Python)── ログイン・OAuth・MCP
+                                                                           │
+                                                                           ▼
+                                                                     db(PostgreSQL 18)
 ```
 
-**2026-09-24 から `api` と `db` も本番で動いている**(実データ。J-041)。Cloudflare Access は門(許可した人だけを通す)で、
-ログインとセッションはアプリ自身が持つ(§5。2026-10-01 の決定)。Android アプリは端末に入れた Cloudflare WARP で門を通る(09)。
-Claude は門の例外(Anthropic の送信元だけ。06 §7)を通る。**切り替え(J-055)までは、アプリは Access の JWT で利用者を決めている。**
+**2026-09-24 から `api` と `db` も本番で動いている**(実データ。J-041)。ログインとセッションはアプリ自身がすべて持ち(§5)、
+**手前に門(Cloudflare Access)は置かない**(2026-10-01 の決定。01 D-14)。ブラウザ・Android アプリ・Claude・Codex は、どれも公開 URL に直に届く。
+本番で Access を外すのは J-055(06 §3)。
 
 ## 2. 構成
 
@@ -88,22 +88,21 @@ Claude は門の例外(Anthropic の送信元だけ。06 §7)を通る。**切�
 ## 5. 認証(2026-10-01 に作り直す。01 D-14)
 
 **アプリ自身がログインを持つ。**メールアドレスとパスワード(+ 2 段階認証の TOTP)、または Google でログインする。
-**Cloudflare Access は門として残す**(許可した人以外を Surface に届かせない。06 §3)。ブラウザは Access を通ってから Works にログインし、Android アプリは WARP で門を通ってから Works の OAuth で入る(09)。
-**切り替え(J-055)までは、本番は末尾の「経緯」の形(Access を信頼する)で動いている。**
+**手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。01 D-14、06 §3)。ブラウザ・Android アプリ・AI のエージェント(MCP)は公開 URL に直に届き、ここのログインと OAuth・トークンだけで守る(下の「門を置かずに守る」)。
 
 ### だれが、何で入るか
 
 | 入口 | 証明するもの | 通る口 | 持ち時間 |
 |---|---|---|---|
 | 画面(ブラウザ) | セッションの Cookie `__Host-works_session`(パスワード + TOTP か、Google で入ったときに置く) | `/api/v1/*` | ログインから 30 日(Access のころと同じ間隔) |
-| Android アプリ | OAuth の access token(スコープ `api`。`Authorization: Bearer`)。門は WARP で通る | `/api/v1/*` | access 1 時間、refresh 90 日(使うたびに替わる。90 日使わなければ入り直す) |
+| Android アプリ | OAuth の access token(スコープ `api`。`Authorization: Bearer`) | `/api/v1/*` | access 1 時間、refresh 90 日(使うたびに替わる。90 日使わなければ入り直す) |
 | Claude のカスタムコネクタ | OAuth の access token(スコープ `works`) | `/mcp` だけ | 同上 |
 | Codex など | 環境設定で発行したトークン(`wks_`。04 §10) | `/mcp` だけ | 失効するまで |
 | Web フォームの送り手 | なし(URL の鍵) | `/api/v1/forms/{key}` だけ | — |
 
 - `current_user`(`app/api/deps.py`)は、Cookie → `Authorization: Bearer` の順に見る。どちらも無い・効かない → 401 `unauthenticated`。**Bearer はスコープ `api` のものだけを通す**(`wks_` と `works` は MCP のためのもので、画面の API へ広げない)
 - 利用者を消す(`deleted_at`)と、その人のセッション・許可・トークンはどれも効かなくなる。管理者(`admin`)の扱いは変わらない
-- **手元・テスト・E2E も同じログインを通る。**メールアドレスだけで入れた `WORKS_AUTH=dev` は無くし、自前のログインの `local` を既定にした(2026-10-01。J-053)。公開する場所で「メールアドレスだけで入れる」形を誤って有効にする事故を、形ごと無くすため。**`access` は本番の切り替え(J-055)まで残す**(compose の既定も access。J-052 など別の反映で先に本番へ出ても、ログインが変わらないように)。J-055 で `WORKS_AUTH` ごと消す。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
+- **手元・テスト・E2E・本番が同じログインを通る。**ログインの形を切り替える設定(`WORKS_AUTH`)は無い。メールアドレスだけで入れた `dev` は J-053 で、Access の JWT を信頼した `access` は Access を外すと決めた日に消した(2026-10-01)。公開する場所で「ログインを経ずに入れる」形を誤って有効にする事故を、形ごと無くすため。E2E の DB(`reset-demo`)はデモの利用者に決まったパスワードを入れ、E2E はそれで入る。手元の http では `Secure` の Cookie を置けないので、名前を `works_session` にする(`WORKS_SECURE_COOKIE=false`)
 - `WORKS_SECRET_KEY` は、公開する場所では必須にする(空なら起動しない)。Google の戻りの Cookie の署名と、Google・Slack の鍵の暗号化に使う
 
 ### パスワード
@@ -139,8 +138,29 @@ Claude は門の例外(Anthropic の送信元だけ。06 §7)を通る。**切�
 - **100 回続けて失敗したら、そのアカウントのパスワードでのログインを止める**(NIST の上限。§13)。戻すのは、本人が Google で入ってパスワードを決め直すか、管理者の `set-password`
 - **同じ IP から 10 分に 30 回失敗したら、その IP からのパスワードのログインを 10 分止める**(429 `too_many_attempts`、`Retry-After`)。待たせている間はパスワードを照らさない(ハッシュを掛けない)
 - IP は Cloudflare が付ける `CF-Connecting-IP` を使う(api には Tunnel の向こうからしか届かないので信じてよい。手元は接続元)
-- 門(Access)が前にいるので、知らない人はそもそもログインの口に届かない。アプリの間引きは、門の内側での守り(と、門を外す日のため)
-- 試みはすべて `login_attempts` に残す(02 §8)
+- **門は無いので、ログインの口にはインターネットのだれからでも届く。ここの間引きが守りの本体**(下の「門を置かずに守る」)
+- 試みはすべて `login_attempts` に残す(02 §8)。ただし待たせて断った試み(`throttled`)は、同じ送り元(IP)から 1 分に 1 件だけ残す(1 つの IP から叩き続けられても、表を膨らませない。数に入れないものなので、判定は変わらない)
+
+### 門を置かずに守る(2026-10-01。01 D-14 の 2 度目の見直し)
+
+ログインの前に届く口と、その守り。ほかの口(`/api/v1/*` の残り)は、どれもセッションか Bearer が無ければ 401。
+
+| 口 | だれが叩くか | 守り |
+|---|---|---|
+| `POST /api/v1/session`・`/session/totp` | ログインする人 | 上の間引き(アカウントごと・IP ごと)、TOTP、Argon2id(同時に 2 本まで)、`Origin` |
+| `GET /api/v1/session`・`/session/options` | 画面 | 読むだけ(未ログインなら 401 と、ログインの画面が出すもの) |
+| `/register`(MCP の動的登録) | Claude | 戻り先は Claude だけ(§6)。**許可の無い登録は新しいものから 50 件だけ残し、古いものから消す**(断らないので、正しい登録を締め出さない。許可の付いた登録は消さない) |
+| `/authorize` | 本人のブラウザ | 登録済みのクライアントだけ。**許可を待つ依頼は新しいものから 50 件だけ残す**(10 分で切れる)。鍵を出すのは、ログインした本人が許可したときだけ |
+| `/token`・`/revoke` | Claude | 認可コード・refresh token は 256 ビットの乱数で、PKCE も要る。全文は保存しない(sha256) |
+| `/mcp` | Claude・Codex など | OAuth の access token か環境設定のトークン(`wks_`)。無い・違えば 401 |
+| `POST /api/v1/forms/{key}` | Web サイトの訪問者・サイトのサーバ | 鍵は URL、bot 避けの隠し欄、**受け口ごと・送り元(IP)ごとに 1 分 10 件まで**(04 §10) |
+| `GET /api/v1/google/callback`・`/slack/callback` | 本人のブラウザ | 署名付きの `state`(`WORKS_SECRET_KEY`) |
+| 画面(静的なファイル) | だれでも | 中身は公開のリポジトリと同じ。データは API の向こう |
+
+- **本文は 20 MB まで**(Caddy の `request_body`。超えたら 413)。api は本文を読み終えてから認証を確かめるので、ログインの前の口に大きな本文を送りつけられても、メモリを食わせない。いちばん大きいのは CSV の取り込み(04 §7)。MCP と OAuth の口は SDK が本文の大きさを抑えている
+- 配る側のヘッダ(CSP・`X-Frame-Options`・`nosniff` など。06 §4)に、HSTS(1 年。このホストだけ)を足した
+- **Cloudflare の率の上限(WAF の rate limiting)は使わない。**無料で使えるのは 1 本で、条件はパスだけ、数える期間と遮る時間が 10 秒に固定(§13)。ゾーンのほかのホストにも当たる。アプリの間引きのほうが細かく効く
+- 置かなかったもの: ログイン画面の CAPTCHA(TOTP と間引きで足りる。人が増えたら考える)、新しい端末でのログインの知らせ
 
 ### 画面のセッション
 
@@ -190,17 +210,18 @@ Claude は門の例外(Anthropic の送信元だけ。06 §7)を通る。**切�
 - 2026-09-24: アプリは Access の JWT(`Cf-Access-Jwt-Assertion`)を確かめ、そのメールアドレスで利用者を決める形にした(J-023)。当時は、A 案「アプリが自分で認証する。どこへ引っ越しても同じ」と、B 案「Access を信頼する。楽だが Cloudflare の外では成り立たない」を比べ、本人が B を選んだ
 - 2026-10-01: Android のネイティブアプリ(01 D-15)を作るにあたり、A 案に切り替えた(01 D-14)。自前のログインは J-053 でコードに入れた(`dev` は消し、`access` は残した)。本番をアプリのログインに切り替え、`app/access.py` と `WORKS_AUTH` を消すのは J-055(06 §3)
 - 2026-10-01(同日): 2 段階認証は TOTP で、パスワードで入るときは必須と決めた(Q-048)。Google で入れるのが Workspace のアカウントだけなこと、既定値(セッション 30 日・メールでの再設定を持たない・Android アプリに許可のカードを出さない)も本人が了承
-- 2026-10-01(同日): **Access は外さず、門として残すと見直した**(本人。「Surface で稼働させている以上 Access は必要。ログインとセッションはシステム側に」)。Android アプリは Cloudflare WARP で門を通る(本人の意向)。J-055 は「Access の撤去」から「本番をアプリのログインに切り替える」に変えた
+- 2026-10-01(同日): Access は外さず、門として残すと見直した(本人。「Surface で稼働させている以上 Access は必要。ログインとセッションはシステム側に」)。Android アプリは Cloudflare WARP で門を通る(本人の意向)。J-055 は「Access の撤去」から「本番をアプリのログインに切り替える」に変えた
+- 2026-10-01(同日、2 度目の見直し): **Access を外す(素通しにする)と決めた**(本人。「Access を素通りにし、ログインやセッション管理は全面的にシステム側に。スマホアプリや AI エージェントなどからのリクエストも届くように」)。`WORKS_AUTH` と `app/access.py` を消し、ログインの前に届く口の守りを足した(上の「門を置かずに守る」)。WARP(J-057)は要らなくなった。本番で Access を外すのは J-055
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
 **2026-09-24 に作った**(J-028)。本人の要望: 「Google スライドなどのカスタム MCP と同じく、Claude のアプリで 1 回設定したら、同じ Claude を使うほかの端末でも使えるようにしたい」。
 
 - **繋ぎ方の本筋は Claude のカスタムコネクタ(リモート MCP + OAuth)。**Claude の設定 › コネクタで URL(`https://works.sanei-clover.com/mcp`)を 1 回足して許可すれば、Claude.ai の Web・デスクトップ・スマホ・Claude Code(claude.ai のコネクタとして)のどれでも使える。コネクタはアカウントに付き、端末ごとの設定が要らないため。一次資料: Claude のコネクタの認証の説明(https://claude.com/docs/connectors/building/authentication、2026-09-24 確認)。「Claude.ai・Desktop・モバイル・Claude Code・Cowork は同じ仕組みを使う」
-- **Claude のサーバが Works を叩く。**だから Anthropic の送信元(`160.79.104.0/21`。https://platform.claude.com/docs/en/api/ip-addresses)から、MCP と OAuth の機械向けの口に届く必要がある。Access のサービストークンのヘッダは使えない(カスタムコネクタが送れるヘッダ名は Anthropic の承認制で、固定ヘッダの機能も一部の組織だけのベータ)。Access の扱いは 06 §7(Anthropic の送信元からだけ、機械向けの口を素通しにする。2026-09-24 本人が承認)
-- **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Works にログインした画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる(切り替え(J-055)までは、ログインは Access の JWT で決まる。§5)
-- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ。Android アプリは動的登録ではなく、初めから入れてあるクライアント(§5)
-- 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(こちらは Access のサービストークンも要る。06 §7)
+- **Claude のサーバが Works を叩く。**手前に門は無いので、MCP と OAuth の口にそのまま届く(§5「門を置かずに守る」)。Access を門にしていた頃(2026-09-24〜10-01)は、カスタムコネクタが Access のサービストークンのヘッダを送れない(送れるヘッダ名は Anthropic の承認制)ため、Anthropic の送信元(`160.79.104.0/21`)からだけ機械向けの口を素通しにしていた(06 §7)
+- **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Works にログインした画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる
+- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ。Android アプリは動的登録ではなく、初めから入れてあるクライアント(§5)。だれでも叩けるので、許可の無い登録と許可を待つ依頼は 50 件までしか残さない(§5「門を置かずに守る」)
+- 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(門が無いので、このトークンだけで届く)。ほかの AI のアプリ(ChatGPT など)を OAuth で繋ぐには、その戻り先を許すかどうかを決めてから足す
 - ツールは 6 つ: `list_tables`・`search`・`list_records`・`get_record`(時系列も)・`create_record`・`update_record`。**画面と同じ関数を呼ぶ**(検証、既定値、業務ルール、繰り返し、言及)。DB を直接触らせない。**削除のツールは持たない**(会話の中では「元に戻す」に気づきにくい)。環境設定(テーブル定義など)も MCP からは変えない
 - 状態を持たない形(stateless HTTP + JSON の応答)。1 プロセス・利用者 1〜3 名の前提。プロトコルは SDK が最新版(2026-07-28)と 1 つ前(2025-11-25)の両方を受ける(`backend/tests/test_mcp.py`)
 
@@ -336,12 +357,13 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 **アプリの決定と仕様は 1 枚にまとめた: [09-android.md](09-android.md)**(本人の要望)。ここには、サーバ側で関わることだけを置く。
 
 - 置き場は `android/`。契約は `/api/v1`(04)のまま。**契約を変えたら、型・モック・`http.ts`・04 に加えて `android/` も同じコミットで揃える**(`android/` ができたら CLAUDE.md の決まりに足す)
-- ログイン: §5「Android アプリのログイン」(公開クライアント `works-android`、PKCE、スコープ `api`、許可のカードを出さない)。門は WARP で通る(06 §7)
+- ログイン: §5「Android アプリのログイン」(公開クライアント `works-android`、PKCE、スコープ `api`、許可のカードを出さない)。手前に門は無いので、公開 URL に直に届く(06 §7)
 - サーバに足すもの(J-056): `/api/v1` でスコープ `api` の Bearer を受ける(Bearer の要求は `Origin` を見ない)、`works-android` の登録、`/.well-known/assetlinks.json`
 
 ## 13. 一次資料での確認結果(ログインと Android・2026-10-01)
 
 共通ルールに従い、採るもの・採らないものを一次資料で確かめた(2026-10-01。公式の頁を直に取得)。
+Zero Trust の料金・Cloudflare One Agent・Split Tunnels・Android の VPN・Managed OAuth の行は、スマホを WARP で門に通す案のために確かめたもの。同じ日に Access を外すと決めたので使わないが、記録として残す。
 
 | もの | 確かめたこと | 出典 |
 |---|---|---|

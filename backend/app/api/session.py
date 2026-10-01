@@ -4,7 +4,7 @@
 失敗は `login_attempts` に残して数える(待たせるため)。だから失敗は例外で投げず、応答として返す
 (例外にすると、1 リクエスト = 1 トランザクションが巻き戻り、記録も消える)。
 
-`WORKS_AUTH=access`(本番を切り替える J-055 まで)は Cloudflare Access が門で、ここのログインは使わない。
+手前に門(Cloudflare Access)を置かないので、ここはインターネットのだれからでも届く(01 D-14)。
 """
 
 from typing import Any
@@ -17,15 +17,11 @@ from sqlalchemy import func, select, update
 from app.api.deps import Conn, CurrentUser, check_origin, user_dict
 from app.auth import challenges, passwords, sessions, throttle, totp
 from app.auth.throttle import Wait
-from app.config import get_settings
-from app.errors import ApiError, bad_request
+from app.errors import bad_request
 from app.meta import store
 from app.meta.tables import users
 
 router = APIRouter()
-
-# Access のログアウト。Cloudflare の縁で受けるので、アプリには届かない
-ACCESS_LOGOUT_URL = "/cdn-cgi/access/logout"
 
 
 class LoginBody(BaseModel):
@@ -49,11 +45,6 @@ def too_many(wait: Wait) -> JSONResponse:
     return response
 
 
-def require_local() -> None:
-    if get_settings().auth != "local":
-        raise ApiError(400, "access_login", "いまのログインは Cloudflare Access で行います")
-
-
 @router.get("/session")
 def read_session(user: CurrentUser, conn: Conn) -> dict[str, Any]:
     return {"user": user, "workspace": store.get_workspace(conn)}
@@ -68,7 +59,6 @@ def session_options() -> dict[str, bool]:
 @router.post("/session")
 def login(body: LoginBody, request: Request, conn: Conn) -> Response:
     check_origin(request)
-    require_local()
     email = body.email.strip().lower()
     if not email or not body.password:
         raise bad_request("メールアドレスとパスワードを入れてください")
@@ -78,9 +68,7 @@ def login(body: LoginBody, request: Request, conn: Conn) -> Response:
 
     wait = throttle.check(conn, user_id=user_id, ip=ip)
     if wait:
-        throttle.record(
-            conn, email=email, user_id=user_id, method="password", ip=ip, succeeded=False, reason="throttled"
-        )
+        throttle.record_throttled(conn, email=email, user_id=user_id, method="password", ip=ip)
         return too_many(wait)
     # 利用者がいない・パスワードを持たないときも、同じだけ時間を掛けて同じ文を返す
     if user is None or not passwords.verify(user.password_hash, body.password):
@@ -122,7 +110,6 @@ def _expired(message: str = "時間が経ちすぎました。もう一度ログ
 def login_totp(body: CodeBody, request: Request, conn: Conn) -> Response:
     """2 段目。札(Cookie)の 6 桁が通ったらセッションを作る。設定の札なら、設定も一緒に済ませる。"""
     check_origin(request)
-    require_local()
     challenge = challenges.current(conn, request)
     if challenge is None:
         return _expired()
@@ -132,9 +119,7 @@ def login_totp(body: CodeBody, request: Request, conn: Conn) -> Response:
     ip = sessions.client_ip(request)
     wait = throttle.check(conn, user_id=user.id, ip=ip)
     if wait:
-        throttle.record(
-            conn, email=user.email, user_id=user.id, method="totp", ip=ip, succeeded=False, reason="throttled"
-        )
+        throttle.record_throttled(conn, email=user.email, user_id=user.id, method="totp", ip=ip)
         return too_many(wait)
 
     setup = challenge.purpose == "totp_setup"
@@ -172,9 +157,6 @@ def login_totp(body: CodeBody, request: Request, conn: Conn) -> Response:
 @router.delete("/session")
 def logout(request: Request, conn: Conn) -> Response:
     check_origin(request)
-    if get_settings().auth == "access":
-        # アプリは Cookie を持たないので、Access のセッションを切ってもらう(画面はこの URL へ移る)
-        return JSONResponse({"logout_url": ACCESS_LOGOUT_URL})
     sessions.delete_current(conn, request)
     response = Response(status_code=204)
     sessions.clear_cookie(response, sessions.session_cookie())

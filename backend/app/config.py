@@ -2,7 +2,6 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,18 +28,12 @@ class Settings(BaseSettings):
     admin_email: str = ""
     admin_name: str = "管理者"
 
-    # --- ログイン(03 §5。2026-10-01 に自前へ。01 D-14)-------------------------
-    # local = アプリ自身のログイン(メールアドレスとパスワード + TOTP。app/auth/)。手元・テスト・E2E もこれ
-    # access = Cloudflare Access が付ける JWT で利用者を決める(app/access.py)。**本番を切り替える J-055 までの形**。
-    #          J-055 で本番の .env を local にし、この値ごと消す
-    auth: Literal["access", "local"] = "local"
-    # Access のチーム(例 https://<チーム名>.cloudflareaccess.com)と、Access アプリの AUD タグ。
-    # scripts/cloudflare-tunnel-setup.py が .env に書く。空のままだと access ではだれも入れない(503)
-    access_team_domain: str = ""
-    access_aud: str = ""
+    # --- ログイン(03 §5。アプリ自身が持つ。01 D-14)-------------------------
+    # メールアドレスとパスワード + TOTP(app/auth/)。手元・テスト・E2E・本番のどこも同じ形。
+    # Cloudflare Access の JWT で利用者を決める形(WORKS_AUTH=access)は、Access を外したときに消した(2026-10-01)
 
     # 署名と暗号化の鍵(.env の WORKS_SECRET_KEY)。空なら起動ごとのランダム。
-    # local で https に出す(secure_cookie)なら必須(空なら起動しない。2 段階認証の秘密を読めなくなるため)
+    # https に出す(secure_cookie)なら必須(空なら起動しない。2 段階認証の秘密を読めなくなるため)
     secret_key: str = ""
     # セッションの Cookie に Secure を付け、名前に __Host- を付ける(https で配るとき。手元の http では false)
     secure_cookie: bool = True

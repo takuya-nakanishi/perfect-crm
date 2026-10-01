@@ -41,7 +41,7 @@ npm run fixtures     # モックのレコードを作り直す(scripts/gen-fixtu
 ```
 
 - E2E の向き先は引数で変えられる: `npm run e2e -- http://127.0.0.1:8610`(コンテナの本番ビルド)
-- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(`WORKS_AUTH=local`。種の利用者のパスワードと 2 段階認証の秘密は `backend/app/demo.py`。E2E はそこから 6 桁を計算する)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる(止めるコマンドを最後に出す)。**ポートが既に使われていたら始めない**(残っていた古い画面に向けて E2E が通ってしまうため)。別のポートで流すなら `E2E_API_PORT`・`E2E_WEB_PORT`
+- **本物の API + PostgreSQL で同じ E2E を回す**: `scripts/e2e-http.sh`(ルートで)。E2E 用の DB `works_e2e` をモックと同じ種のデータで作り直し(`python -m app.cli reset-demo`。日付は今日基準にずらす)、api(本番と同じ自前のログイン。種の利用者のパスワードと 2 段階認証の秘密は `backend/app/demo.py`。E2E はそこから 6 桁を計算する)と画面(`VITE_API_MODE=http`)を別のポート(8621・5621)で起こして `smoke.mjs` を流し、終わったら止める。毎回作り直すので何度走らせても同じ結果になる。DB は Compose の db(127.0.0.1:55432、`.env` の利用者とパスワード)。別の場所なら `WORKS_E2E_DATABASE_URL`。`--keep` で起こしたままにできる(止めるコマンドを最後に出す)。**ポートが既に使われていたら始めない**(残っていた古い画面に向けて E2E が通ってしまうため)。別のポートで流すなら `E2E_API_PORT`・`E2E_WEB_PORT`
 - `smoke.mjs` は画面の `<html data-api-mode>` を読み、モック専用の検査(Google ドライブを繋いだ状態、モックのデータの初期化)を http では飛ばす。http では契約どおりの 4xx(ログイン前の 401 など)をブラウザのエラーに数えず、api の 5xx を失敗に数える
 - E2E のブラウザは Playwright の Chromium(`~/.cache/ms-playwright/chromium-*`)。無ければ `npx playwright install chromium`。別の場所にあるなら `CHROMIUM_PATH`
 - モックのデータはブラウザごと。画面の利用者メニュー「モックのデータを初期化」で戻る。メタデータ(`fixtures/objects.json`・`views.json`)は手で直す
@@ -57,19 +57,19 @@ EOF
 FONTCONFIG_FILE=/tmp/fonts.conf npm run e2e     # Playwright で撮るスクリプトも同じ環境変数で
 ```
 
-## 3. Cloudflare(Tunnel・DNS・Access)
+## 3. Cloudflare(Tunnel・DNS)と、外からの確かめ
 
-**Access は門として残す**(2026-10-01 に見直し。ログインとセッションはアプリが持つ。`docs/design/01` D-14)。アプリのログインへの切り替えの手順は `docs/design/06` §3(J-055)。
+**手前に門(Cloudflare Access)は置かない**(2026-10-01。ログインとセッションはアプリがすべて持つ。`docs/design/01` D-14)。外し方と戻し方は `docs/design/06` §3(J-055)。
 
 ```
 python3 scripts/cloudflare-api.py                  # API トークンが生きているか
-python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --allow <メール> --app-name Works
-python3 scripts/cloudflare-access-check.py works.sanei-clover.com
-python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c "curl -s -H \"CF-Access-Client-Id: \$CF_ACCESS_CLIENT_ID\" -H \"CF-Access-Client-Secret: \$CF_ACCESS_CLIENT_SECRET\" https://works.sanei-clover.com/api/v1/session"'
+python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --remove-access
+python3 scripts/public-check.py works.sanei-clover.com
 ```
 
-- `cloudflare-tunnel-setup.py` は何度打っても同じ結果になる。Tunnel を作り直したときは `.env` の `CLOUDFLARE_TUNNEL_TOKEN` を置き換えるので、そのあと `docker compose --profile public up -d` で cloudflared を作り直す
-- `cloudflare-access-check.py` は、未認証が Access へ送られること、認証済みなら画面の HTML まで届くことを外から確かめる。確認のあいだだけサービストークンとポリシーを作り、終わったら消す。`--exec` を付けると、そのトークンを環境変数に入れてコマンドを走らせる。上の例は API が Access の JWT を確かめているかを見るもので、`{"code":"access_required","message":"サービストークンでは画面に入れません"}` が返れば、署名・宛先・発行元・期限まで確かめたうえでサービストークンを弾いている。**本番は http モードなので、公開 URL に E2E(smoke.mjs)を流さない**(本番の DB を書き換える。2026-09-24 まではモックだったので流していた)
+- `cloudflare-tunnel-setup.py` は何度打っても同じ結果になる。Tunnel を作り直したときは `.env` の `CLOUDFLARE_TUNNEL_TOKEN` を置き換えるので、そのあと `docker compose --profile public up -d` で cloudflared を作り直す。`--remove-access` は、このホストとその下のパスの Access アプリをすべて消す(無ければ何もしない)
+- `public-check.py` は、公開 URL に門を挟まずに届き、アプリの守りが効いていることを外から確かめる: 画面の HTML と配る側のヘッダ、未ログインの API が 401、よそのサイトからのログインが 403、MCP がトークン無しで 401、OAuth のメタデータ、20 MB を超える本文が 413。**読むだけで、本番の DB を書き換えない**(Cloudflare の API も `.env` も使わない)。門がまだあれば「Access のログインへ送られた」で落ちる
+- **公開 URL に E2E(smoke.mjs)を流さない**(本番の DB を書き換える。2026-09-24 まではモックだったので流していた)
 - トークンの値は、どのスクリプトも表示しない。`.env` の中身を画面やログに出さないこと
 
 ## 4. 踏んだ落とし穴
@@ -78,7 +78,7 @@ python3 scripts/cloudflare-access-check.py works.sanei-clover.com --exec 'sh -c 
 |---|---|
 | `web` が再起動を繰り返し、ログに `exec /usr/bin/caddy: operation not permitted` | 公式イメージの caddy は `cap_net_bind_service` 付きのバイナリ。`cap_drop: [ALL]` だけだと exec できない。`cap_add: [NET_BIND_SERVICE]` を足してある |
 | 公開 URL でだけ、コンソールに `static.cloudflareinsights.com/beacon.min.js … violates Content Security Policy` | ゾーンの Web Analytics が HTML にビーコンを自動挿入していた。CSP が止めるので実害は無い。配る側で `Cache-Control: no-transform` を返して挿入させないようにした。ホスト単位の除外ルールは無料プランでは作れない(`maxRulesError`) |
-| Access の確認で、同じ要求が 302 と 200 を行き来する | 作りたてのポリシーが Cloudflare の全拠点へ行き渡るまで十数秒かかる。確認スクリプトは 3 回続けて通るまで待つ |
+| Access の確認で、同じ要求が 302 と 200 を行き来する(Access を門にしていた頃) | 作りたてのポリシーが Cloudflare の全拠点へ行き渡るまで十数秒かかる。Access を足し外ししたあとは、しばらく置いてから確かめる |
 | 絞り込み欄で、打った文字が逆順に入る(「かささぎ」→「ぎささか」) | 幅 0 から広がるアニメーションの途中で打鍵すると、Chromium がキャレットを先頭に置き続ける。入力欄は、開いた状態でだけ描く(幅を動かさない)。**入力欄の幅をアニメーションさせない** |
 | `scripts/e2e-http.sh` のあと、E2E の画面(vite)が残って次の実行のポートがふさがる(34 時間前の vite が残っていた) | `npx vite` は npm exec → sh → node(vite)と子を作るので、最初のプロセスだけ止めても vite が残る。起こすものを `setsid` で別のプロセスグループにし、グループごと止めて、止まるまで待つようにした(2026-09-26)。バックグラウンドで起こしたものを `kill $!` で止める作りは、ほかのスクリプトでも同じ罠がある |
 | 使っていないポートを「接続できるか」で確かめると、2 分近く止まる | この WSL では、待ち受けの無いポートへの接続が拒否されず、`SYN-SENT` のまま待たされる(`/dev/tcp` も curl も)。空いているかは待ち受けの一覧(`ss -Hltn "sport = :<ポート>"`)で見る。起動待ちの curl には `--connect-timeout` を付ける |
@@ -105,9 +105,9 @@ docker compose logs -f api
 
 - **道具は uv。**入っていなければ `curl -LsSf https://astral.sh/uv/install.sh | sh`(公式の入れ方)。`scripts/verify.sh` は uv が無いと red になる
 - 初回の起動で `python -m app.cli init` が走り、マイグレーション → 初期メタデータ → 管理者まで揃う。**`WORKS_ADMIN_EMAIL` が空だと管理者が作られず、ログインできない**
-- **本番のログインは、切り替え(J-055)までは Cloudflare Access**(`docs/design/03` §5。compose の既定 `WORKS_AUTH=access`)。api は Access の JWT を確かめるので、`.env` に `WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` が要る。`scripts/cloudflare-tunnel-setup.py`(§3。再実行しても重複しない)が書く。空のままだと画面は「ログインし直してください」+ 503 で止まる
-- **人を足すときは 2 か所**: Access のポリシーにメールアドレスを足し(門)、`docker compose exec api python -m app.cli add-user <メール> [名前] [--admin]` で Works の利用者にする。片方だけだと、門で止まるか、「登録されていません」が出る
-- **自前のログイン**(`WORKS_AUTH=local`。手元・E2E。J-055 から本番も): 利用者は `add-user` で足し、`docker compose exec api python -m app.cli set-password <メール>`(標準入力から読む)でパスワードを決める。最初のログインで 2 段階認証(TOTP)を設定する。端末を無くした人は `reset-totp <メール>`。手元を http で開くときは `WORKS_SECURE_COOKIE=false`
+- **ログインはアプリ自身が持つ**(`docs/design/03` §5。手元・E2E・本番で同じ)。手前に門は無いので、ログインの前の口はインターネットのだれからでも届く(03 §5「門を置かずに守る」)
+- **人を足す**: `docker compose exec api python -m app.cli add-user <メール> [名前] [--admin]` で Works の利用者にし、`docker compose exec api python -m app.cli set-password <メール>`(標準入力から読む。画面にもログにも出さない)でパスワードを決める。**決めたら、その人がすぐに最初のログインで 2 段階認証(TOTP)を設定する**(設定が済むまでは、パスワードを知る人なら自分の認証アプリを登録できてしまう)。端末を無くした人は `reset-totp <メール>`。手元を http で開くときは `WORKS_SECURE_COOKIE=false`
+- `WORKS_SECRET_KEY` が空だと、https で出す api は起動しない(2 段階認証の秘密を読めなくなるため)
 - `.env` に要る値は `backend/README.md`(`WORKS_DB_PASSWORD`・`WORKS_SECRET_KEY`・`WORKS_ADMIN_EMAIL`)
 - **db はホストの 127.0.0.1:55432 に出ている**(pytest が実物に繋ぐため)。外へは出さない
 - テストは名前が `_test` で終わる DB にしか繋がない(`works_test` を自動で作る)。**本番の `works` を消さないための安全装置**なので外さない
@@ -115,19 +115,18 @@ docker compose logs -f api
 
 ## 5b. Claude から MCP を使う(カスタムコネクタ・2026-09-24)
 
-設計は `docs/design/03` §6、口の一覧は `04` §13、Access の例外は `06` §7。
+設計は `docs/design/03` §6、口の一覧は `04` §13、外から使う口は `06` §7。
 
-1. **Access**: Anthropic の送信元からだけ、MCP と OAuth の機械向けの口を素通しにする(06 §7 のコマンド。人が開く `/authorize` と画面は含めない)
-2. **Claude**: claude.ai(かデスクトップ版)の 設定 › コネクタ › カスタムコネクタを追加。名前 `Works`、URL `https://works.sanei-clover.com/mcp`。OAuth の欄は空のまま(Claude が動的登録する)
-3. 足したコネクタの「連携」を押す → Works の許可の画面(Access でログインした本人として)→「許可する」→ Claude に戻る
-4. 以後は同じ Claude アカウントの Web・デスクトップ・スマホ・Claude Code で使える。会話の「+」› コネクタで Works を ON にする。切るのは Works の 環境設定 › MCP › 接続中のアプリ(Claude 側のコネクタの削除とは別)
+1. **Claude**: claude.ai(かデスクトップ版)の 設定 › コネクタ › カスタムコネクタを追加。名前 `Works`、URL `https://works.sanei-clover.com/mcp`。OAuth の欄は空のまま(Claude が動的登録する)
+2. 足したコネクタの「連携」を押す → Works の許可の画面(ログインしていなければ、Works のログインを経る)→「許可する」→ Claude に戻る
+3. 以後は同じ Claude アカウントの Web・デスクトップ・スマホ・Claude Code で使える。会話の「+」› コネクタで Works を ON にする。切るのは Works の 環境設定 › MCP › 接続中のアプリ(Claude 側のコネクタの削除とは別)
+4. Codex など、ヘッダを自分で付けるアプリは、環境設定 › MCP でトークンを発行し、`Authorization: Bearer <トークン>` で `/mcp` へ(繋ぎ方の例は画面に出る)
 
-確かめ方: 手元は `cd backend && .venv/bin/pytest tests/test_mcp.py`(登録 → 許可 → トークン → 読み書き → refresh → 切断を通しで)。公開 URL は、メタデータが Anthropic の送信元以外からは Access で止まることを `curl -s -o /dev/null -w "%{http_code}" https://works.sanei-clover.com/.well-known/oauth-authorization-server`(302 か 403 なら止まっている)。
+確かめ方: 手元は `cd backend && .venv/bin/pytest tests/test_mcp.py`(登録 → 許可 → トークン → 読み書き → refresh → 切断を通しで)。公開 URL は `python3 scripts/public-check.py works.sanei-clover.com`(MCP がトークン無しで 401 とメタデータの場所を返すこと、OAuth のメタデータが公開 URL を名乗ること)。
 
 | 症状 | 原因と対処 |
 |---|---|
-| Claude が「MCP サーバに届かない」 | Access の素通しが無い、または送信元の範囲が古い(06 §7)。api のログに `/mcp` が来ていなければ、手前で止まっている |
-| 許可のあと Claude に戻らず「登録されていません」 | Access でログインしたメールアドレスが Works の利用者にいない(§5 の `add-user`) |
+| Claude が「MCP サーバに届かない」 | api のログに `/mcp` が来ていなければ、手前(Tunnel・Cloudflare)で止まっている。門(Access)が戻っていないかも見る(06 §3) |
 | `/mcp` が 421 や 400 `Invalid Host` | `WORKS_PUBLIC_URL` が公開 URL と違う(api は Host を公開 URL のホストと突き合わせる) |
 
 ## 6. Google ドライブを繋ぐ(GCP 側の手順・2026-09-23)
@@ -196,7 +195,7 @@ docker compose --profile backend up -d --build api
 | `redirect_uri_mismatch` | GCP のリダイレクト URI と `WORKS_GOOGLE_REDIRECT_URI` の不一致(末尾の `/`・http と https・ホスト名) |
 | 繋いだのに次の日また「Google に接続」が出る | `WORKS_SECRET_KEY` が空だと、再起動のたびに鍵が変わって保存した token を読めない(`.env` に固定する) |
 | 403 `access_denied` で戻る | 同意画面が「内部」で、押した人が Workspace の利用者か。外部アカウント(個人の Gmail)では通らない |
-| Cloudflare Access の画面が Google の戻りで出る | 戻り先も Access の内側。**同じブラウザで Works にログインしたまま**繋ぐ |
+| Google の戻りで Works のログインの画面が出る | 誰の許可かは署名付きの `state` が持つが、戻ったあとの画面はログインが要る。**同じブラウザで Works にログインしたまま**繋ぐ |
 
 出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)。
 
