@@ -20,8 +20,9 @@
   - 由来: 01 D-14(同日の見直しで、Access は外さないことにした)。手順は 06 §3(本人のパスワード → `WORKS_AUTH=local` → Access の内側で確かめる → 後片付け)。本人に頼まれてから進める
   - [2026-10-01] J-053 はコードに入った。切り替えの 1 手目は本番の `.env` に `WORKS_AUTH=local`(compose の既定は access)。`WORKS_SECRET_KEY` が空だと api は起動しない
   - [2026-10-01] J-053 の版は本番に出た(ログインはまだ access)。`.env` の書き換えは権限で止められたので、本人が行う(先に `set-password` で本人のパスワードを決めておけば、締め出されない)
+  - [2026-10-01] 本人が切り替えたと連絡があったが、本番の api は `WORKS_AUTH=access` のまま(12:23 に建て直されている)。本人のパスワードもまだ無い(利用者 1・パスワード 0)。`.env` の行が書き換わっていない(改行が CRLF で `sed` が当たらない、など)とみられる。本人に、パスワード → `.env` の確認 → 建て直し → 確かめ、の順を伝えた
 - [ ] **J-056** Android アプリの雛形を作る — `android/`、ログイン、写しの土台、確かめのスクリプト(2026-10-01)
-  - 由来: 01 D-15。仕様は docs/design/09-android.md(段階 1 の入口まで)。サーバ側も含む(`/api/v1` でスコープ `api` の Bearer を受ける、`works-android` の登録、`/.well-known/assetlinks.json`。03 §5・§12)。門を通れること(J-057)と、ログインの形(Q-049)が先
+  - 由来: 01 D-15。仕様は docs/design/09-android.md(段階 1 の入口まで)。サーバ側も含む(`/api/v1` でスコープ `api` の Bearer を受ける、`works-android` の登録、`/.well-known/assetlinks.json`。03 §5・§12)。門を通れること(J-057)が先。ログインはブラウザ(Q-049 で決定。09 A-13)
 - [ ] **J-057** スマホを Cloudflare One Agent(旧 WARP)で門に通す — Zero Trust の登録・Split Tunnels・Access の設定と、実機で確かめる(2026-10-01)
   - 由来: 本人の意向(09 §5。費用は Free プランで無料)。確かめること: アプリの通信(OkHttp)がログインの画面なしで通るか、「Authenticate with Cloudflare One Client」(ベータ)が Free で使えるか、ほかの VPN との兼ね合い。通らなければ Managed OAuth か端末ごとのサービストークン(09 §5)
 - [ ] **J-025** バックアップと復元を回す(2026-09-21)

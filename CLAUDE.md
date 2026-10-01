@@ -11,7 +11,7 @@
 ## 現状(2026-09-24)
 
 **`https://works.sanei-clover.com` は 2026-09-24 から本物の API + PostgreSQL で動いている**(WSL2 の Docker → Cloudflare Tunnel → Access。J-041)。データは空から始まり、実データの移行は J-026。
-モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える)。ログインはいまは Cloudflare Access を信頼しているが、**アプリ自身のログイン(メールアドレスとパスワード + TOTP・Google)へ切り替えると決めた**(2026-10-01。`docs/design/01` D-14、03 §5)。パスワード + TOTP はコードに入った(J-053。compose の既定は access のままなので本番は変わらない)。Google は J-054、本番の切り替えは J-055(Access は門として残す)。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能。門は Cloudflare WARP で通る)。
+モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える。Android アプリの実機の試しだけは本番に向ける。本人が承知。`docs/design/09-android.md` A-15)。ログインはいまは Cloudflare Access を信頼しているが、**アプリ自身のログイン(メールアドレスとパスワード + TOTP・Google)へ切り替えると決めた**(2026-10-01。`docs/design/01` D-14、03 §5)。パスワード + TOTP はコードに入った(J-053。compose の既定は access のままなので本番は変わらない)。Google は J-054、本番の切り替えは J-055(Access は門として残す)。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能。門は Cloudflare WARP で通る)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
 バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 
