@@ -8,10 +8,10 @@
 設計の正は `docs/design/`(01 要件と決定 → 02 データモデル → 03 アーキテクチャ → 04 API → 05 UI → 06 配置 → 07 移行)。
 運用の手順と落とし穴は `docs/runbook/`。問いと作業は `backlog/`(書式は `questions-jobs` skill)。
 
-## 現状(2026-09-24)
+## 現状(2026-10-02)
 
 **`https://works.sanei-clover.com` は 2026-09-24 から本物の API + PostgreSQL で動いている**(WSL2 の Docker → Cloudflare Tunnel。J-041)。データは空から始まり、実データの移行は J-026。
-モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える。Android アプリの実機の試しだけは本番に向ける。本人が承知。`docs/design/09-android.md` A-15)。**ログインとセッションはアプリ自身がすべて持ち(メールアドレスとパスワード + TOTP、Google、Microsoft + TOTP。本番で Google・Microsoft を開けるのは J-069)、手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。`docs/design/01` D-14、03 §5)。スマホのアプリも AI のエージェント(MCP)も公開 URL に直に届くので、**ログインの前に届く口はアプリが守る**(03 §5「門を置かずに守る」)。本番で Access を外すのは J-055(手順は 06 §3)。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能)。
+モック(ブラウザ内の擬似 DB)は開発と E2E に残る。バックエンド(Python)は `backend/`。E2E は `scripts/e2e-http.sh` で本物の API にも通る。**本番には E2E を流さない**(本番の DB を書き換える。Android アプリの実機の試しだけは本番に向ける。本人が承知。`docs/design/09-android.md` A-15)。**ログインとセッションはアプリ自身がすべて持ち(メールアドレスとパスワード + TOTP、Google、Microsoft + TOTP。本番で Google・Microsoft を開けるのは J-069)、手前に門(Cloudflare Access)は置かない**(2026-10-01、本人の決定。`docs/design/01` D-14、03 §5)。スマホのアプリも AI のエージェント(MCP)も公開 URL に直に届くので、**ログインの前に届く口はアプリが守る**(03 §5「門を置かずに守る」)。本番の Access は 2026-10-02 に解除済み(J-055。記録は 06 §3)。Google・Microsoft のコードは本番へ反映済みで、資格情報の設定は J-069、初回ログインと実機の確認は J-070。Android のネイティブアプリは `android/` に置き、決定と仕様は `docs/design/09-android.md` の 1 枚(範囲は環境設定を除く全機能)。
 2026-09-22 に、画面からのテーブルの追加と設定・CSV の取り込みと書き出し・パネルのぱんくず(`docs/design/05` §8、決まりは `02` §5)、活動の時系列・パネルの幅・サイドバーの並べ替え・Google ドライブの項目(同 §9)、ビューの編集(同 §10)、環境設定(テーブル・Web フォーム・MCP。管理者だけ。同 §11)をモックに入れた。次の一手は `backlog/JOBS.md` の先頭。
 バックエンドは FastAPI + SQLAlchemy 2(Core)+ Alembic + psycopg 3、パッケージ管理は uv(Q-034 で決定。`docs/design/03` §4・§10、`backend/README.md`)。
 

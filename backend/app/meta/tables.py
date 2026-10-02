@@ -55,7 +55,7 @@ users = Table(
     # Argon2id の文字列(app/auth/passwords.py)。NULL ならパスワードでは入れない(Google・Microsoft だけで入る人。03 §5)
     Column("password_hash", Text, nullable=True),
     Column("password_changed_at", TIMESTAMP(timezone=True), nullable=True),
-    # Google・Microsoft でログイン(03 §5)。sub は提供元の中で変わらない ID(Microsoft はアプリごとに違う値)。
+    # Google・Microsoft でログイン(03 §5)。Google は sub、Microsoft は tid:sub(テナントとアプリごとの ID)。
     # 初めて入ったとき(確かめられたアドレスで利用者を探す)か、アカウントの画面から結ぶ。email は表示だけに使う
     Column("google_sub", Text, nullable=True, unique=True),
     Column("google_email", Text, nullable=True),

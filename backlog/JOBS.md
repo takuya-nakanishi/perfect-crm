@@ -14,19 +14,22 @@
   - [2026-09-30] 起票と同時に先頭へ(本人の確認待ち)
   - [2026-10-01] 反映すると J-053(自前のログインのコード。マイグレーション 0009)も一緒に出る。compose の既定が `WORKS_AUTH=access` なので、本番のログインは変わらない。0009 は表と列を足すだけ
   - [2026-10-01] 本人の指示(WORKS_AUTH=local への切り替え)で、J-053 と一緒に本番へ出した。直前に `works-2026-10-01-before-J-053.dump`。0007 → 0008 → 0009 が通り、api・web は healthy、Access 越しの確認も通った。残りは本人が 環境設定 › ワークフロー でテスト送信して届くこと
-- [ ] **J-055** 本番をアプリのログインに切り替え、Access を外す(2026-10-01)
-  - 由来: 01 D-14(2 度目の見直しで、Access を外すことにした)。手順は 06 §3(新しい版を出す → 本人のパスワード → Works にログインして 2 段階認証を設定 → Access を外す → 外から確かめる → `.env` の後片付け)。**Access を外すのは、本人の 2 段階認証の設定が済んでから**(先に外すと、パスワードだけで認証アプリを登録できる時間ができる)
-  - [2026-10-01] (経緯)`WORKS_AUTH=local` への切り替えは、本番の `.env` の書き換えが効かず止まっていた(本番の api は access のまま、本人のパスワードも無かった)。2 度目の見直しで `WORKS_AUTH` ごと消したので、`.env` を直す手順は要らなくなった
-  - [2026-10-01] 本人の 2 度目の見直しで、Access を外すことにした。`WORKS_AUTH`・`app/access.py` を消し、ログインの前に届く口の守りを足した(03 §5「門を置かずに守る」)
-  - [2026-10-02] Google・Microsoft でも入れるようにした(J-054)。本番で Google を開ければ(J-069)、本人は `set-password` を飛ばして Google で入ってもよい(パスワードを決めない限り、パスワードと 6 桁の入口は開かない)。Microsoft で初めて入る人は、その場で 6 桁を設定する
-  - [2026-10-01] 手順 1 済み: その版(`4f5713a`)を本番へ出した(直前に `works-2026-10-01-before-J-055.dump`。表は変えていない)。**本番のログインはアプリのログインになった**(Access は前にいるまま)。本番のコンテナに手元から当てて、未ログインの 401・よそのサイトの 403・HSTS・21 MB の本文の 413・MCP の 401 を確かめた(記録は増えていない)。Claude の接続(許可 1 件)は残っている。残り: 本人の `set-password` → Works にログインして 2 段階認証を設定 → Access を外す → `public-check.py` とスマホ → `.env` の後片付け
 - [ ] **J-067** ログインのコード(J-053)を Codex でレビューする(2026-10-01)
   - 由来: このセッションで提案した。認証は守りの要なので、第三者の目で確かめる(`codex-review` skill)。本番でアプリのログインを使い始める(J-055)のと前後して
   - [2026-10-01] Access を外すと、ログインの前の口がインターネットのだれからでも届く。範囲に、同じ日の「門を置かずに守る」の変更(間引きの記録・MCP の登録と依頼の上限・フォームの送り元・本文の上限)も含める
-- [ ] **J-069** 本番で Google・Microsoft のログインを開ける — GCP のクライアントに戻り先を足す、Entra にアプリを登録して証明書を上げる、`.env`(2026-10-02)
-  - 由来: J-054(コードは済み。残りは人が GCP・Entra・`.env` を触るところ)。手順は docs/runbook/01 §6(Google。クライアントはドライブと同じで、J-040 と一緒に作れる)と §6c(Microsoft。`scripts/microsoft-login-cert.sh` が証明書を作って `.env` に書く)。`.env` に入れて api を建て直すとボタンが出る。外からは `scripts/public-check.py` が、開けた提供元の許可の画面へ送られることまで確かめる
-  - Google で入るなら、Workspace の管理コンソールで 2 段階認証を必須にしておく(Works は Google のログインに 6 桁を求めない。06 §3)。Microsoft は Works の 6 桁を求める
-  - [2026-10-02] J-054 のあった位置に置いた(本人の「次に Google・Microsoft でもログインできるように」)
+- [ ] **J-069** 本番で Google・Microsoft のログインを有効にする — 人が GCP・Entra の登録と資格情報を設定する(2026-10-02)
+  - 由来: J-054。コードと Microsoft の検証補強は本番へ反映済み(0010)。残りは外部サービスの管理画面と `.env` の設定。手順の正は docs/runbook/01 §6・§6c
+  - Google: GCP の Google Auth Platform で内部アプリの Web クライアントを作成または更新し、承認済みのリダイレクト URI に `https://works.sanei-clover.com/api/v1/session/google/callback` を追加する(ドライブ用 `https://works.sanei-clover.com/api/v1/google/callback` も残す)。ID・シークレットを `.env` の `WORKS_GOOGLE_CLIENT_ID`・`WORKS_GOOGLE_CLIENT_SECRET` へ保存する。シークレットは作成時だけ見えるので、その場で保存する
+  - Google: Workspace 管理コンソールで 2 段階認証を必須にする(Works は Google のログインに 6 桁を求めない)。Works に登録したアドレスと同じ Workspace アカウントで初回ログインを行う
+  - Microsoft: Entra ID に個人と職場・学校の両方を受けるアプリを登録し、Web の戻り先に `https://works.sanei-clover.com/api/v1/session/microsoft/callback` を登録する。マニフェストの `optionalClaims.idToken` に `email` と `xms_edov` を追加する(既存の要求を残す。JSON は runbook §6c)
+  - Microsoft: `scripts/microsoft-login-cert.sh` を実行し、出力先の公開証明書 `~/works-microsoft-login.crt` を Entra の「証明書とシークレット」にアップロードする。アプリケーション ID を `.env` の `WORKS_MICROSOFT_CLIENT_ID` へ保存する。秘密鍵入りの `WORKS_MICROSOFT_CERTIFICATE` はスクリプトが `.env` に書く。ID と証明書の両方が揃ってから api を再作成する(片方だけでは起動しない)
+  - 反映と確認: `docker compose --profile backend up -d api` → `python3 scripts/public-check.py works.sanei-clover.com` → 実アカウントで Google・Microsoft の各ログインを確認する。Microsoft は Works の TOTP を設定・入力する。自動で結べないアカウントは、別の方法で Works に入り、10 分以内にアカウントの画面で結ぶ
+  - [2026-10-02] J-054 のあった位置に置いた。Access の解除と本番へのコード反映は済み。`.env` の Google 資格情報は空、Microsoft は未設定なので、両ボタンはまだ出ない
+- [ ] **J-070** 初回ログインを設定し、PC・スマホの実アカウントで入れることを確かめる(2026-10-02)
+  - 由来: J-055。本人の指示で Access は解除済み。本人がパスワードや認証アプリを設定する手順は docs/design/06 §3
+  - Google で入る場合は J-069 の Google の設定を済ませて入る(パスワードは不要)。パスワードでも入る場合は `docker compose exec api python -m app.cli set-password <Works に登録したメール>` で本人が 15 文字以上を決め、Works のログイン画面で QR を認証アプリに登録して 6 桁を確認する。Microsoft も Works の TOTP が必要
+  - PC とスマホの Chrome で公開 URL を開き、Works のログインとログアウトを確かめる。Claude の既存接続も実際に使って確認する(許可は DB に残してある)
+  - [2026-10-02] 設定前の未認証 API は 401、MCP はトークンなしで 401 を確認済み。有効な利用者 1 人のパスワード・TOTP・外部アカウントは未設定
 - [ ] **J-056** Android アプリの雛形を作る — `android/`、ログイン、写しの土台、確かめのスクリプト(2026-10-01)
   - 由来: 01 D-15。仕様は docs/design/09-android.md(段階 1 の入口まで)。サーバ側も含む(`/api/v1` でスコープ `api` の Bearer を受ける、`works-android` の登録、`/.well-known/assetlinks.json`。03 §5・§12)。ログインはブラウザ(Q-049 で決定。09 A-13)
   - [2026-10-01] 細目(このセッションで出たもの): 開発の道具を WSL に入れる(Android CLI の `android sdk`・JDK 17・Gradle。`sdkmanager` は使わない)、実機へ入れる手順(USB か Wi-Fi のデバッグ)、minSdk を本人の端末で決める、アイコンは Web と同じ lucide をベクターで、Baseline Profile と Macrobenchmark の土台、`android/CLAUDE.md` と `.gitignore`、CLAUDE.md の「契約を変えたら同じコミットで揃える」に `android/` を足す(09 §10〜§12、03 §12)

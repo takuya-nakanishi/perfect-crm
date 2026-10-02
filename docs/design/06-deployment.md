@@ -39,12 +39,14 @@
 2026-10-01 に、Access を外してログインとセッションをすべてアプリに持たせると決めた(本人。「スマホアプリや AI エージェントなどからのリクエストも届くようにしたい」。01 D-14)。
 門があると、ブラウザ以外(Android アプリ・Claude Code・Codex など)は WARP かサービストークンを持たないと届かない(§7 の末尾)。
 
-**手順(J-055)。順を崩さない**(締め出される時間と、パスワードだけで入れる時間を作らないため)。
+**切り替えの手順(J-055)**。既存のパスワードがある場合は、2 段階認証を先に設定する。
+パスワードも外部ログインの資格情報も無い場合は、Access を先に外してもアプリにはログインできず、データ API は 401 を返す。
+その場合の初期設定と実アカウントの確認は J-069・J-070 として進める(2026-10-02、本人の直接到達の指示で実施)。
 
 1. 新しい版(Access の JWT を信頼する形を消した版)を本番へ出す。**出した時点で、本番のログインはアプリのログインになる**(Access は前にいるまま)。`WORKS_SECRET_KEY` が空だと api は起動しない
-2. 本人のパスワードを決める: `docker compose exec api python -m app.cli set-password <メール>`(15 文字以上を 2 回)
-3. Works を開く → Access(いつもどおり)→ Works のログイン(パスワード → 初回は QR で 2 段階認証を設定)。Claude のコネクタはそのまま使える(許可は DB に残っている)
-4. **2 段階認証の設定が済んでから**、Access を外す: `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --remove-access`(このホストとその下のパスの Access アプリをすべて消す。本番では 7 つ: 画面全体と、Claude のための 6 つのパス)。先に外すと、パスワードを決めてから 2 段階認証を設定するまでのあいだに、パスワードを知る人が自分の認証アプリを登録できてしまう
+2. パスワードを使う場合は本人が決める: `docker compose exec api python -m app.cli set-password <メール>`(15 文字以上を 2 回)。Google だけで入る場合は J-069 の設定を済ませればよく、パスワードは不要
+3. Works を開く → Works のログイン(パスワード → 初回は QR で 2 段階認証を設定。Access が残っていれば、先に通る)。Claude のコネクタの許可は DB に残る
+4. **パスワードを設定してある場合は、2 段階認証の設定が済んでから**、Access を外す: `python3 scripts/cloudflare-tunnel-setup.py works.sanei-clover.com --origin http://web:8080 --remove-access`(このホストとその下のパスの Access アプリをすべて消す。解除前は 7 つ: 画面全体と、Claude のための 6 つのパス)。パスワードを決めてから 2 段階認証を設定するまでのあいだに、パスワードを知る人が自分の認証アプリを登録できてしまうため
 5. 外から確かめる: `python3 scripts/public-check.py works.sanei-clover.com`(読むだけ。runbook §3)。スマホの Chrome で開いて、パスワード + 6 桁で入れること
 6. 後片付け: `.env` から `WORKS_AUTH`・`WORKS_ACCESS_TEAM_DOMAIN`・`WORKS_ACCESS_AUD` を消す(api はもう読まない。残っていても害は無い)
 
@@ -52,6 +54,15 @@
 - One-time PIN の IdP は消さない(アカウントで共有するもの)
 - Google でログインを使うなら、Workspace の管理コンソールで 2 段階認証を必須にしておく(Google で入るときは Works の 6 桁を求めないため)。Microsoft で入るときは Works の 6 桁を求めるので、こちらは要らない
 - Google・Microsoft でログインを本番で開ける手順は runbook §6(Google のクライアントに戻り先を足す)と §6c(Entra のアプリ登録と証明書)。`.env` に入れて api を建て直すと、ログインの画面にボタンが出る(J-069)
+
+**2026-10-02 の実施記録**: 本人の指示で Google・Microsoft のコードと Microsoft の署名鍵・テナントの検証補強を本番へ反映。
+DB は 0009 → 0010。Access アプリ 7 件を対象ホストと配下に限定して API で解除し、Tunnel・DNS は変更していない。
+事前の DB の退避は `~/backups/perfect-crm/works-2026-10-02-before-J-055-J-069.dump`、Access の設定は同じ場所の
+`works-2026-10-02-before-J-055-access.json`(公開リポジトリには入れない)。`.env` の旧 Access 設定 3 項目も削除した。
+公開 URL の直接到達とアプリの守りの検査はすべて PASS。Google・Microsoft の認可画面への転送は資格情報が未設定のため SKIP で、両提供元は無効のまま(J-069)。
+有効な利用者 1 人にパスワード・TOTP・外部アカウントの結び付けはまだ無く、初回ログインの確認は J-070。
+検証: `scripts/verify.sh` は全 green、モック E2E と `scripts/e2e-http.sh` は全通過。
+OIDC の 43 テストは提供元の署名付きトークンを模した実 DB の検査で、Google・Microsoft の実アカウントの検査は J-069 に残す。
 
 ## 4. 配る側のヘッダ(`frontend/Caddyfile`)
 

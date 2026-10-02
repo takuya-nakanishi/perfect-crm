@@ -9,7 +9,8 @@ Cookie を確かめ、`finish` がコードをトークンに替えて ID トー
   state から鍵(`WORKS_SECRET_KEY`)で導くので、Cookie に秘密を置かない
 - 提供元の口(許可・トークン・公開鍵)は discovery document から読み、1 時間持つ。
   公開鍵は、知らない `kid` が来たら読み直す
-- ID トークンは、署名(提供元の公開鍵)・発行元・宛先(クライアント ID)・期限・nonce を確かめる
+- ID トークンは、署名(提供元の公開鍵)・発行元・宛先(クライアント ID)・期限・nonce を確かめる。
+  Microsoft は公開鍵の発行元の制約も確かめる
 - コードの引き換えは、送り元(IP)ごとに 1 分 10 回まで(戻りの口を叩かせて、提供元へ問い合わせを積ませない)
 - Microsoft には、クライアントの証明に証明書(秘密鍵で署名した JWT)を使う。Microsoft は本番で client secret を
   使わないよう求めている(03 §13)。Google のウェブのクライアントは client secret だけ
@@ -95,7 +96,7 @@ class Flow:
 
 @dataclass(frozen=True)
 class Identity:
-    """提供元が確かめた人。`subject` は提供元の中で変わらない ID(Google・Microsoft とも `sub`)。"""
+    """提供元が確かめた人。`subject` は Google の `sub`、Microsoft の `tid:sub`(テナントを含む)。"""
 
     provider: str
     subject: str
@@ -112,6 +113,14 @@ class Credential:
     key: RSAPrivateKey
     thumbprint: str
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class SigningKey:
+    """ID トークンの公開鍵と、その鍵を使える発行元(Microsoft の JWKS の制約)。"""
+
+    key: RSAPublicKey
+    issuer: str | None
 
 
 def _b64(raw: bytes) -> str:
@@ -208,18 +217,24 @@ def metadata(provider: str) -> dict[str, Any]:
     return meta
 
 
-def _find_key(jwks: dict[str, Any], kid: Any) -> Any | None:
-    try:
-        keyset = jwt.PyJWKSet.from_dict(jwks)
-    except jwt.PyJWTError as exc:
-        raise OidcError("公開鍵の一覧を読めない") from exc
-    for key in keyset.keys:
-        if key.key_id == kid and isinstance(key.key, RSAPublicKey):
-            return key.key
+def _find_key(jwks: dict[str, Any], kid: str) -> SigningKey | None:
+    keys = jwks.get("keys")
+    if not isinstance(keys, list):
+        raise OidcError("公開鍵の一覧を読めない")
+    for raw in keys:
+        if not isinstance(raw, dict) or raw.get("kid") != kid:
+            continue
+        try:
+            key = jwt.PyJWK.from_dict(raw)
+        except jwt.PyJWTError as exc:
+            raise OidcError("公開鍵を読めない") from exc
+        if isinstance(key.key, RSAPublicKey) and key.algorithm_name == "RS256" and key.public_key_use in (None, "sig"):
+            issuer = raw.get("issuer")
+            return SigningKey(key.key, issuer if isinstance(issuer, str) else None)
     return None
 
 
-def _signing_key(jwks_uri: str, kid: Any) -> Any:
+def _signing_key(jwks_uri: str, kid: str) -> SigningKey:
     key = _find_key(_fetch(jwks_uri), kid)
     if key is None:
         # 鍵の入れ替え(rollover)のあとかもしれない。読み直すのは 1 分に 1 回まで
@@ -339,7 +354,9 @@ def _issuers(provider: str, meta: dict[str, Any], claims: dict[str, Any]) -> tup
     # Microsoft の common・organizations の discovery document は、発行元を `…/{tenantid}/v2.0` の型で載せる。
     # ID トークンの tid(入った人のテナント)を当てはめたものと、ID トークンの iss が同じであること
     tid = claims.get("tid")
-    if not isinstance(tid, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", tid):
+    if not isinstance(tid, str) or not re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", tid
+    ):
         return ()
     return (str(meta["issuer"]).replace("{tenantid}", tid),)
 
@@ -351,11 +368,14 @@ def _verify(provider: str, meta: dict[str, Any], id_token: str, nonce: str) -> d
         raise OidcError("ID トークンを読めない") from exc
     if header.get("alg") != "RS256":
         raise OidcError(f"ID トークンの署名の方式が {header.get('alg')}")
-    key = _signing_key(meta["jwks_uri"], header.get("kid"))
+    kid = header.get("kid")
+    if not isinstance(kid, str) or not kid:
+        raise OidcError("ID トークンの公開鍵の ID(kid)が無い")
+    key = _signing_key(meta["jwks_uri"], kid)
     try:
         claims: dict[str, Any] = jwt.decode(
             id_token,
-            key,
+            key.key,
             algorithms=["RS256"],
             audience=client_id(provider),
             leeway=LEEWAY,
@@ -365,6 +385,10 @@ def _verify(provider: str, meta: dict[str, Any], id_token: str, nonce: str) -> d
         raise OidcError(f"ID トークンが通らない({exc})") from exc
     if claims["iss"] not in _issuers(provider, meta, claims):
         raise OidcError(f"ID トークンの発行元が違う({claims['iss']})")
+    if provider == "microsoft" and (
+        key.issuer is None or key.issuer.replace("{tenantid}", claims["tid"]) != claims["iss"]
+    ):
+        raise OidcError("ID トークンの公開鍵を使える発行元が違う")
     if not isinstance(claims.get("nonce"), str) or not hmac.compare_digest(claims["nonce"], nonce):
         raise OidcError("ID トークンの nonce が違う")
     return claims
@@ -391,7 +415,8 @@ def identity_of(provider: str, claims: dict[str, Any]) -> Identity:
     # 確かめたもの(省略できる claim の xms_edov。アプリ登録の「トークン構成」で足す)だけを信じる
     verified = bool(email) and _true(claims.get("xms_edov"))
     shown = email or str(claims.get("preferred_username") or "").strip().lower()
-    return Identity(provider, subject, shown, verified)
+    # Microsoft の sub はテナントの中で解釈する。同じ sub の別テナントを同じ利用者へ結ばない
+    return Identity(provider, f"{claims['tid']}:{subject}", shown, verified)
 
 
 # --- Microsoft へのクライアントの証明(証明書)-----------------------------------------------------

@@ -142,6 +142,7 @@ class FakeProvider:
         self.codes: dict[str, dict[str, Any]] = {}
         self.calls: list[tuple[str, str]] = []
         self.assertions: list[dict[str, Any]] = []
+        self.ms_key_issuer: str | None = MS_META["issuer"]
 
     def jwks(self) -> dict[str, Any]:
         jwk = jwt.algorithms.RSAAlgorithm.to_jwk(self.key.public_key(), as_dict=True)
@@ -154,8 +155,13 @@ class FakeProvider:
             return GOOGLE_META
         if method == "GET" and url == MS_DISCOVERY:
             return MS_META
-        if method == "GET" and url in (GOOGLE_META["jwks_uri"], MS_META["jwks_uri"]):
+        if method == "GET" and url == GOOGLE_META["jwks_uri"]:
             return self.jwks()
+        if method == "GET" and url == MS_META["jwks_uri"]:
+            keys = self.jwks()
+            if self.ms_key_issuer is not None:
+                keys["keys"][0]["issuer"] = self.ms_key_issuer
+            return keys
         if method == "POST" and url in (GOOGLE_META["token_endpoint"], MS_META["token_endpoint"]):
             return self.token(url, data or {})
         raise AssertionError(f"偽物が知らない呼び出し: {method} {url}")
@@ -484,7 +490,7 @@ def test_Microsoft_で入ると_6_桁の段へ進み_通るとセッションが
     assert session_methods(conn) == ["microsoft"]
     assert attempts(conn) == [("microsoft", True, None)]
     row = conn.execute(select(users.c.microsoft_sub, users.c.microsoft_email).where(users.c.id == ADMIN_ID)).one()
-    assert (row.microsoft_sub, row.microsoft_email) == ("microsoft-1", ADMIN_EMAIL)
+    assert (row.microsoft_sub, row.microsoft_email) == (f"{TID}:microsoft-1", ADMIN_EMAIL)
     # クライアントの証明は、証明書で署名した 5 分の JWT(client secret は送らない)
     assertion = idp.assertions[0]
     assert assertion["exp"] - assertion["iat"] == 300 and assertion["jti"]
@@ -518,6 +524,42 @@ def test_Microsoft_の発行元は_入った人のテナントを当てはめた
     claims = ms_claims(iss=f"https://login.microsoftonline.com/{OTHER_TID}/v2.0")
     assert where(idp.go(client, "microsoft", claims))[1]["error"] == "microsoft_failed"
     assert where(idp.go(client, "microsoft", ms_claims(tid="not-a-tenant")))[1]["error"] == "microsoft_failed"
+    # 長さと文字種だけが GUID らしい値でも断る
+    malformed = "a" * 36
+    claims = ms_claims(tid=malformed, iss=f"https://login.microsoftonline.com/{malformed}/v2.0")
+    assert where(idp.go(client, "microsoft", claims))[1]["error"] == "microsoft_failed"
+
+
+@pytest.mark.parametrize("issuer", [MS_META["issuer"], f"https://login.microsoftonline.com/{TID}/v2.0"])
+def test_Microsoft_の公開鍵は_同じ発行元かテナントを当てはめた発行元なら使える(
+    client: TestClient, idp: FakeProvider, issuer: str
+) -> None:
+    idp.ms_key_issuer = issuer
+    assert where(idp.go(client, "microsoft", ms_claims())) == ("/login", {"continue": "microsoft", "next": "/o/tasks"})
+
+
+@pytest.mark.parametrize("issuer", [None, f"https://login.microsoftonline.com/{OTHER_TID}/v2.0"])
+def test_Microsoft_の公開鍵に発行元が無いか別テナント用なら入れない(
+    client: TestClient, idp: FakeProvider, issuer: str | None
+) -> None:
+    idp.ms_key_issuer = issuer
+    assert where(idp.go(client, "microsoft", ms_claims()))[1]["error"] == "microsoft_failed"
+    assert client.get("/api/v1/session/challenge").status_code == 401
+
+
+def test_Microsoft_は_sub_が同じでもテナントが違えば別人として扱う(
+    client: TestClient, idp: FakeProvider, conn: Connection
+) -> None:
+    conn.execute(update(users).where(users.c.id == ADMIN_ID).values(microsoft_sub=f"{TID}:microsoft-1"))
+    # 別テナントの同じ sub から、既存の結び付けを使って入れない
+    other = ms_claims(tid=OTHER_TID, iss=f"https://login.microsoftonline.com/{OTHER_TID}/v2.0", xms_edov=False)
+    assert where(idp.go(client, "microsoft", other))[1]["error"] == "microsoft_not_registered"
+    assert client.get("/api/v1/session/challenge").status_code == 401
+    # ログイン中の別の利用者なら、そのテナントのアカウントを独立して結べる
+    login_as(client, MEMBER_ID)
+    assert where(idp.link(client, "microsoft", other)) == ("/account", {"linked": "microsoft"})
+    row = conn.execute(select(users.c.microsoft_sub).where(users.c.id == MEMBER_ID)).scalar_one()
+    assert row == f"{OTHER_TID}:microsoft-1"
 
 
 def test_札の無い_2_段目は_401(client: TestClient) -> None:

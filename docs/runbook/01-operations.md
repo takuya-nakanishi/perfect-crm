@@ -169,8 +169,10 @@ openssl rand -hex 24     # → WORKS_DB_PASSWORD(まだ入れていなければ�
 
    1 つ目はドライブの繋ぎ、2 つ目は「Google でログイン」の戻り先。クライアントを作ってあれば、クライアントの詳細画面で 2 つ目を足すだけ
 
-5. 作成直後のダイアログに **クライアント ID** と **クライアント シークレット** が出る。
-   閉じてしまっても、クライアントの詳細画面からいつでも見られる(JSON でも落とせる)
+5. 作成直後のダイアログに **クライアント ID** と **クライアント シークレット** が出る。その場で `.env` へ保存する。
+   **シークレットは作成時だけ表示・ダウンロードでき、閉じたあと再表示できない。**既存のシークレットを保存していなければ、
+   クライアントの詳細画面の **Add Secret** で新しいものを作り、`WORKS_GOOGLE_CLIENT_SECRET` を更新する。
+   同じクライアント ID を使い、動作を確かめてから旧シークレットを **Disable** にする(ほかの用途で共有していれば、そちらも先に更新する)
 6. **データアクセス(Data Access)のスコープ登録は、内部アプリでは必須ではない**(同意画面に出ないため)。
    登録しても害は無い: `…/auth/drive.readonly`・`…/auth/drive.file`・`…/auth/userinfo.email`・`openid`
 
@@ -207,7 +209,7 @@ docker compose --profile backend up -d --build api
 | 「Google でログイン」で `redirect_uri_mismatch` | GCP の承認済みのリダイレクト URI に `…/api/v1/session/google/callback` を足したか(ドライブの戻り先とは別) |
 | Google の戻りで Works のログインの画面が出る | 誰の許可かは署名付きの `state` が持つが、戻ったあとの画面はログインが要る。**同じブラウザで Works にログインしたまま**繋ぐ |
 
-出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)。
+出典: Google 公式「アクセス認証情報を作成する」「OAuth 同意画面を設定する」(2026-09-23 参照)、[Manage OAuth Clients](https://support.google.com/cloud/answer/15549257?hl=en)(シークレットの表示と更新。2026-10-02 確認)。
 
 ## 6b. Slack に通知する(llm-wiki の稼働通知の Slack アプリを流用する・2026-09-30)
 
@@ -294,12 +296,27 @@ leadcast-sales の同じ仕組み(専用のアプリを作って配布する形)
    (英語の画面では **Any Entra ID Tenant + Personal Microsoft accounts**。2026-10-02 に Microsoft Learn で確かめた表記。日本語の画面では文言が違うことがある)
 3. **リダイレクト URI**: 種類は **Web**、値は上の「戻り先」を**1 文字も違わず**。「暗黙的な許可とハイブリッド フロー」のチェックは入れない(Works は認可コードだけを使う)
 4. 登録したら、概要の **アプリケーション (クライアント) ID** を控える(`WORKS_MICROSOFT_CLIENT_ID`)
-5. **トークン構成** › 省略可能な要求を追加 › トークンの種類は **ID** › `email` と `xms_edov` にチェック(Microsoft Graph の email のアクセス許可を足すかを聞かれたら、足す)。
-   `xms_edov` は「アドレスのドメインの持ち主が確かめたか」。これがあるときだけ、初めての Microsoft のログインで、同じアドレスの Works の利用者に結ぶ。
+5. **マニフェスト** › **Microsoft Graph App Manifest** で、`optionalClaims.idToken` に `email` と `xms_edov` を足して保存する。
+   既存の要求と `accessToken`・`saml2Token` は残す。初めて設定する場合の形は次のとおり。
+
+   ```json
+   "optionalClaims": {
+     "idToken": [
+       { "name": "email", "source": null, "essential": false, "additionalProperties": [] },
+       { "name": "xms_edov", "source": null, "essential": false, "additionalProperties": [] }
+     ]
+   }
+   ```
+
+   `xms_edov` は「アドレスのドメインの持ち主が確かめたか」で、`email` がある場合だけ返る。
+   真のときだけ、初めての Microsoft のログインで、同じアドレスの Works の利用者に結ぶ。
    無くても、Works に入ってからアカウントの画面で結べば使える
 6. API のアクセス許可は既定のまま(`User.Read`。Works は Microsoft Graph を呼ばない)
 
 **B. 証明書を作って上げる**(client secret は使わない。Microsoft が本番では使わないよう求めている。03 §13)
+
+スクリプトは自己署名の証明書を作り、Entra に登録した公開鍵でクライアントを証明する。Microsoft の本番向けの推奨は
+CA 署名の証明書と Key Vault での保管だが、この構成では登録した公開鍵と手元の秘密鍵を使い、秘密鍵は `.env` で保管する。
 
 ```
 scripts/microsoft-login-cert.sh
@@ -339,7 +356,7 @@ docker compose --profile backend up -d api
 期限: 証明書は 2 年。切れる 30 日前から、api の起動のログに知らせが出る。作り直すときは `.env` の行を消して B を流し、
 Entra に新しい証明書を上げてから古いものを消し、api を建て直す。
 
-出典: Microsoft Learn「アプリの登録」「アプリの資格情報の追加」「証明書の資格情報」「省略可能な要求」(2026-10-02 参照。03 §13)。
+出典: Microsoft Learn「アプリの登録」「アプリの資格情報の追加」「証明書の資格情報」(2026-10-02 参照。03 §13)、[省略可能な要求の設定](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims)・[要求の定義](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)。
 
 ## 7. 版を上げる
 
