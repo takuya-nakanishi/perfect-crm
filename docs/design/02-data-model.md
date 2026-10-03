@@ -172,7 +172,7 @@ PostgreSQL のスキーマは J-022 で確定する。§4 はそのための下�
 | `login_challenges` | 1 段目(パスワードか Microsoft)が通り、2 段目(TOTP)を待っているログイン 1 つ | `token_hash`(Cookie `__Host-works_login` の値の sha256)、`user_id`、`purpose`(`totp` / `totp_setup`)、`method`(1 段目に使ったもの。`password` / `microsoft`。2 段目が通ったらセッションの `method` になる。0010)、`attempts`(5 回まで)、`expires_at`(5 分)、`created_at`。通ったら・切れたら消す |
 | `login_attempts` | ログインの試み 1 回 | `email`(打たれた値を小文字にしたもの。利用者にいなくても残す)、`user_id`(当たれば)、`method`(`password` / `totp` / `google` / `microsoft`)、`ip`、`succeeded`、`reason`(`no_user`・`bad_password`・`bad_code`(6 桁の違い)・`throttled`(待たせて断った。数えない。同じ送り元から 1 分に 1 件だけ残す)・`not_registered`(Google・Microsoft で、結ばれた利用者がいない。数えない))、`created_at`。**間引きの数えと、あとから見る記録を兼ねる**。90 日を過ぎたら消す |
 
-- Android アプリのログインは OAuth の表(0004 の `oauth_clients`・`oauth_grants`・`oauth_tokens`)をそのまま使う。**Android アプリのクライアント(`works-android`)は `oauth_clients` に初めから入れる**(マイグレーションで。動的登録ではない。03 §5)。許可の無い登録を古いものから消す片付け(03 §5「門を置かずに守る」)の対象から外すこと。許可(`oauth_grants`)の 1 行が、アカウントの画面の「ログイン中のアプリ」の 1 行になる
+- Android アプリのログインは OAuth の表(0004 の `oauth_clients`・`oauth_grants`・`oauth_tokens`)をそのまま使う。**アプリは動的登録で `oauth_clients` に入る**(前もって入れない。2026-10-03。03 §5、09 A-17)。許可の付いた登録は片付け(03 §5「門を置かずに守る」)で消さないので、特別扱いは要らない。**スコープ `api` の許可(`oauth_grants`)の 1 行が、アカウントの画面の「ログイン中のアプリ」の 1 行になる**(スコープ `works` の Claude のコネクタは、環境設定の MCP に出る)
 - Google・Microsoft でログインの途中の状態(state・戻り先・結ぶ相手)は DB に置かない。署名した短命の Cookie `__Host-works_oidc` に置く(だれでも叩ける口なので、叩かれても行を作らない。03 §5)
 - パスワード、セッションの Cookie の値、2 段目の札、OAuth のトークンは、どれも DB に置かない(ハッシュだけ)。DB の写し(`pg_dump`)が漏れても、それだけでは入れない
 - TOTP の秘密だけは、コードを照らすのに元の値が要るので、ハッシュではなく暗号化して置く(Google の鍵と同じく `WORKS_SECRET_KEY` から導いた鍵)。**`WORKS_SECRET_KEY` を変えると、2 段階認証はやり直しになる**

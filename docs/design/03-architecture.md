@@ -152,9 +152,10 @@ Claude・Codex ─┘                                                           
 | `GET /api/v1/session/{google,microsoft}` | 本人のブラウザ | 提供元の許可の画面へ送るだけ。途中の状態は署名した 10 分の Cookie に置き、**DB に行を作らない**。提供元の discovery document は 1 時間持つ(叩かれても提供元へ問い合わせを積まない) |
 | `GET /api/v1/session/{google,microsoft}/callback` | 本人のブラウザ | state を Cookie と照らす(合わなければ提供元へ問い合わせずに断る)。**コードの引き換えは送り元(IP)ごとに 1 分 10 回まで**。ID トークンの署名・発行元・宛先・期限・nonce。公開鍵は、知らない kid でも読み直すのは 1 分に 1 回まで |
 | `GET /api/v1/session/challenge` | ログインの画面 | 2 段目の札の Cookie が無い・切れていれば 401(読むだけ) |
-| `/register`(MCP の動的登録) | Claude | 戻り先は Claude だけ(§6)。**許可の無い登録は新しいものから 50 件だけ残し、古いものから消す**(断らないので、正しい登録を締め出さない。許可の付いた登録は消さない) |
+| `GET /api/v1/info`(J-056 で足す) | アプリ | 読むだけ。製品名・API の版・使える機能だけを返す(秘密・利用者の情報は返さない。04 §13) |
+| `/register`(動的登録) | Claude・アプリ | 戻り先は Claude か、アプリ専用の形だけ(§6。アプリ専用の形は J-056 で足す)。**許可の無い登録は新しいものから 50 件だけ残し、古いものから消す**(断らないので、正しい登録を締め出さない。許可の付いた登録は消さない) |
 | `/authorize` | 本人のブラウザ | 登録済みのクライアントだけ。**許可を待つ依頼は新しいものから 50 件だけ残す**(10 分で切れる)。鍵を出すのは、ログインした本人が許可したときだけ |
-| `/token`・`/revoke` | Claude | 認可コード・refresh token は 256 ビットの乱数で、PKCE も要る。全文は保存しない(sha256) |
+| `/token`・`/revoke` | Claude・アプリ | 認可コード・refresh token は 256 ビットの乱数で、PKCE も要る。全文は保存しない(sha256) |
 | `/mcp` | Claude・Codex など | OAuth の access token か環境設定のトークン(`wks_`)。無い・違えば 401 |
 | `POST /api/v1/forms/{key}` | Web サイトの訪問者・サイトのサーバ | 鍵は URL、bot 避けの隠し欄、**受け口ごと・送り元(IP)ごとに 1 分 10 件まで**(04 §10) |
 | `GET /api/v1/google/callback`・`/slack/callback` | 本人のブラウザ | 署名付きの `state`(`WORKS_SECRET_KEY`) |
@@ -217,15 +218,18 @@ Claude・Codex ─┘                                                           
 - **メールでの再設定は持たない**(Works にはメールを送る仕組みが無い。人が増えたら考える)
 - 利用者を足すのは管理者だけ(`python -m app.cli add-user`。画面は J-038)。**名乗り出て登録する口は作らない**。足した人は、Google か Microsoft(確かめられたアドレスのとき)で入るか、`set-password` で決めた最初のパスワードで入って変える
 
-### Android アプリのログイン(サーバ側。アプリ側は 09)
+### Android アプリのログイン(サーバ側。アプリ側は 09 §6)
 
 - RFC 8252(ネイティブアプリの OAuth)に従う。**ログインの画面はアプリの中に作らず、ブラウザで Works の `/login` を開く**(パスワードも Google も Microsoft も、Web と同じ 1 枚で済む)。埋め込みの WebView は使わない(RFC 8252 が禁じ、Google も WebView の中のログインを断る)
 - 開き方は **Auth Tab**(Chrome 137 以降。androidx.browser 1.9.0 で安定版)。Auth Tab の無いブラウザでは、自動で Custom Tabs に落ちる
-- クライアントは初めから入れてある公開クライアント `works-android`(動的登録ではない)。PKCE(S256)は必須。スコープは `api`
-- **戻り先は https**(`<公開 URL>/app/oauth/callback`)。Works が `/.well-known/assetlinks.json`(Digital Asset Links)で「この URL を受けてよいのは Works のアプリ(パッケージ名と署名の指紋)」と示し、Chrome と Android がそれを確かめる。値は `.env`(`WORKS_ANDROID_PACKAGE`・`WORKS_ANDROID_CERT_SHA256`)から api が返す(Caddy が api へ流す道に足す)
-- 戻り先の持ち主を確かめられるので、**許可のカードを出さない**。RFC 8252 §8.6 は「クライアントを確かめられないなら自動で許可しない」としていて、https の戻り先はその確かめに当たる。ログインが通れば、そのままアプリへ戻す
+- **アプリは特定のサーバに依存しない**(2026-10-03、本人の決定。09 A-17)。サーバの URL はアプリで入れ、アプリはそのサーバに**動的登録(`/register`。RFC 7591)で自分を登録する**。サーバに前もってアプリを入れない。サーバにアプリのための設定(パッケージ名・署名の指紋)も置かない
+- **戻り先はアプリ専用の形**(RFC 8252 §7.1 の private-use URI scheme): `<アプリの ID>:/oauth/callback`。スキームはアプリの ID(ビルドする人が持つドメインを逆向きにしたもの。ドットを含む)、`:/` のあとはスラッシュ 1 本。`/register` はこの形を受ける(いまは Claude の戻り先だけ。J-056 で足す)。Auth Tab は結果を、開いたアプリに直に返す。RFC 8252 は OS が許すなら https の戻り先を勧める(§7.2)が、https の戻り先はドメインをアプリのビルドとサーバの `assetlinks.json` の両方に書くので、どのサーバにも繋がるアプリでは使えない
+- PKCE(S256)は必須。スコープは `api`。**`api` は、戻り先がすべてアプリ専用の形の登録にだけ与える**(Claude の https・loopback の登録が求めても与えない。Claude は `works` で `/mcp` だけ)
+- **許可のカードを出す**(2026-10-03、本人の決定。09 A-18)。アプリ専用の形のスキームはほかのアプリも名乗れるので、戻り先の持ち主を確かめられない。RFC 8252 §8.6 は、確かめられない相手には、前に許可した `client_id` でも毎回許可を求めるとしている。カードの文はアプリ向け(アプリの名前は登録のときの自己申告。05 §15)
+- 守りの重ね: PKCE(コードを横取りされても替えられない)、Auth Tab が開いたアプリに直に返すこと、許可のカード、Works のログイン(2 段階認証)。戻り先がアプリ専用の形なので、コードは本人の端末の中にしか戻らない(よその Web サイトへは渡らない)
 - あとは Claude のコネクタと同じ(access 1 時間、refresh 90 日で使うたびに替わる)。refresh は同時に 1 本だけ走らせる(2 本走ると後の 1 本が `invalid_grant` になり、ログアウトしたように見える。J-043 の refresh の件も参照)
-- ログアウトは `/revoke` で許可ごと消す。アカウントの画面からも切れる
+- ログアウトは `/revoke` で許可ごと消す。アカウントの画面からも切れる(スコープ `api` の許可が「ログイン中のアプリ」の 1 行。02 §8)
+- アプリは繋ぐ前に `GET /api/v1/info`(ログイン無しで読める。製品名・API の版・使える機能。04 §13)で、Works のサーバか・版が合うかを確かめる
 
 ### 経緯
 
@@ -236,6 +240,7 @@ Claude・Codex ─┘                                                           
 - 2026-10-01(同日): Access は外さず、門として残すと見直した(本人。「Surface で稼働させている以上 Access は必要。ログインとセッションはシステム側に」)。Android アプリは Cloudflare WARP で門を通る(本人の意向)。J-055 は「Access の撤去」から「本番をアプリのログインに切り替える」に変えた
 - 2026-10-01(同日、2 度目の見直し): **Access を外す(素通しにする)と決めた**(本人。「Access を素通りにし、ログインやセッション管理は全面的にシステム側に。スマホアプリや AI エージェントなどからのリクエストも届くように」)。`WORKS_AUTH` と `app/access.py` を消し、ログインの前に届く口の守りを足した(上の「門を置かずに守る」)。WARP(J-057)は要らなくなった。本番で Access を外すのは J-055
 - 2026-10-02: **Google アカウントと Microsoft アカウントでもログインできるようにした**(本人。J-054)。Google は決めてあった形のまま作った。Microsoft は個人と職場・学校の両方を受け、6 桁を重ね、アドレスは `xms_edov` のときだけ信じ、クライアントの証明は証明書にした(上の「Microsoft でログイン」。01 D-14)
+- 2026-10-03: **Android アプリを、どのサーバにも繋がる汎用のものにした**(本人。「アプリ側でサーバの URL を指定し、ログインするとセッションを持つような形に。あくまで私の環境に依存しない汎用性の確保のため」。09 A-17〜A-19)。前もって入れる `works-android`・https の戻り先と `assetlinks.json`(サーバの `.env` にアプリのパッケージ名と署名の指紋)・許可のカードを出さない、をやめ、動的登録・アプリ専用の形の戻り先・許可のカードを出す、に改めた(上の「Android アプリのログイン」)
 
 ## 6. MCP サーバ(ローンチ後・J-028)
 
@@ -244,7 +249,7 @@ Claude・Codex ─┘                                                           
 - **繋ぎ方の本筋は Claude のカスタムコネクタ(リモート MCP + OAuth)。**Claude の設定 › コネクタで URL(`https://works.sanei-clover.com/mcp`)を 1 回足して許可すれば、Claude.ai の Web・デスクトップ・スマホ・Claude Code(claude.ai のコネクタとして)のどれでも使える。コネクタはアカウントに付き、端末ごとの設定が要らないため。一次資料: Claude のコネクタの認証の説明(https://claude.com/docs/connectors/building/authentication、2026-09-24 確認)。「Claude.ai・Desktop・モバイル・Claude Code・Cowork は同じ仕組みを使う」
 - **Claude のサーバが Works を叩く。**手前に門は無いので、MCP と OAuth の口にそのまま届く(§5「門を置かずに守る」)。Access を門にしていた頃(2026-09-24〜10-01)は、カスタムコネクタが Access のサービストークンのヘッダを送れない(送れるヘッダ名は Anthropic の承認制)ため、Anthropic の送信元(`160.79.104.0/21`)からだけ機械向けの口を素通しにしていた(06 §7)
 - **Works 自身が OAuth 2.1 の認可サーバになる**(公式 Python SDK `mcp` 2.x の認可サーバの部品を使う。`backend/app/mcpserver/`)。動的登録(RFC 7591)、PKCE S256、refresh token は使うたびに替える、`invalid_grant`、form-urlencoded の `/token`、401 の `WWW-Authenticate` に資源のメタデータ(RFC 9728)。**人の許可は Works にログインした画面(`/oauth/consent`)**で行い、許可した人が MCP の利用者になる
-- **登録できる戻り先は Claude だけ**(`https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`)。知らないアプリに許可の画面を踏ませて鍵を渡すのを防ぐ。Android アプリは動的登録ではなく、初めから入れてあるクライアント(§5)。だれでも叩けるので、許可の無い登録と許可を待つ依頼は 50 件までしか残さない(§5「門を置かずに守る」)
+- **登録できる戻り先は Claude と、アプリ専用の形だけ**(Claude は `https://claude.ai/api/mcp/auth_callback` と、Claude Code の loopback `http://localhost|127.0.0.1:<任意>/callback`。アプリ専用の形 `<アプリの ID>:/oauth/callback` は Android アプリのためで、J-056 で足す。§5)。知らない Web サイトに許可の画面を踏ませて鍵を渡すのを防ぐ(アプリ専用の形の戻り先は、本人の端末の中にしか戻らない)。だれでも叩けるので、許可の無い登録と許可を待つ依頼は 50 件までしか残さない(§5「門を置かずに守る」)
 - 環境設定で発行したトークン(`wks_`。04 §10)も `/mcp` で使える。Codex など、ヘッダを自分で付けるアプリのため(門が無いので、このトークンだけで届く)。ほかの AI のアプリ(ChatGPT など)を OAuth で繋ぐには、その戻り先を許すかどうかを決めてから足す
 - ツールは 6 つ: `list_tables`・`search`・`list_records`・`get_record`(時系列も)・`create_record`・`update_record`。**画面と同じ関数を呼ぶ**(検証、既定値、業務ルール、繰り返し、言及)。DB を直接触らせない。**削除のツールは持たない**(会話の中では「元に戻す」に気づきにくい)。環境設定(テーブル定義など)も MCP からは変えない
 - 状態を持たない形(stateless HTTP + JSON の応答)。1 プロセス・利用者 1〜3 名の前提。プロトコルは SDK が最新版(2026-07-28)と 1 つ前(2025-11-25)の両方を受ける(`backend/tests/test_mcp.py`)
@@ -381,8 +386,8 @@ Q-034 を決めた時点で、共通ルール「採用を決めたら、その�
 **アプリの決定と仕様は 1 枚にまとめた: [09-android.md](09-android.md)**(本人の要望)。ここには、サーバ側で関わることだけを置く。
 
 - 置き場は `android/`。契約は `/api/v1`(04)のまま。**契約を変えたら、型・モック・`http.ts`・04 に加えて `android/` も同じコミットで揃える**(`android/` ができたら CLAUDE.md の決まりに足す)
-- ログイン: §5「Android アプリのログイン」(公開クライアント `works-android`、PKCE、スコープ `api`、許可のカードを出さない)。手前に門は無いので、公開 URL に直に届く(06 §7)
-- サーバに足すもの(J-056): `/api/v1` でスコープ `api` の Bearer を受ける(Bearer の要求は `Origin` を見ない)、`works-android` の登録、`/.well-known/assetlinks.json`
+- ログイン: §5「Android アプリのログイン」(動的登録の公開クライアント、アプリ専用の形の戻り先、PKCE、スコープ `api`、許可のカードを出す)。サーバの URL はアプリで入れる(09 A-17)。手前に門は無いので、サーバの URL に直に届く(06 §7)
+- サーバに足すもの(J-056): `/api/v1` でスコープ `api` の Bearer を受ける(Bearer の要求は `Origin` を見ない)、`/register` でアプリ専用の形の戻り先と `api` を受ける、許可のカードのアプリ向けの文(05 §15)、`GET /api/v1/info`(04 §13)
 
 ## 13. 一次資料での確認結果(ログインと Android・2026-10-01。Google・Microsoft でログインは 2026-10-02)
 
@@ -402,8 +407,8 @@ Zero Trust の料金・Cloudflare One Agent・Split Tunnels・Android の VPN・
 | Google OpenID Connect | `iss` は `https://accounts.google.com` か `accounts.google.com`、`aud` はクライアント ID、期限を確かめる。利用者の ID には `sub` を使い、メールアドレスを使わない | https://developers.google.com/identity/openid-connect/openid-connect |
 | Google の「内部」 | 組織のメンバーだけが許可でき、ほかは `org_internal`。審査は要らない | https://support.google.com/cloud/answer/15549945 |
 | Google の WebView の禁止 | 開発者が操れる埋め込みの user-agent で、Google の OAuth を開いてはいけない(`disallowed_useragent`) | https://developers.google.com/identity/protocols/oauth2/policies |
-| RFC 8252 | ネイティブアプリの OAuth は外のブラウザで。PKCE は必須。戻り先は private-use scheme・https・loopback の 3 つで、https を優先する(SHOULD)。確かめられないクライアントは自動で許可しない(§8.6) | https://www.rfc-editor.org/rfc/rfc8252 |
-| Auth Tab(androidx.browser。採る) | Chrome 137 以降。戻り先は独自の scheme か https(Digital Asset Links の確かめが必須。http は不可)。無いブラウザでは Custom Tabs に落ちる。1.9.0 が 2025-07-30 に安定版、最新は 1.10.0(2026-03-25)。Chrome の手引きは今も「alpha」と書いているが、リリースノートのほうが新しい | https://developer.chrome.com/docs/android/custom-tabs/guide-auth-tab 、https://developer.android.com/jetpack/androidx/releases/browser |
+| RFC 8252 | ネイティブアプリの OAuth は外のブラウザで。PKCE は必須。戻り先は private-use scheme・https・loopback の 3 つで、https を優先する(SHOULD)。確かめられないクライアントは自動で許可しない(§8.6)。2026-10-03 に引き直した: private-use scheme は「持っているドメインを逆向きにしたもの」で、スキームのあとはスラッシュ 1 本(§7.1)。戻り先は全文で照らす(§8.4)。§8.6 は「前に許可した client id でも、確かめられないなら初めての依頼として扱う」。埋め込みの user-agent は使ってはならない(§8.12) | https://www.rfc-editor.org/rfc/rfc8252 |
+| Auth Tab(androidx.browser。採る) | Chrome 137 以降。戻り先は独自の scheme か https(Digital Asset Links の確かめが必須。http は不可)。独自の scheme なら intent-filter は要らず、結果は開いたアプリに直に返る(2026-10-03 確認)。無いブラウザでは Custom Tabs に落ちる。1.9.0 が 2025-07-30 に安定版、最新は 1.10.0(2026-03-25)。Chrome の手引きは今も「alpha」と書いているが、リリースノートのほうが新しい | https://developer.chrome.com/docs/android/custom-tabs/guide-auth-tab 、https://developer.android.com/jetpack/androidx/releases/browser |
 | Google Sign-In for Android(採らない) | 非推奨を経て、2026-08-26 の play-services-auth 22.0.0 で API が消えた。後継は Credential Manager | https://developers.google.com/android/guides/releases |
 | AppAuth-Android(採らない) | 最後の版が 0.11.1(2021-12-22) | https://github.com/openid/AppAuth-Android |
 | androidx.security:security-crypto(採らない) | 1.1.0-alpha07(2025-04-09)で全 API が非推奨。「プラットフォームの API と Android Keystore を直に使うこと」 | https://developer.android.com/jetpack/androidx/releases/security |
