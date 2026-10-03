@@ -2,7 +2,8 @@
 
   python -m app.cli init                         マイグレーション → 初期メタデータ → 最初の管理者 → 参照の後始末
   python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す(画面ができるまでの口。J-038)
-  python -m app.cli set-password <メール>          パスワードを決める(標準入力から読む。画面にもログにも出さない)
+  python -m app.cli set-password <メール>          パスワードを決める(標準入力から読む。画面にもログにも出さない)。
+                                                 決め直したときは、その人のセッションとアプリの許可をすべて切る
   python -m app.cli reset-totp <メール>            2 段階認証を消す(端末を無くした人。次のログインで設定し直す)
   python -m app.cli reset-demo                   E2E 用の DB(名前が _e2e で終わる)を、モックと同じ種のデータで作り直す
 
@@ -91,15 +92,18 @@ def set_password(args: list[str]) -> int:
         if reason:
             print(reason, file=sys.stderr)
             return 1
+        first = user.password_hash is None
         conn.execute(
             update(users)
             .where(users.c.id == user.id)
             .values(password_hash=passwords.hash_password(password), password_changed_at=func.clock_timestamp())
         )
-        # 決め直したら、いまのセッションと許可はすべて切る(漏れたかもしれないパスワードで入った人を残さない)
-        sessions.revoke_all(conn, user.id, apps=True)
+        if not first:
+            # 決め直したら、いまのセッションと許可はすべて切る(漏れたかもしれないパスワードで入った人を残さない)。
+            # 初めて決めるときは切らない(漏れうる前のパスワードが無い。Claude のコネクタなどを繋ぎ直させない)
+            sessions.revoke_all(conn, user.id, apps=True)
         challenges.drop_all(conn, user.id)
-    print("ok")
+    print("ok(初めてのパスワード。ログイン中の端末とアプリの許可は残しました)" if first else "ok")
     return 0
 
 

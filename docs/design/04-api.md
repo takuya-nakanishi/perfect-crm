@@ -320,7 +320,7 @@
 
 ```
 python -m app.cli add-user <メール> [名前] [--admin]   利用者を足す。パスワードは持たない(Google・Microsoft で入るか、次で決める)
-python -m app.cli set-password <メール>               パスワードを決める(標準入力から読む。画面に出さない)。その人のセッションと許可はすべて切れる
+python -m app.cli set-password <メール>               パスワードを決める(標準入力から読む。画面に出さない)。決め直したときは、その人のセッションと許可はすべて切れる(初めて決めるときは切らない)
 python -m app.cli reset-totp <メール>                 2 段階認証を消す(端末を無くした人のため)。次にパスワードで入るときに設定し直す
 ```
 
