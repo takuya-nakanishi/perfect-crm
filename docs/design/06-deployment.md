@@ -64,6 +64,10 @@ DB は 0009 → 0010。Access アプリ 7 件を対象ホストと配下に限�
 検証: `scripts/verify.sh` は全 green、モック E2E と `scripts/e2e-http.sh` は全通過。
 OIDC の 43 テストは提供元の署名付きトークンを模した実 DB の検査で、Google・Microsoft の実アカウントの検査は J-069 に残す。
 
+**2026-10-03 の実施記録**: `set-password` が初めてのパスワードでもアプリの許可(Claude のコネクタ)を切っていたのを直して本番へ出し(`7b6dbd4`。表は変えていない。
+直前の DB の退避は `works-2026-10-03-before-J-070.dump`)、本人の指示で管理者に初期パスワードを決めた(値はリポジトリに残さない)。
+許可と端末は残っている。本人が初回ログインで 2 段階認証を設定し、パスワードを自分のものに変える(J-070)。`public-check.py` は全 PASS。
+
 ## 4. 配る側のヘッダ(`frontend/Caddyfile`)
 
 - CSP は `default-src 'self'`。外部の資源を一切読まない(書体も同梱)。`style-src` の `'unsafe-inline'` は React の `style` 属性のため。インラインのスクリプトは禁止なので、明暗を描画前に決める処理は `public/theme.js` に出してある

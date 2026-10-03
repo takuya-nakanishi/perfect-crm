@@ -30,6 +30,7 @@
   - Google で入る場合は J-069 の Google の設定を済ませて入る(パスワードは不要)。パスワードでも入る場合は `docker compose exec api python -m app.cli set-password <Works に登録したメール>` で本人が 15 文字以上を決め、Works のログイン画面で QR を認証アプリに登録して 6 桁を確認する。Microsoft も Works の TOTP が必要
   - PC とスマホの Chrome で公開 URL を開き、Works のログインとログアウトを確かめる。Claude の既存接続も実際に使って確認する(許可は DB に残してある)
   - [2026-10-02] 設定前の未認証 API は 401、MCP はトークンなしで 401 を確認済み。有効な利用者 1 人のパスワード・TOTP・外部アカウントは未設定
+  - [2026-10-03] 本人の指示(「SSO なしでログインするときの ID とパスワードを教えて」)で、管理者(`WORKS_ADMIN_EMAIL`)に初期パスワードを決め、チャットで本人に渡した。先に `set-password` が初回でも Claude のコネクタの許可を切っていたのを直して本番へ出した(`7b6dbd4`。直前に `works-2026-10-03-before-J-070.dump`)。許可と端末は残っている。`public-check.py` は全 PASS(Google・Microsoft は資格情報が無く SKIP)。残り: 本人が初回ログインで 2 段階認証を設定し、アカウントの画面でパスワードを自分のものに変える(10 分以内なら、いまのパスワードは要らない)。スマホでも入れるか
 - [ ] **J-056** Android アプリの雛形を作る — `android/`、ログイン、写しの土台、確かめのスクリプト(2026-10-01)
   - 由来: 01 D-15。仕様は docs/design/09-android.md(段階 1 の入口まで)。サーバ側も含む(`/api/v1` でスコープ `api` の Bearer を受ける、`works-android` の登録、`/.well-known/assetlinks.json`。03 §5・§12)。ログインはブラウザ(Q-049 で決定。09 A-13)
   - [2026-10-01] 細目(このセッションで出たもの): 開発の道具を WSL に入れる(Android CLI の `android sdk`・JDK 17・Gradle。`sdkmanager` は使わない)、実機へ入れる手順(USB か Wi-Fi のデバッグ)、minSdk を本人の端末で決める、アイコンは Web と同じ lucide をベクターで、Baseline Profile と Macrobenchmark の土台、`android/CLAUDE.md` と `.gitignore`、CLAUDE.md の「契約を変えたら同じコミットで揃える」に `android/` を足す(09 §10〜§12、03 §12)
