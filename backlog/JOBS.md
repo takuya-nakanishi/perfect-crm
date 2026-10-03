@@ -25,6 +25,7 @@
   - Microsoft: `scripts/microsoft-login-cert.sh` を実行し、出力先の公開証明書 `~/works-microsoft-login.crt` を Entra の「証明書とシークレット」にアップロードする。アプリケーション ID を `.env` の `WORKS_MICROSOFT_CLIENT_ID` へ保存する。秘密鍵入りの `WORKS_MICROSOFT_CERTIFICATE` はスクリプトが `.env` に書く。ID と証明書の両方が揃ってから api を再作成する(片方だけでは起動しない)
   - 反映と確認: `docker compose --profile backend up -d api` → `python3 scripts/public-check.py works.sanei-clover.com` → 実アカウントで Google・Microsoft の各ログインを確認する。Microsoft は Works の TOTP を設定・入力する。自動で結べないアカウントは、別の方法で Works に入り、10 分以内にアカウントの画面で結ぶ
   - [2026-10-02] J-054 のあった位置に置いた。Access の解除と本番へのコード反映は済み。`.env` の Google 資格情報は空、Microsoft は未設定なので、両ボタンはまだ出ない
+  - [2026-10-03] 本人の指示(「動かないのは承知の上、UI だけ出して」)で、ボタンは設定が無くても出すようにして本番へ出した(`dd94fb9`)。設定が済むまでは、押すと「まだ設定されていません」の帯が出る
 - [ ] **J-070** 初回ログインを設定し、PC・スマホの実アカウントで入れることを確かめる(2026-10-02)
   - 由来: J-055。本人の指示で Access は解除済み。本人がパスワードや認証アプリを設定する手順は docs/design/06 §3
   - Google で入る場合は J-069 の Google の設定を済ませて入る(パスワードは不要)。パスワードでも入る場合は `docker compose exec api python -m app.cli set-password <Works に登録したメール>` で本人が 15 文字以上を決め、Works のログイン画面で QR を認証アプリに登録して 6 桁を確認する。Microsoft も Works の TOTP が必要
