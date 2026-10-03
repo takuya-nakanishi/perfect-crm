@@ -81,22 +81,25 @@ ok(page.url().includes('next='), '未ログインで /login へ送られ、戻�
 // 本物の API に繋がっているか(VITE_API_MODE=http)。画面が <html data-api-mode> に出している(src/main.tsx)
 const HTTP_API = (await page.evaluate(() => document.documentElement.dataset.apiMode)) === 'http'
 console.log(`INFO  データ: ${HTTP_API ? '本物の API(http)' : 'モック'}`)
-// Google・Microsoft のボタンは、設定のある提供元だけ(モックは出さない。本物の API は .env の設定しだい。04 §16)
+// Google・Microsoft のボタンは、設定が無くても出す(05 §15。本番は .env の設定しだい、モックは設定が無い)
 const PROVIDERS = [['google', 'Google'], ['microsoft', 'Microsoft']]
 const loginOptions = HTTP_API ? await page.evaluate(async () => (await fetch('/api/v1/session/options')).json()) : { google: false, microsoft: false }
-await page.locator('#email').waitFor()
-for (const [key, label] of PROVIDERS) if (loginOptions[key]) await page.getByRole('link', { name: `${label} でログイン` }).waitFor()
-await wait(400)
+await page.locator('#email').waitFor(); await wait(400)
 const providerLinks = {}
 for (const [key, label] of PROVIDERS) {
   const link = page.getByRole('link', { name: `${label} でログイン` })
   providerLinks[key] = (await link.count()) === 1 && (await link.getAttribute('href')).startsWith(`/api/v1/session/${key}?next=%2Fo%2Faccounts`)
 }
-ok(
-  PROVIDERS.every(([key]) => providerLinks[key] === Boolean(loginOptions[key])),
-  'ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す',
-  JSON.stringify({ loginOptions, providerLinks }),
-)
+ok(PROVIDERS.every(([key]) => providerLinks[key]), 'ログインの画面に Google・Microsoft のボタンが出る(設定が無くても)', JSON.stringify({ loginOptions, providerLinks }))
+const unconfigured = PROVIDERS.find(([key]) => !loginOptions[key])
+if (unconfigured) {
+  const [, label] = unconfigured
+  await page.getByRole('link', { name: `${label} でログイン` }).click()
+  await page.waitForFunction((l) => document.querySelector('[role=alert]')?.textContent?.includes(`${l} でのログインは、まだ設定されていません`), label)
+  ok(page.url().includes('/login?next='), '設定の無い提供元のボタンを押すと、ログインの画面のまま、まだ設定されていない旨の帯が出る', label)
+  // 帯を消してから先へ(続く「違うパスワード」の帯と取り違えない)
+  await page.reload(); await page.locator('#email').waitFor()
+}
 /** ログインする。本物の API ならパスワードの次に 6 桁(まだの人は設定の段で QR の文字列から計算し、覚えておく)。モックは 2 段目が無い */
 const totpSecrets = new Map([['takuya@example.jp', E2E_TOTP_SECRET]])
 async function logIn(email) {

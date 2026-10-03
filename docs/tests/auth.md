@@ -86,5 +86,6 @@
 | AUTH-081 | 利用者 | 1 段目 | 表記 | L1 | 戻りの理由の符号(`google_not_registered`・`microsoft_busy` など)を帯の文にする。知らない符号は出さない | `login.test.ts` | — |
 | AUTH-082 | 利用者 | 1 段目 | 安全弁 | L1 | 戻り先はアプリ内のパスだけ。ボタンは設定のある提供元だけで、行き先は `/api/v1/session/<提供元>?next=…` | `login.test.ts` | — |
 | AUTH-083 | 利用者 | 1 段目 | 整合 | L2 | モックは Google・Microsoft に繋がない: 結ぶ・外すは `not_configured`、2 段目の読み直しは `login_expired` | `account.test.ts` | — |
-| AUTH-084 | 利用者 | 1 段目 | 整合 | L3 | ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す(モックは出さない) | `smoke.mjs「ログインの画面は、設定のある提供元(Google・Microsoft)のボタンだけを出す」` | — |
+| AUTH-084 | 利用者 | 1 段目 | 整合 | L3 | ログインの画面に Google・Microsoft のボタンが出る(設定が無くても。2026-10-03 本人の指示)。行き先は `/api/v1/session/<提供元>?next=…` | `smoke.mjs「ログインの画面に Google・Microsoft のボタンが出る(設定が無くても)」` | — |
+| AUTH-086 | 利用者 | 1 段目 | 表記 | L3 | 設定の無い提供元のボタンを押すと、ページを移らずに「〜でのログインは、まだ設定されていません」の帯が出る | `smoke.mjs「設定の無い提供元のボタンを押すと、ログインの画面のまま、まだ設定されていない旨の帯が出る」` | — |
 | AUTH-085 | 利用者 | アカウント | 整合 | L3 | アカウントの画面は、設定のある提供元(Google・Microsoft)の節だけを出す | `smoke.mjs「アカウントの画面は、設定のある提供元(Google・Microsoft)の節だけを出す」` | — |

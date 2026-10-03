@@ -9,7 +9,7 @@ import { CodeInput, inputCls, TotpSecretView } from '@/components/auth/TotpParts
 import { CloverMark } from '@/components/shell/CloverMark'
 import { keys, useSession, useSessionOptions } from '@/data/queries'
 import { cleanCode } from '@/lib/code'
-import { enabledProviders, linkedProvider, providerError, providerLabel, providerLoginUrl, safeNext } from '@/lib/login'
+import { enabledProviders, LOGIN_PROVIDERS, linkedProvider, providerError, providerLabel, providerLoginUrl, safeNext } from '@/lib/login'
 import { useUI } from '@/state/ui'
 
 const primaryCls =
@@ -183,6 +183,7 @@ export function Login() {
     dropContinue()
   }
 
+  // 使える提供元(パスワードを忘れたときの案内に挙げる)。ボタンは設定が無くても出す(05 §15)
   const providers = enabledProviders(options.data)
   const viaLabel = via ? providerLabel(via) : null
   const codeForm = (title: string, lead: ReactNode, button: string, extra?: ReactNode) => (
@@ -302,28 +303,31 @@ export function Login() {
           {busy ? 'ログインしています…' : 'ログイン'}
         </button>
 
-        {providers.length > 0 && (
-          <>
-            <div className="my-5 flex items-center gap-3 text-sm text-ink-3" aria-hidden>
-              <span className="h-px flex-1 bg-line" />
-              または
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            <div className="flex flex-col gap-2.5">
-              {providers.map((p) => (
-                // ページごと提供元へ移るのでリンク(fetch しない。04 §16)
-                <a
-                  key={p}
-                  href={providerLoginUrl(p, next)}
-                  className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg text-lg font-bold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] transition-colors duration-100 hover:bg-sunken"
-                >
-                  <ProviderMark provider={p} />
-                  {providerLabel(p)} でログイン
-                </a>
-              ))}
-            </div>
-          </>
-        )}
+        <div className="my-5 flex items-center gap-3 text-sm text-ink-3" aria-hidden>
+          <span className="h-px flex-1 bg-line" />
+          または
+          <span className="h-px flex-1 bg-line" />
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {LOGIN_PROVIDERS.map((p) => (
+            // ページごと提供元へ移るのでリンク(fetch しない。04 §16)。
+            // 設定の無い提供元は、移らずにその旨の帯を出す(サーバへ行っても同じ帯で戻ってくる)
+            <a
+              key={p}
+              href={providerLoginUrl(p, next)}
+              onClick={(e) => {
+                if (options.data && !options.data[p]) {
+                  e.preventDefault()
+                  setError(providerError(`${p}_not_configured`))
+                }
+              }}
+              className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg text-lg font-bold text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] transition-colors duration-100 hover:bg-sunken"
+            >
+              <ProviderMark provider={p} />
+              {providerLabel(p)} でログイン
+            </a>
+          ))}
+        </div>
 
         <p className="mt-6 text-sm text-ink-3">
           {providers.length > 0
