@@ -11,6 +11,8 @@
 - JSON の列名は **DB の列名そのまま**(snake_case)。ID は UUID、日付は `YYYY-MM-DD`、日時は ISO 8601(UTC)、金額は円の整数。書式付きの文字(`richtext`)は HTML で、**サーバは保存前に許した要素だけを残し、その結果から `@` の言及を取る**(この順。`frontend/src/lib/richtext.ts` と同じ規則。Python では `nh3` のような現行のライブラリを使い、非推奨の `bleach` は使わない)
 - 参照は ID で返し、表示名は応答の `references` に添える(§2)
 - エラーは HTTP ステータス + `{ "code": "...", "message": "..." }`。未ログインは 401、無いレコードは 404、入力の不備は 400、いまのデータの状態でできない操作(必須の参照で使われているレコードの削除など)は 409。`message` は人がそのまま読める文で、画面はそれを出す
+- **変え方は足すだけ**(2026-10-04。09 A-21): キー・口・任意の引数を足すのはいつでもよい。名前を変える・消す・意味を変えるときは `api_version`(§13 の `GET /api/v1/info`)を上げる。Android のアプリは端末に入れた版のまま使われ、サーバとは版がずれる(ほかのサーバにも繋がる)ため。受ける側は知らないキーを無視する
+- **メタデータの版**(J-071 で足す): `/api/v1` のすべての応答に、ヘッダ `Works-Meta-Version`(テーブル・項目・ビュー・サイドバーが変わるたびに変わる文字)を添える。`GET /meta` は `ETag` を返し、`If-None-Match` が合えば 304。アプリは版が変わったときだけ `GET /meta` を取り直す(09 §5)
 
 ## 2. エンドポイント
 
@@ -204,7 +206,7 @@
 | `POST /mcp` | Claude(Anthropic のクラウド)、トークンを付けたアプリ | MCP(Streamable HTTP、stateless、JSON の応答)。`Authorization: Bearer <OAuth の access token か wks_>`。無ければ 401 + `WWW-Authenticate: Bearer resource_metadata=…` |
 | `GET /.well-known/oauth-protected-resource/mcp` | Claude | 資源のメタデータ(RFC 9728)。`resource` は `<公開 URL>/mcp` と 1 文字も違わない |
 | `GET /.well-known/oauth-authorization-server` | Claude | 認可サーバのメタデータ(RFC 8414)。発行元は公開 URL。`code_challenge_methods_supported: ["S256"]`、`registration_endpoint` あり |
-| `POST /register` | Claude・アプリ | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)か、アプリ専用の形(下。J-056 で足す)でなければ 400 `invalid_redirect_uri`。許可の無い登録は新しいものから 50 件だけ残す(古いものから消す) |
+| `POST /register` | Claude・アプリ | 動的登録(RFC 7591)。戻り先が Claude(`https://claude.ai/api/mcp/auth_callback` か loopback の `/callback`)か、アプリ専用の形(下。J-071 で足す)でなければ 400 `invalid_redirect_uri`。許可の無い登録は新しいものから 50 件だけ残す(古いものから消す) |
 | `GET /authorize` | 本人のブラウザ | 依頼を置き(10 分で切れる。新しいものから 50 件だけ残す)、画面の `/oauth/consent?request=…` へ送る。ログインしていなければ、画面がログインの画面を経てから戻す(05 §15) |
 | `POST /token` | Claude・アプリ | 認可コード(1 回きり、5 分)→ access(1 時間)+ refresh(90 日)。refresh は使うたびに新しい組に替え、古いものは `invalid_grant` |
 | `POST /revoke` | Claude・アプリ | その許可ごと消す |
@@ -212,7 +214,7 @@
 - 許可(`oauth_grants`)が環境設定の「接続中のアプリ」の 1 行。コードとトークンは sha256 だけを持つ。利用者を消すと、その人の許可も消える
 - ツールの呼び出しは、許可した人を「誰として」にして、画面と同じ関数を通る(既定値の「担当は自分」も同じ)。失敗は 400 の文(`定義に無い列です` など)をツールのエラーとして返し、AI が読んで直せるようにする
 - **Android アプリも同じ `/register`・`/authorize`・`/token`・`/revoke` を使う**(2026-10-03 に改めた。03 §5、09 §6)。アプリは、利用者が入れたサーバに自分を動的登録する(サーバに前もって入れない。どのサーバにも繋がるようにするため。09 A-17)。Claude との違いは 3 つ: ①戻り先はアプリ専用の形 `<アプリの ID>:/oauth/callback`(RFC 8252 §7.1 の private-use URI scheme。スキームはドットを含む逆向きのドメイン名で、`:/` のあとはスラッシュ 1 本。全文で照らす)②スコープは `api`(`/api/v1` に入れる)。**`api` は、戻り先がすべてアプリ専用の形の登録にだけ与える**(https・loopback の戻り先の登録が `api` を求めても与えない。Claude の `works` は `/mcp` だけ)③許可のカードは出す(戻り先の持ち主を確かめられないため、前に許可した `client_id` でも毎回。RFC 8252 §8.6。カードの文はアプリ向け。05 §15)
-- **`GET /api/v1/info`**(J-056 で足す。ログイン無しで読める): アプリが繋ぐ前に、Works のサーバか・版が合うかを確かめる。応答は `{ "product": "works", "api_version": 1, "features": ["google_drive"] }`。`product` は固定、`api_version` は壊れる変更で上げる整数、`features` はサーバの設定や版で変わる機能(例: Google ドライブを繋げるか)。秘密や利用者の情報は返さない
+- **`GET /api/v1/info`**(J-071 で足す。ログイン無しで読める): アプリが繋ぐ前に、Works のサーバか・版が合うかを確かめる。応答は `{ "product": "works", "api_version": 1, "features": ["google_drive"] }`。`product` は固定、`api_version` は壊れる変更で上げる整数、`features` はサーバの設定や版で変わる機能(例: Google ドライブを繋げるか)。秘密や利用者の情報は返さない
 
 ## 14. Slack のチャンネル(2026-09-30)
 
@@ -309,7 +311,7 @@
 | `PUT /account/totp` | 本文 `{ code }`。設定中の秘密で 6 桁が通ったら入れ替える(古い端末のコードは効かなくなる) | 204。違う → 400 `invalid_code`。外す口は無い(パスワードで入る限り必須) |
 | `POST /account/identities/{google,microsoft}` | 結び始める。許可の画面の URL を返し、Cookie `__Host-works_oidc` に結ぶ相手(自分)を署名して置く。画面はその URL へページごと移る。戻りは `GET /session/{provider}/callback` | `{ url }`。10 分以内のログインでない → 400 `reauth_required`。設定が無い → 409 `not_configured`。提供元に繋がらない → 502 `provider_unavailable` |
 | `DELETE /account/identities/{google,microsoft}` | 外す | 204。ほかに入る手段(パスワードか、もう一方)が無い → 409 `last_login_method` |
-| `GET /account/sessions` | 自分のログイン中の端末(ブラウザのセッション)とアプリ(スコープ `api` の許可 = Android アプリ。J-056 で足す) | `AccountSession[]`: `id`、`kind`(`browser` / `app`)、`label`(「Chrome · Windows」「Works · Android」。`User-Agent` とクライアントから作る)、`created_at`、`last_seen_at`、`current`(いま使っている端末か) |
+| `GET /account/sessions` | 自分のログイン中の端末(ブラウザのセッション)とアプリ(スコープ `api` の許可 = Android アプリ。J-071 で足す) | `AccountSession[]`: `id`、`kind`(`browser` / `app`)、`label`(「Chrome · Windows」「Works · Android」。`User-Agent` とクライアントから作る)、`created_at`、`last_seen_at`、`current`(いま使っている端末か) |
 | `DELETE /account/sessions/{id}` | 1 つ切る。自分のもの以外は 404 | 204 |
 | `DELETE /account/sessions` | いま使っている端末以外を、すべて切る | 204 |
 
